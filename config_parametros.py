@@ -135,14 +135,14 @@ VENTANA_Z_TICKS: int = 60                  # Ventana rodante para Z-Score Bipowe
 VENTANA_EMA_MACRO_TICKS: int = 900         # EMA900 de referencia estructural
 
 # 5.1 Tunel Biclase para Clase High-Beta (ZEREBRO, WAL) -> Evita entradas superficiales
-Z_SCORE_UMBRAL_HIGH_BETA: float = -3.20
-CAIDA_MIN_HIGH_BETA_PCT: float = -0.0085   # Exige al menos -0.85% de dislocacion local
-EMA900_DIST_MIN_HIGH_BETA_PCT: float = -0.0115  # Exige -1.15% bajo EMA900 (salvo Z <= -4.50)
+Z_SCORE_UMBRAL_HIGH_BETA: float = -2.85
+CAIDA_MIN_HIGH_BETA_PCT: float = -0.0075  # Exige al menos -0.85% de dislocacion local
+EMA900_DIST_MIN_HIGH_BETA_PCT: float = -0.0102  # Exige -1.15% bajo EMA900 (salvo Z <= -4.50)
 
 # 5.2 Tunel Biclase para Clase Tier-1 (INJ, XRP, AVAX, TAO, ARB)
-Z_SCORE_UMBRAL_TIER1: float = -2.85
-CAIDA_MIN_TIER1_PCT: float = -0.0045       # Exige al menos -0.45% de dislocacion local
-EMA900_DIST_MIN_TIER1_PCT: float = -0.0055 # Exige -0.55% bajo EMA900
+Z_SCORE_UMBRAL_TIER1: float = -2.55
+CAIDA_MIN_TIER1_PCT: float = -0.004  # Exige al menos -0.45% de dislocacion local
+EMA900_DIST_MIN_TIER1_PCT: float = -0.0049  # Exige -0.55% bajo EMA900
 
 # 5.3 Escudos Fisicos Secuenciales (Spread, Hurst, Lyapunov, Hawkes y 3 Ticks ML-OFI)
 SPREAD_MAX_PCT: float = 0.00180            # 0.180% spread relativo maximo permitido
