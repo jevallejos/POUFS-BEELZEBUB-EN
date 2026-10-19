@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# ARCHIVO #13: instalar_infraestructura.sh
+# SISTEMA: TRI-BRAIN-SNIPER (EMPEROR TIME) V1.0 — ESTRATEGIA CHRONOS-TRIZ
+# ==============================================================================
+# Instalador idempotente para Ubuntu/Debian (sniper-tokio):
+#   1. Configura git config core.fileMode false para mantener git status limpio.
+#   2. Instala tribrain-eval-oos.service con aislamiento de CPU/IO (Nice=15,
+#      IOSchedulingClass=best-effort, IOSchedulingPriority=7).
+#   3. Instala y activa tribrain-eval-oos.timer (00:00, 08:00 y 16:00 UTC).
+#   4. Instala el comando de auditoria desacoplado 'verbot' (-s, -h, -q, -t)
+#      en ~/.bashrc con blindaje local contra SIGINT (Ctrl+C).
+# ==============================================================================
+set -euo pipefail
+
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PY_BIN="${REPO_DIR}/venv/bin/python"
+SERVICE_NAME="tribrain-eval-oos"
+SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+TIMER_FILE="/etc/systemd/system/${SERVICE_NAME}.timer"
+USER_NAME="$(whoami)"
+
+echo "=================================================================="
+echo "⚙️  INSTALANDO INFRAESTRUCTURA TRI-BRAIN-SNIPER V1.0 [CHRONOS-TRIZ]"
+echo "   Repositorio : ${REPO_DIR}"
+echo "   Python VENV : ${PY_BIN}"
+echo "=================================================================="
+
+if [ ! -x "${PY_BIN}" ]; then
+    echo "❌ [ERROR] No se encontro el ejecutable Python en ${PY_BIN}"
+    exit 1
+fi
+
+# 1. Evitar que chmod +x ensucie git status -s
+git -C "${REPO_DIR}" config core.fileMode false || true
+chmod +x "${REPO_DIR}/instalar_infraestructura.sh" "${REPO_DIR}/main.py" "${REPO_DIR}/evaluador_cuantico_oos.py" 2>/dev/null || true
+
+# 2. Crear unidad systemd con aislamiento estricto de CPU e I/O (Low-Jitter Ops)
+sudo tee "${SERVICE_FILE}" >/dev/null <<EOF
+[Unit]
+Description=Evaluador Cuantico Walk-Forward OOS Tri-Brain-Sniper v1.0 [CHRONOS-TRIZ]
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=${USER_NAME}
+WorkingDirectory=${REPO_DIR}
+Environment="PYTHONUTF8=1"
+Nice=15
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+ExecStart=${PY_BIN} ${REPO_DIR}/evaluador_cuantico_oos.py --repo ${REPO_DIR} --horas 8 --telegram
+StandardOutput=append:${REPO_DIR}/bot_hft_h.log
+StandardError=append:${REPO_DIR}/bot_hft_h.log
+EOF
+
+# 3. Crear timer systemd alineado con los 3 cortes globales de financiacion (00:00, 08:00, 16:00 UTC)
+sudo tee "${TIMER_FILE}" >/dev/null <<EOF
+[Unit]
+Description=Timer Tri-Sesion (00:00, 08:00, 16:00 UTC) para Tri-Brain-Sniper v1.0 [CHRONOS-TRIZ]
+
+[Timer]
+OnCalendar=*-*-* 00,08,16:00:00 UTC
+Persistent=true
+RandomizedDelaySec=25
+Unit=${SERVICE_NAME}.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable "${SERVICE_NAME}.timer"
+sudo systemctl restart "${SERVICE_NAME}.timer"
+
+echo "✅ [SYSTEMD OK] Timer ${SERVICE_NAME}.timer habilitado y activo:"
+systemctl list-timers "${SERVICE_NAME}.timer" --no-pager || true
+
+# 4. Instalar panel CLI 'verbot' en ~/.bashrc de forma limpia e idempotente
+python3 - "${REPO_DIR}" << 'PYEOF'
+import pathlib, re, sys
+
+repo_dir = sys.argv[1]
+rc_path = pathlib.Path.home() / ".bashrc"
+txt = rc_path.read_text(encoding="utf-8", errors="ignore") if rc_path.exists() else ""
+
+# Eliminar bloques previos de verbot si existieran
+txt = re.sub(
+    r"# === INICIO PANEL VERBOT TRI-BRAIN-SNIPER ===.*?# === FIN PANEL VERBOT TRI-BRAIN-SNIPER ===\n?",
+    "",
+    txt,
+    flags=re.DOTALL,
+)
+
+bloque_verbot = f"""# === INICIO PANEL VERBOT TRI-BRAIN-SNIPER ===
+verbot() {{
+    local REPO="{repo_dir}"
+    local PY="${{REPO}}/venv/bin/python"
+    local MODO="${{1:-live}}"
+
+    case "${{MODO}}" in
+        -s|--status)
+            "${{PY}}" -c "
+import json, pathlib
+repo = pathlib.Path('${{REPO}}')
+stats_f = repo / 'tribrain_stats_v1.jsonl'
+ops = [json.loads(l) for l in stats_f.read_text(encoding='utf-8').splitlines() if l.strip()] if stats_f.exists() else []
+w = sum(1 for x in ops if float(x.get('pnl_usdt', 0)) >= 0)
+l = len(ops) - w
+s = sum(1 for x in ops if 'SCRATCH' in str(x.get('motivo', '')).upper() and float(x.get('pnl_usdt', 0)) < 0)
+triz = sum(1 for x in ops if x.get('cosecha_triz_50'))
+pnl = sum(float(x.get('pnl_usdt', 0)) for x in ops)
+wr = (w / len(ops) * 100.0) if ops else 0.0
+wr_ef = (w / max(1, len(ops) - s) * 100.0) if ops else 0.0
+print('==================================================================')
+print('📊 ESTADO CONTABLE TRI-BRAIN-SNIPER V1.0 [CHRONOS-TRIZ]')
+print('==================================================================')
+print(f'  Trades Totales : {{len(ops)}} (W: {{w}} | L: {{l}} | Scratch 18s: {{s}} | Cosecha 50%: {{triz}})')
+print(f'  Win Rate       : Clasico {{wr:.1f}}% | Efectivo (sin Scratch) {{wr_ef:.1f}}%')
+print(f'  PnL Acumulado  : {{pnl:+.4f}} USDT')
+print('------------------------------------------------------------------')
+for op in ops[-8:]:
+    ic = '🟩' if float(op.get('pnl_usdt', 0)) >= 0 else ('🟨' if 'SCRATCH' in str(op.get('motivo', '')).upper() else '🔴')
+    print(f\"  {{ic}} {{op.get('timestamp','')[:19]}} | {{op.get('symbol',''):<17}} | {{float(op.get('pnl_percentage',0)):+6.2f}}% ({{float(op.get('pnl_usdt',0)):+.4f}} USDT) | {{op.get('motivo','')}}\")
+print('==================================================================')
+"
+            ;;
+        -h|--history)
+            if [ -f "${{REPO}}/bot_hft_h.log" ]; then
+                tail -n 60 "${{REPO}}/bot_hft_h.log"
+            else
+                echo "Aun no existe bot_hft_h.log"
+            fi
+            ;;
+        -q|--quantum)
+            "${{PY}}" "${{REPO}}/evaluador_cuantico_oos.py" --repo "${{REPO}}" --horas 8 --telegram
+            [ -f "${{REPO}}/reporte_cuantico_oos.md" ] && cat "${{REPO}}/reporte_cuantico_oos.md"
+            ;;
+        -t|--telegram-last)
+            "${{PY}}" -c "
+import asyncio, json, pathlib
+import sys
+sys.path.insert(0, '${{REPO}}')
+from telemetria_telegram import TELEMETRIA_TG
+stats_f = pathlib.Path('${{REPO}}/tribrain_stats_v1.jsonl')
+if not stats_f.exists():
+    print('No hay operaciones registradas aun en tribrain_stats_v1.jsonl')
+else:
+    lineas = [l for l in stats_f.read_text(encoding='utf-8').splitlines() if l.strip()]
+    if not lineas:
+        print('Archivo tribrain_stats_v1.jsonl vacio.')
+    else:
+        u = json.loads(lineas[-1])
+        TELEMETRIA_TG.cache_dedup.clear()
+        ok = asyncio.run(TELEMETRIA_TG.enviar_cierre_garantizado(
+            symbol=u['symbol'], side=u.get('side','long'),
+            pnl_pct=float(u['pnl_percentage']), pnl_usdt=float(u['pnl_usdt']),
+            hold_seg=float(u['hold_seg']), motivo=str(u['motivo']),
+            entry_price=float(u.get('entry_price',0)), exit_price=float(u.get('exit_price',0)),
+            cosecha_50_previa=bool(u.get('cosecha_triz_50',False))
+        ))
+        print(f'Reenvio manual a Telegram del ultimo cierre ({{u[\"symbol\"]}}): {{ok}}')
+"
+            ;;
+        *)
+            echo "📡 Monitoreando bot_hft.log en vivo (Presiona Ctrl+C para salir sin afectar al demonio)..."
+            (trap 'exit 0' INT; tail -n 45 -f "${{REPO}}/bot_hft.log")
+            ;;
+    esac
+}}
+# === FIN PANEL VERBOT TRI-BRAIN-SNIPER ===
+"""
+
+rc_path.write_text(txt.rstrip() + "\n\n" + bloque_verbot, encoding="utf-8")
+print("✅ [VERBOT CLI OK] Comandos instalados en ~/.bashrc: verbot, verbot -s, verbot -h, verbot -q, verbot -t")
+PYEOF
+
+echo "=================================================================="
+echo "✅ INFRAESTRUCTURA TRI-BRAIN-SNIPER V1.0 INSTALADA EXITOSAMENTE"
+echo "=================================================================="

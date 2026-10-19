@@ -1,0 +1,38 @@
+# ==============================================================================
+# TRI-BRAIN-SNIPER (EMPEROR TIME) V1.0 - BLINDAJE DE SECRETOS Y ESTADO
+# ==============================================================================
+
+# 1. Credenciales y Secretos (PROHIBIDO SUBIR A GITHUB)
+.env
+.env.*
+*.pem
+*.key
+
+# 2. Entornos Virtuales y Cache de Python
+venv/
+.venv/
+ENV/
+__pycache__/
+*.py[cod]
+*.class
+.pytest_cache/
+.mypy_cache/
+
+# 3. Archivos de Estado Transaccional, Telemetria y Locks en Produccion
+*.lock
+.tribrain.lock
+.tribrain_test.lock
+*.log
+bot_hft.log
+bot_hft_h.log
+.test_bot_hft.log
+*.jsonl
+tribrain_stats_v1.jsonl
+calibracion_oos.json
+reporte_cuantico_oos.md
+
+# 4. Artefactos de Sistema Operativo / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
