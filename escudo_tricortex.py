@@ -3,7 +3,7 @@
 """
 ==============================================================================
 ARCHIVO #07: escudo_tricortex.py
-SISTEMA: TRI-BRAIN-SNIPER (EMPEROR TIME) V1.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-SNIPER (CHAIN-JAIL) V2.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Reingenieria Funcional 10/10 del Enjambre Tri-Cortex (Fuera de Ruta Critica):
   1. Cortex 1 (Groq LPU): Matriz Direccional de Regimen (LONG_ONLY, SHORT_ONLY,

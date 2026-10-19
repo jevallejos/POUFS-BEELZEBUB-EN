@@ -3,7 +3,7 @@
 """
 ==============================================================================
 ARCHIVO #04: core_estado_ram.py
-SISTEMA: TRI-BRAIN-SNIPER (EMPEROR TIME) V1.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-SNIPER (CHAIN-JAIL) V2.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Nucleo de Memoria Compartida O(1), Contratos @dataclass y Logger Dual (CL/UTC).
 Erradica al 100% el uso de builtins.print hooks y expresiones regulares
@@ -99,6 +99,9 @@ class PosicionActiva:
     trinquete_be_armado: bool = False
     trinquete_ratchet_activo: bool = False
     trailing_activo: bool = False
+    cosecha_25_ejecutada: bool = False
+    chain_jail_activo: bool = False
+    eslabon_chain_jail: int = 0
 
     # Control de sincronizacion de Stop-Loss escalonado en servidor Bybit (Free-Runner 50%)
     sl_bybit_ultimo_sync_price: float = 0.0

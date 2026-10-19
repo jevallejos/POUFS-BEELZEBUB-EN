@@ -3,7 +3,7 @@
 """
 ==============================================================================
 ARCHIVO #09: ejecutor_sniper.py
-SISTEMA: TRI-BRAIN-SNIPER (EMPEROR TIME) V1.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-SNIPER (CHAIN-JAIL) V2.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Motor de Ejecucion Francotirador Zero-REST (Long & Short Simetrico):
   - Deduccion atomica de margen en RAM (Single-Slot Mutex) y 0 llamadas REST

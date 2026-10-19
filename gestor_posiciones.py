@@ -3,7 +3,7 @@
 """
 ==============================================================================
 ARCHIVO #10: gestor_posiciones.py
-SISTEMA: TRI-BRAIN-SNIPER (EMPEROR TIME) V1.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-SNIPER (CHAIN-JAIL) V2.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Guardian de Geometria de Pagos 10/10 con Protocolo "FREE-RUNNER 50%":
   - Ley 2 (CHRONOS-TRIZ): Desplazamiento del Precio de Reserva a los 18.0s
@@ -132,6 +132,31 @@ def calcular_precio_salida_maker_seguro(
 # ==============================================================================
 # 2. MOTOR GESTOR DE POSICIONES (CHRONOS-TRIZ & FREE-RUNNER 50%)
 # ==============================================================================
+
+def calcular_eslabon_chain_jail(pnl_max_pct: float) -> tuple[int, float, bool]:
+    """
+    Escalera matematica fria del Protocolo Chain-Jail v2.0 sobre el 25% final:
+      - Eslabon 5 (>= +8.00%): Guillotina Take-Profit duro inmediato (+8.00%).
+      - Eslabon 4 (>= +4.50%): Hiper-compresion a 0.25% de distancia del pico.
+      - Eslabon 3 (>= +2.55%): Meta +2% extra -> Piso minimo +2.20%, cadena a 0.35%.
+      - Eslabon 2 (>= +1.60%): Escudo Tier-1  -> Piso minimo +1.15%, cadena a 0.45%.
+      - Eslabon 1 (>= +0.90%): Candado +0.55% -> Prohibido retroceder bajo +0.55%.
+      - Eslabon 0 (<  +0.90%): Zona Oxigeno   -> Piso en +0.15% para soportar rebote.
+    Retorna: (eslabon_id, piso_sl_pct, cerrar_por_techo_8pct)
+    """
+    if pnl_max_pct >= 0.0800:
+        return 5, 0.0775, True
+    if pnl_max_pct >= 0.0450:
+        return 4, max(0.0425, pnl_max_pct - 0.0025), False
+    if pnl_max_pct >= 0.0255:
+        return 3, max(0.0220, pnl_max_pct - 0.0035), False
+    if pnl_max_pct >= 0.0160:
+        return 2, max(0.0115, pnl_max_pct - 0.0045), False
+    if pnl_max_pct >= 0.0090:
+        return 1, max(0.0055, pnl_max_pct - 0.0035), False
+    return 0, 0.0015, False
+
+
 class GestorPosiciones:
     """
     Gobierna el ciclo de vida de cada PosicionActiva en memoria RAM a 6.6 Hz.

@@ -3,7 +3,7 @@
 """
 ==============================================================================
 ARCHIVO #11: main.py
-SISTEMA: TRI-BRAIN-SNIPER (EMPEROR TIME) V1.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-SNIPER (CHAIN-JAIL) V2.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Cerebro Central Orquestador Asincrono (uvloop + Bybit UTA WebSocket L2):
   - Cerrojo fisico de instancia unica (.tribrain.lock / .tribrain_test.lock).
@@ -184,7 +184,9 @@ async def reconciliar_posiciones_arranque(exchange: Any) -> int:
             t_apertura = ahora - edad_seg
 
         edad_min = edad_seg / 60.0
-        if edad_seg >= cfg.TIEMPO_MAX_HOLD_SEG:
+        pnl_boot_pct = ((mark_p - ep) / ep if side == 'long' else (ep - mark_p) / ep) if ep > 0 else 0.0
+        es_campeon_en_ganancia = (sym in cfg.PARES_CAMPEONES_ALFA) and (pnl_boot_pct >= 0.0020) and (os.environ.get('TRIBRAIN_TEST_MODE') != '1')
+        if edad_seg >= cfg.TIEMPO_MAX_HOLD_SEG and not es_campeon_en_ganancia:
             log_sniper(
                 f"🧹 [RECONCILIADOR] Posición zombie huérfana detectada en {sym}: "
                 f"{qty} contratos @ {ep} (edad {edad_min:.1f} min >= {cfg.TIEMPO_MAX_HOLD_SEG:.0f}s). "

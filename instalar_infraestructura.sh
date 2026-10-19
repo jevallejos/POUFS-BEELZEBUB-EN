@@ -22,7 +22,7 @@ TIMER_FILE="/etc/systemd/system/${SERVICE_NAME}.timer"
 USER_NAME="$(whoami)"
 
 echo "=================================================================="
-echo "⚙️  INSTALANDO INFRAESTRUCTURA TRI-BRAIN-SNIPER V1.0 [CHRONOS-TRIZ]"
+echo "⚙️  INSTALANDO INFRAESTRUCTURA TRI-BRAIN-SNIPER V2.0 [CHAIN-JAIL]"
 echo "   Repositorio : ${REPO_DIR}"
 echo "   Python VENV : ${PY_BIN}"
 echo "=================================================================="
@@ -39,7 +39,7 @@ chmod +x "${REPO_DIR}/instalar_infraestructura.sh" "${REPO_DIR}/main.py" "${REPO
 # 2. Crear unidad systemd con aislamiento estricto de CPU e I/O (Low-Jitter Ops)
 sudo tee "${SERVICE_FILE}" >/dev/null <<EOF
 [Unit]
-Description=Evaluador Cuantico Walk-Forward OOS Tri-Brain-Sniper v1.0 [CHRONOS-TRIZ]
+Description=Evaluador Cuantico Walk-Forward OOS Tri-Brain-Sniper (Chain-Jail) v2.0
 After=network-online.target
 Wants=network-online.target
 
@@ -59,7 +59,7 @@ EOF
 # 3. Crear timer systemd alineado con los 3 cortes globales de financiacion (00:00, 08:00, 16:00 UTC)
 sudo tee "${TIMER_FILE}" >/dev/null <<EOF
 [Unit]
-Description=Timer Tri-Sesion (00:00, 08:00, 16:00 UTC) para Tri-Brain-Sniper v1.0 [CHRONOS-TRIZ]
+Description=Timer Tri-Sesion (00:00, 08:00, 16:00 UTC) para Tri-Brain-Sniper (Chain-Jail) v2.0
 
 [Timer]
 OnCalendar=*-*-* 00,08,16:00:00 UTC
@@ -116,7 +116,7 @@ verbot() {
     local SUBMODO="${2:-all}"
 
     echo "================================================================================"
-    echo " 👁️  PANEL FORENSE EN TIEMPO REAL — TRI-BRAIN-SNIPER V1.0 [CHRONOS-TRIZ]"
+    echo " 👁️  PANEL FORENSE EN TIEMPO REAL — TRI-BRAIN-SNIPER V2.0 [CHAIN-JAIL]"
     echo "================================================================================"
 
     if [ -f "${LOCK}" ]; then
@@ -180,6 +180,129 @@ PYEOF
         -q|--quantum)
             "${PY}" "${REPO}/evaluador_cuantico_oos.py" --repo "${REPO}" --horas 8 --telegram || true
             [ -f "${REPO}/reporte_cuantico_oos.md" ] && cat "${REPO}/reporte_cuantico_oos.md" || true
+            ;;
+        -x|--xray)
+            "${PY}" - "${REPO}" "${SUBMODO}" << 'XRAYEOF'
+import asyncio, os, sys, urllib.request, urllib.parse
+from pathlib import Path
+import ccxt.async_support as ccxt
+
+repo_path = Path(sys.argv[1])
+accion = sys.argv[2].lower() if len(sys.argv) > 2 else "status"
+sys.path.insert(0, str(repo_path))
+import config_parametros as cfg
+from gestor_posiciones import calcular_eslabon_chain_jail
+
+def cargar_claves():
+    pares = {}
+    env_f = repo_path / ".env"
+    if env_f.exists():
+        for ln in env_f.read_text(encoding="utf-8", errors="ignore").splitlines():
+            ln = ln.strip()
+            if ln and not ln.startswith("#") and "=" in ln:
+                k, v = ln.split("=", 1)
+                pares[k.strip()] = v.strip().strip("'").strip('"')
+    for k in dir(cfg):
+        if k.isupper() and isinstance(getattr(cfg, k), str) and getattr(cfg, k).strip():
+            pares[k] = getattr(cfg, k).strip()
+    ign = ("GROQ", "GEMINI", "GOOGLE", "NVIDIA", "NIM", "TELEGRAM", "TG_", "DISCORD", "OPENAI")
+    ak, asec, tgt, tgc = None, None, pares.get("TELEGRAM_BOT_TOKEN") or pares.get("TELEGRAM_TOKEN"), pares.get("TELEGRAM_CHAT_ID") or pares.get("CHAT_ID")
+    for k, v in pares.items():
+        ku = k.upper()
+        if any(x in ku for x in ign):
+            continue
+        if ("KEY" in ku or "API" in ku) and "SECRET" not in ku and "PRIV" not in ku and not ak:
+            ak = v
+        elif ("SECRET" in ku or "PRIV" in ku) and not asec:
+            asec = v
+    return ak, asec, tgt, tgc
+
+def mandar_tg(token, chat_id, texto):
+    if not token or not chat_id:
+        return
+    try:
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        data = urllib.parse.urlencode({"chat_id": chat_id, "text": texto}).encode("utf-8")
+        req = urllib.request.Request(url, data=data, method="POST")
+        with urllib.request.urlopen(req, timeout=8) as r:
+            if r.status == 200:
+                print(" 📲 [TELEGRAM] Alerta en vivo enviada a tu celular.")
+    except Exception as e:
+        print(f" ⚠️ [TELEGRAM] Error: {e}")
+
+async def main_xray():
+    ak, asec, tgt, tgc = cargar_claves()
+    ex = ccxt.bybit({"apiKey": ak, "secret": asec, "enableRateLimit": True, "options": {"defaultType": "swap"}})
+    try:
+        posiciones = await ex.fetch_positions(None, {"settleCoin": "USDT"})
+        activas = [p for p in posiciones if float(p.get("contracts") or 0) > 0]
+        bal = await ex.fetch_balance()
+        usdt = bal.get("USDT", {})
+        tot = float(usdt.get("total") or 0.0)
+        lib = float(usdt.get("free") or 0.0)
+        print("--------------------------------------------------------------------------------")
+        print(f" ⛓️  RADAR TÁCTICO CHAIN-JAIL (verbot -x) | Balance UTA: {tot:.4f} USDT (Libre: {lib:.4f})")
+        print("--------------------------------------------------------------------------------")
+        if not activas:
+            print(" 🟢 Sin posiciones abiertas en Bybit (0 contratos corriendo).")
+            print("================================================================================")
+            if accion in ("status", "all"):
+                mandar_tg(tgt, tgc, f"⛓️ [RADAR CHAIN-JAIL v2.0]\nEstado: 0 contratos abiertos\nBalance UTA: {tot:.4f} USDT (Libre: {lib:.4f} USDT)\n⚙️ {cfg.TITULO_TELEGRAM_CANONICO}")
+            return
+
+        lineas_tg = [f"⛓️ [RADAR CHAIN-JAIL EN VIVO]\n💰 Balance UTA: {tot:.4f} USDT"]
+        for p in activas:
+            sym = p["symbol"]
+            side = p["side"].lower()
+            qty = float(p["contracts"])
+            ep = float(p.get("entryPrice") or 0.0)
+            mp = float(p.get("markPrice") or 0.0)
+            pnl_u = float(p.get("unrealizedPnl") or 0.0)
+            lev = float(p.get("leverage") or 3.0)
+            sl_b = (p.get("info") or {}).get("stopLoss") or "SIN SL"
+            pct = ((mp - ep) / ep if side == "long" else (ep - mp) / ep) if ep > 0 else 0.0
+            eslabon, piso_sug, _ = calcular_eslabon_chain_jail(max(0.0, pct))
+
+            if accion == "cerrar":
+                ords = await ex.fetch_open_orders(sym)
+                for o in ords:
+                    await ex.cancel_order(o["id"], sym)
+                lado_c = "buy" if side == "short" else "sell"
+                await ex.create_order(sym, "market", lado_c, qty, None, {"reduceOnly": True})
+                bal2 = await ex.fetch_balance()
+                tot2 = float((bal2.get("USDT") or {}).get("total") or tot)
+                print(f" 🟩 COBRO MANUAL CHAIN-JAIL EJECUTADO: {sym} [{side.upper()}] ({qty} contratos)")
+                print(f" 💵 Capturado: {pct*100:+.2f}% puro ({pnl_u:+.4f} USDT) | Nuevo Balance: {tot2:.4f} USDT")
+                print("================================================================================")
+                mandar_tg(
+                    tgt, tgc,
+                    f"💰 [COBRO MANUAL CHAIN-JAIL (verbot -x cerrar)]\n"
+                    f"Activo: {sym} [{side.upper()}] ({qty} contratos)\n"
+                    f"Precio: {ep} -> {mp} ({pct*100:+.2f}% | ROE {pct*lev*100:+.2f}%)\n"
+                    f"PnL Cobrado: {pnl_u:+.4f} USDT\n"
+                    f"Nuevo Balance UTA: {tot2:.4f} USDT\n"
+                    f"⚙️ {cfg.TITULO_TELEGRAM_CANONICO}"
+                )
+            else:
+                print(f" �� {sym} [{side.upper()}] | Contratos: {qty} | Entrada: {ep} -> Actual: {mp}")
+                print(f" 🔥 Ganancia Actual : {pct*100:+.2f}% puro ({pct*lev*100:+.2f}% ROE {lev:.0f}x) | {pnl_u:+.4f} USDT")
+                print(f" ⛓️ Eslabón Chain-Jail: {eslabon}/5 (Piso Eslabón: +{piso_sug*100:.2f}% | Meta Techo: +8.00%) | SL Bybit: {sl_b}")
+                print("================================================================================")
+                lineas_tg.append(
+                    f"🎯 {sym} [{side.upper()}] ({qty} contratos)\n"
+                    f"• Precio: {ep} -> {mp}\n"
+                    f"• Ganancia: {pct*100:+.2f}% (ROE {pct*lev*100:+.2f}%) | {pnl_u:+.4f} USDT\n"
+                    f"• Eslabón Chain-Jail: {eslabon}/5 (Piso +{piso_sug*100:.2f}% -> Techo +8.00%)\n"
+                    f"• SL en Bybit: {sl_b}"
+                )
+        if accion != "cerrar":
+            lineas_tg.append(f"⚙️ {cfg.TITULO_TELEGRAM_CANONICO}")
+            mandar_tg(tgt, tgc, "\n".join(lineas_tg))
+    finally:
+        await ex.close()
+
+asyncio.run(main_xray())
+XRAYEOF
             ;;
         -t|--telegram-last)
             "${PY}" - "${REPO}" << 'PYEOF' || true
