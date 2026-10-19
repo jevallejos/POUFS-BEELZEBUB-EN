@@ -229,10 +229,19 @@ class VentanaZ:
         else:
             acel_pct = acel_bruta
 
-        diffs_1 = [abs(math.log(pts[i] / pts[i - 1])) for i in range(1, n) if pts[i - 1] > 0]
-        diffs_4 = [abs(math.log(pts[i] / pts[i - 4])) for i in range(4, n) if pts[i - 4] > 0]
+        # Filtrar ticks planos consecutivos (150ms sin cambio en mid_price) para medir la rugosidad real
+        pts_activos = [pts[0]]
+        for p_val in pts[1:]:
+            if abs(p_val - pts_activos[-1]) > 1e-12:
+                pts_activos.append(p_val)
+        if len(pts_activos) < 8:
+            pts_activos = pts
+
+        na = len(pts_activos)
+        diffs_1 = [abs(math.log(pts_activos[i] / pts_activos[i - 1])) for i in range(1, na) if pts_activos[i - 1] > 0]
+        diffs_4 = [abs(math.log(pts_activos[i] / pts_activos[i - 4])) for i in range(4, na) if pts_activos[i - 4] > 0]
         m1 = (sum(diffs_1) / len(diffs_1)) if diffs_1 else 1e-6
-        m4 = (sum(diffs_4) / len(diffs_4)) if diffs_4 else (m1 * 1.9)
+        m4 = (sum(diffs_4) / len(diffs_4)) if diffs_4 else (m1 * 1.35)
 
         if m1 <= 1e-9 or m4 <= 1e-9:
             hurst = 0.45
@@ -468,10 +477,11 @@ class RadarVolatilidad:
         )
         ema_dist_req = float(params_clase["ema900_dist_min_pct"])
 
+        # Tunel Biclase inquebrantable: prohibido comprar sobre EMA900 o en micro-caidas superficiales
         es_z_extremo = tk.z_score <= -4.50
-        if tk.delta_p_pct > caida_min_req and not es_z_extremo:
+        if tk.delta_p_pct > caida_min_req:
             return None
-        if tk.ema900_dist_pct > ema_dist_req and not es_z_extremo:
+        if tk.ema900_dist_pct > ema_dist_req:
             return None
 
         if not spread_ok:
