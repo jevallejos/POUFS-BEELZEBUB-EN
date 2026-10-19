@@ -629,6 +629,71 @@ class GestorPosiciones:
         self._running = False
 
 
+def imprimir_status_cli_verbot() -> None:
+    """Imprime el resumen contable de la Caja Negra para 'verbot -s'."""
+    import json
+    stats_f = cfg.ROOT_DIR / cfg.ARCHIVO_STATS_JSONL
+    ops = [
+        json.loads(l)
+        for l in stats_f.read_text(encoding="utf-8").splitlines()
+        if l.strip()
+    ] if stats_f.exists() else []
+    ops = [x for x in ops if "ESCAPE_HUERFANA_BOOT" not in str(x.get("motivo", "")).upper()]
+    w = sum(1 for x in ops if float(x.get("pnl_usdt", 0)) >= 0)
+    l = len(ops) - w
+    s = sum(
+        1 for x in ops
+        if "SCRATCH" in str(x.get("motivo", "")).upper() and float(x.get("pnl_usdt", 0)) < 0
+    )
+    triz = sum(1 for x in ops if x.get("cosecha_triz_50"))
+    pnl = sum(float(x.get("pnl_usdt", 0)) for x in ops)
+    wr = (w / len(ops) * 100.0) if ops else 0.0
+    wr_ef = (w / max(1, len(ops) - s) * 100.0) if ops else 0.0
+    print("--------------------------------------------------------------------------------")
+    print(f" 📊 CAJA NEGRA: {len(ops)} Trades (W: {w} | L: {l} | Scratch 18s: {s} | Cosecha 50%: {triz})")
+    print(f" 🎯 Win Rate  : Clasico {wr:.1f}% | Efectivo (sin Scratch) {wr_ef:.1f}% | PnL Neto: {pnl:+.4f} USDT")
+    print("--------------------------------------------------------------------------------")
+    if ops:
+        for op in ops[-10:]:
+            pnl_u = float(op.get("pnl_usdt", 0))
+            mot = str(op.get("motivo", ""))
+            ic = "🟩" if pnl_u >= 0 else ("🟨" if "SCRATCH" in mot.upper() else "🔴")
+            ts_s = str(op.get("timestamp", ""))[:19]
+            sym_s = str(op.get("symbol", "")).ljust(17)
+            pct_s = float(op.get("pnl_percentage", 0))
+            print(f"  {ic} {ts_s} | {sym_s} | {pct_s:+6.2f}% ({pnl_u:+.4f} USDT) | {mot}")
+    else:
+        print("  ⏳ Esperando el primer disparo confirmado...")
+    print("================================================================================")
+
+
+async def reenviar_ultimo_cierre_cli() -> None:
+    """Reenvia manualmente a Telegram el ultimo cierre registrado ('verbot -t')."""
+    import json
+    stats_f = cfg.ROOT_DIR / cfg.ARCHIVO_STATS_JSONL
+    if not stats_f.exists():
+        print("  ℹ️ Aun no hay cierres registrados en tribrain_stats_v1.jsonl.")
+        return
+    lineas = [l for l in stats_f.read_text(encoding="utf-8").splitlines() if l.strip()]
+    if not lineas:
+        print("  ℹ️ Archivo tribrain_stats_v1.jsonl vacio.")
+        return
+    u = json.loads(lineas[-1])
+    TELEMETRIA_TG.cache_dedup.clear()
+    ok = await TELEMETRIA_TG.enviar_cierre_garantizado(
+        symbol=u["symbol"],
+        side=u.get("side", "long"),
+        pnl_pct=float(u["pnl_percentage"]),
+        pnl_usdt=float(u["pnl_usdt"]),
+        hold_seg=float(u["hold_seg"]),
+        motivo=str(u["motivo"]),
+        entry_price=float(u.get("entry_price", 0)),
+        exit_price=float(u.get("exit_price", 0)),
+        cosecha_50_previa=bool(u.get("cosecha_triz_50", False)),
+    )
+    print(f"  ✅ Reenvio manual a Telegram del ultimo cierre ({u['symbol']}): {ok}")
+
+
 async def ejecutar_radar_xray_cli(accion: str = "status") -> None:
     """
     Comando tactico 'verbot -x' y 'verbot -x cerrar':
@@ -660,7 +725,7 @@ async def ejecutar_radar_xray_cli(accion: str = "status") -> None:
         print("--------------------------------------------------------------------------------")
 
         if not activas:
-            print(" 🟢 Sin posiciones abiertas en Bybit en este instante (0 contratos corriendo).")
+            print(" �� Sin posiciones abiertas en Bybit en este instante (0 contratos corriendo).")
             print("================================================================================")
             msg_vacio = nl.join([
                 "⛓️ [RADAR CHAIN-JAIL v2.0 EN VIVO]",
