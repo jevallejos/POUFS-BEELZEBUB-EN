@@ -8,8 +8,9 @@
 #   2. Instala tribrain-eval-oos.service con aislamiento de CPU/IO (Nice=15,
 #      IOSchedulingClass=best-effort, IOSchedulingPriority=7).
 #   3. Instala y activa tribrain-eval-oos.timer (00:00, 08:00 y 16:00 UTC).
-#   4. Instala el comando de auditoria desacoplado 'verbot' (-s, -h, -q, -t)
-#      en ~/.bashrc con blindaje local contra SIGINT (Ctrl+C).
+#   4. Instala los comandos blindados 'verbot' (-s, -h, -h trades, -q, -t) y
+#      'tmuxro' en ~/.bashrc con 'set +e' y retorno 0 garantizado para que
+#      presionar Ctrl+C o usar tmux JAMAS cierre la consola SSH remota.
 # ==============================================================================
 set -euo pipefail
 
@@ -77,7 +78,7 @@ sudo systemctl restart "${SERVICE_NAME}.timer"
 echo "✅ [SYSTEMD OK] Timer ${SERVICE_NAME}.timer habilitado y activo:"
 systemctl list-timers "${SERVICE_NAME}.timer" --no-pager || true
 
-# 4. Instalar panel CLI 'verbot' en ~/.bashrc de forma limpia e idempotente
+# 4. Instalar panel CLI 'verbot' y 'tmuxro' en ~/.bashrc con blindaje anti-cierre SSH (set +e)
 python3 - "${REPO_DIR}" << 'PYEOF'
 import pathlib, re, sys
 
@@ -94,10 +95,44 @@ txt = re.sub(
 )
 
 bloque_verbot = f"""# === INICIO PANEL VERBOT TRI-BRAIN-SNIPER ===
+# Desactivar errexit (set -e) en la consola interactiva SSH para evitar cierres de sesion
+set +e 2>/dev/null || true
+
+tmuxro() {{
+    set +e
+    echo "🔒 Entrando a tmux en MODO SOLO LECTURA (-r). Para salir sin apagar el bot presiona: Ctrl+B y luego d"
+    sleep 1
+    command tmux attach -t demonio_hft -r || true
+    return 0
+}}
+
 verbot() {{
+    set +e
     local REPO="{repo_dir}"
     local PY="${{REPO}}/venv/bin/python"
+    local LOCK="${{REPO}}/.tribrain.lock"
+    local LOG="${{REPO}}/bot_hft.log"
+    local LOG_H="${{REPO}}/bot_hft_h.log"
     local MODO="${{1:-live}}"
+    local SUBMODO="${{2:-all}}"
+
+    echo "================================================================================"
+    echo " 👁️  PANEL FORENSE EN TIEMPO REAL — TRI-BRAIN-SNIPER V1.0 [CHRONOS-TRIZ]"
+    echo "================================================================================"
+
+    if [ -f "${{LOCK}}" ]; then
+        local PID
+        PID=$(cat "${{LOCK}}" 2>/dev/null | tr -d '[:space:]' || true)
+        if [ -n "${{PID}}" ] && kill -0 "${{PID}}" 2>/dev/null; then
+            local PS_INFO
+            PS_INFO=$(ps -p "${{PID}}" -o pid=,etime=,rss=,%cpu= 2>/dev/null | awk '{{printf "PID: %s | Uptime: %s | RAM: %.1f MB | CPU: %s%%", $1, $2, $3/1024, $4}}' || true)
+            echo " 🟢 MOTOR EN VIVO -> ${{PS_INFO}}"
+        else
+            echo " 🔴 ALERTA: Archivo .tribrain.lock presente (PID ${{PID}}), pero el proceso no responde."
+        fi
+    else
+        echo " ⚪ MOTOR DETENIDO: No existe archivo .tribrain.lock activo."
+    fi
 
     case "${{MODO}}" in
         -s|--status)
@@ -106,6 +141,7 @@ import json, pathlib
 repo = pathlib.Path('${{REPO}}')
 stats_f = repo / 'tribrain_stats_v1.jsonl'
 ops = [json.loads(l) for l in stats_f.read_text(encoding='utf-8').splitlines() if l.strip()] if stats_f.exists() else []
+ops = [x for x in ops if 'ESCAPE_HUERFANA_BOOT' not in str(x.get('motivo', '')).upper()]
 w = sum(1 for x in ops if float(x.get('pnl_usdt', 0)) >= 0)
 l = len(ops) - w
 s = sum(1 for x in ops if 'SCRATCH' in str(x.get('motivo', '')).upper() and float(x.get('pnl_usdt', 0)) < 0)
@@ -113,43 +149,46 @@ triz = sum(1 for x in ops if x.get('cosecha_triz_50'))
 pnl = sum(float(x.get('pnl_usdt', 0)) for x in ops)
 wr = (w / len(ops) * 100.0) if ops else 0.0
 wr_ef = (w / max(1, len(ops) - s) * 100.0) if ops else 0.0
-print('==================================================================')
-print('📊 ESTADO CONTABLE TRI-BRAIN-SNIPER V1.0 [CHRONOS-TRIZ]')
-print('==================================================================')
-print(f'  Trades Totales : {{len(ops)}} (W: {{w}} | L: {{l}} | Scratch 18s: {{s}} | Cosecha 50%: {{triz}})')
-print(f'  Win Rate       : Clasico {{wr:.1f}}% | Efectivo (sin Scratch) {{wr_ef:.1f}}%')
-print(f'  PnL Acumulado  : {{pnl:+.4f}} USDT')
-print('------------------------------------------------------------------')
-for op in ops[-8:]:
-    ic = '🟩' if float(op.get('pnl_usdt', 0)) >= 0 else ('🟨' if 'SCRATCH' in str(op.get('motivo', '')).upper() else '🔴')
-    print(f\"  {{ic}} {{op.get('timestamp','')[:19]}} | {{op.get('symbol',''):<17}} | {{float(op.get('pnl_percentage',0)):+6.2f}}% ({{float(op.get('pnl_usdt',0)):+.4f}} USDT) | {{op.get('motivo','')}}\")
-print('==================================================================')
-"
+print('--------------------------------------------------------------------------------')
+print(f' �� CAJA NEGRA: {{len(ops)}} Trades (W: {{w}} | L: {{l}} | Scratch 18s: {{s}} | Cosecha 50%: {{triz}})')
+print(f' 🎯 Win Rate  : Clasico {{wr:.1f}}% | Efectivo (sin Scratch) {{wr_ef:.1f}}% | PnL Neto: {{pnl:+.4f}} USDT')
+print('--------------------------------------------------------------------------------')
+if ops:
+    for op in ops[-10:]:
+        ic = '🟩' if float(op.get('pnl_usdt', 0)) >= 0 else ('🟨' if 'SCRATCH' in str(op.get('motivo', '')).upper() else '🔴')
+        print(f\"  {{ic}} {{str(op.get('timestamp',''))[:19]}} | {{str(op.get('symbol','')):<17}} | {{float(op.get('pnl_percentage',0)):+6.2f}}% ({{float(op.get('pnl_usdt',0)):+.4f}} USDT) | {{op.get('motivo','')}}\")
+else:
+    print('  ⏳ Esperando el primer disparo confirmado bajo las 4 Leyes de CHRONOS-TRIZ...')
+print('================================================================================')
+" || true
             ;;
         -h|--history)
-            if [ -f "${{REPO}}/bot_hft_h.log" ]; then
-                tail -n 60 "${{REPO}}/bot_hft_h.log"
+            if [ ! -f "${{LOG_H}}" ]; then
+                echo "Aun no existe ${{LOG_H}}"
+            elif [ "${{SUBMODO}}" = "trades" ]; then
+                echo " 🎯 FILTRO ACTIVO: MOSTRANDO SOLO DISPAROS, ÓRDENES, COSECHAS Y CIERRES HISTÓRICOS"
+                echo "--------------------------------------------------------------------------------"
+                grep -E "INICIANDO CEREBRO|\[RADAR\]|Orden |Posición|Trinquete|Cosecha|Trailing|MAKER-SCRATCH|CIERRE|no llenada" "${{LOG_H}}" | tail -n 50 || true
             else
-                echo "Aun no existe bot_hft_h.log"
+                tail -n 60 "${{LOG_H}}" || true
             fi
             ;;
         -q|--quantum)
-            "${{PY}}" "${{REPO}}/evaluador_cuantico_oos.py" --repo "${{REPO}}" --horas 8 --telegram
-            [ -f "${{REPO}}/reporte_cuantico_oos.md" ] && cat "${{REPO}}/reporte_cuantico_oos.md"
+            "${{PY}}" "${{REPO}}/evaluador_cuantico_oos.py" --repo "${{REPO}}" --horas 8 --telegram || true
+            [ -f "${{REPO}}/reporte_cuantico_oos.md" ] && cat "${{REPO}}/reporte_cuantico_oos.md" || true
             ;;
         -t|--telegram-last)
             "${{PY}}" -c "
-import asyncio, json, pathlib
-import sys
+import asyncio, json, pathlib, sys
 sys.path.insert(0, '${{REPO}}')
 from telemetria_telegram import TELEMETRIA_TG
 stats_f = pathlib.Path('${{REPO}}/tribrain_stats_v1.jsonl')
 if not stats_f.exists():
-    print('No hay operaciones registradas aun en tribrain_stats_v1.jsonl')
+    print('  ℹ️ Aun no hay cierres registrados en tribrain_stats_v1.jsonl.')
 else:
     lineas = [l for l in stats_f.read_text(encoding='utf-8').splitlines() if l.strip()]
     if not lineas:
-        print('Archivo tribrain_stats_v1.jsonl vacio.')
+        print('  ℹ️ Archivo tribrain_stats_v1.jsonl vacio.')
     else:
         u = json.loads(lineas[-1])
         TELEMETRIA_TG.cache_dedup.clear()
@@ -160,20 +199,30 @@ else:
             entry_price=float(u.get('entry_price',0)), exit_price=float(u.get('exit_price',0)),
             cosecha_50_previa=bool(u.get('cosecha_triz_50',False))
         ))
-        print(f'Reenvio manual a Telegram del ultimo cierre ({{u[\"symbol\"]}}): {{ok}}')
-"
+        print(f'  ✅ Reenvio manual a Telegram del ultimo cierre ({{u[\"symbol\"]}}): {{ok}}')
+" || true
             ;;
         *)
-            echo "📡 Monitoreando bot_hft.log en vivo (Presiona Ctrl+C para salir sin afectar al demonio)..."
-            (trap 'exit 0' INT; tail -n 45 -f "${{REPO}}/bot_hft.log")
+            echo "--------------------------------------------------------------------------------"
+            echo " 🛡️  MODO AISLADO ACTIVO: Presiona [Ctrl + C] para salir de la vista"
+            echo "    y volver al prompt SSH sin apagar el bot ni cerrar tu consola."
+            echo "================================================================================"
+            if [ -f "${{LOG}}" ]; then
+                (trap 'exit 0' INT TERM; tail -n 40 -f "${{LOG}}" || true) || true
+            else
+                echo "Aun no existe ${{LOG}}"
+            fi
+            echo ""
+            echo "✅ Vista en vivo cerrada de forma segura (El demonio sigue operando en segundo plano)."
             ;;
     esac
+    return 0
 }}
 # === FIN PANEL VERBOT TRI-BRAIN-SNIPER ===
 """
 
 rc_path.write_text(txt.rstrip() + "\n\n" + bloque_verbot, encoding="utf-8")
-print("✅ [VERBOT CLI OK] Comandos instalados en ~/.bashrc: verbot, verbot -s, verbot -h, verbot -q, verbot -t")
+print("✅ [VERBOT & TMUXRO OK] Comandos blindados contra cierre de SSH instalados en ~/.bashrc.")
 PYEOF
 
 echo "=================================================================="
