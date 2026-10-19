@@ -279,7 +279,7 @@ class EjecutorSniper:
 
             await asyncio.sleep(paso_poll)
             try:
-                estado_ord = await self.exchange.fetch_order(order_id, symbol)
+                estado_ord = await self.exchange.fetch_order(order_id, symbol, {"acknowledged": True})
                 if estado_ord:
                     status_ord = str(estado_ord.get("status") or status_ord).lower()
                     qty_llenada = float(estado_ord.get("filled") or qty_llenada)
@@ -288,6 +288,19 @@ class EjecutorSniper:
                         precio_fill = p_avg
                     if status_ord == "closed" or qty_llenada >= qty:
                         break
+            except TypeError:
+                try:
+                    estado_ord = await self.exchange.fetch_order(order_id, symbol)
+                    if estado_ord:
+                        status_ord = str(estado_ord.get("status") or status_ord).lower()
+                        qty_llenada = float(estado_ord.get("filled") or qty_llenada)
+                        p_avg = float(estado_ord.get("average") or estado_ord.get("price") or 0.0)
+                        if p_avg > 0.0:
+                            precio_fill = p_avg
+                        if status_ord == "closed" or qty_llenada >= qty:
+                            break
+                except Exception:
+                    pass
             except Exception:
                 pass
 
@@ -298,12 +311,42 @@ class EjecutorSniper:
             except Exception:
                 pass
             try:
-                estado_final = await self.exchange.fetch_order(order_id, symbol)
+                estado_final = await self.exchange.fetch_order(order_id, symbol, {"acknowledged": True})
                 if estado_final:
                     qty_llenada = max(qty_llenada, float(estado_final.get("filled") or 0.0))
                     p_avg = float(estado_final.get("average") or 0.0)
                     if p_avg > 0.0:
                         precio_fill = p_avg
+            except Exception:
+                pass
+
+        # 6.5 Verificacion Fisica en Bybit UTA via fetch_positions (Fuente de Verdad Absoluta)
+        if qty_llenada <= 0.0 and hasattr(self.exchange, "fetch_positions"):
+            try:
+                pos_list = await self.exchange.fetch_positions([symbol])
+                for p_item in (pos_list or []):
+                    if str(p_item.get("symbol") or "") == symbol:
+                        c_open = float(p_item.get("contracts") or 0.0)
+                        if c_open > 0.0:
+                            qty_llenada = c_open
+                            ep_open = float(p_item.get("entryPrice") or p_item.get("info", {}).get("avgPrice") or 0.0)
+                            if ep_open > 0.0:
+                                precio_fill = ep_open
+                            break
+            except TypeError:
+                try:
+                    pos_list = await self.exchange.fetch_positions()
+                    for p_item in (pos_list or []):
+                        if str(p_item.get("symbol") or "") == symbol:
+                            c_open = float(p_item.get("contracts") or 0.0)
+                            if c_open > 0.0:
+                                qty_llenada = c_open
+                                ep_open = float(p_item.get("entryPrice") or p_item.get("info", {}).get("avgPrice") or 0.0)
+                                if ep_open > 0.0:
+                                    precio_fill = ep_open
+                                break
+                except Exception:
+                    pass
             except Exception:
                 pass
 
