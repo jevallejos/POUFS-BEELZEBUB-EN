@@ -627,3 +627,105 @@ class GestorPosiciones:
 
     def detener(self) -> None:
         self._running = False
+
+
+async def ejecutar_radar_xray_cli(accion: str = "status") -> None:
+    """
+    Comando tactico 'verbot -x' y 'verbot -x cerrar':
+      - 'status' / 'all': Muestra en consola el estado Chain-Jail en vivo y envia
+        reporte instantaneo a Telegram sin cerrar la posicion.
+      - 'cerrar': Cancela ordenes abiertas, liquida el 100% de contratos abiertos
+        a mercado con reduceOnly=True y envia recibo de cobro a Telegram.
+    """
+    import ccxt.async_support as ccxt
+    nl = chr(10)
+    modo = str(accion or "status").strip().lower()
+    ex = ccxt.bybit({
+        "apiKey": cfg.BYBIT_API_KEY,
+        "secret": cfg.BYBIT_API_SECRET,
+        "enableRateLimit": True,
+        "options": {"defaultType": "swap", "recvWindow": 15000},
+    })
+    try:
+        await ex.load_markets()
+        posiciones = await ex.fetch_positions(None, {"settleCoin": "USDT"})
+        activas = [p for p in (posiciones or []) if float(p.get("contracts") or 0.0) > 0.0]
+        bal = await ex.fetch_balance()
+        usdt = (bal or {}).get("USDT") or {}
+        tot = float(usdt.get("total") or 0.0)
+        lib = float(usdt.get("free") or tot)
+
+        print("--------------------------------------------------------------------------------")
+        print(f" ⛓️  RADAR TÁCTICO CHAIN-JAIL (verbot -x) | Balance UTA: {tot:.4f} USDT (Libre: {lib:.4f})")
+        print("--------------------------------------------------------------------------------")
+
+        if not activas:
+            print(" 🟢 Sin posiciones abiertas en Bybit en este instante (0 contratos corriendo).")
+            print("================================================================================")
+            msg_vacio = nl.join([
+                "⛓️ [RADAR CHAIN-JAIL v2.0 EN VIVO]",
+                "• Estado: Sin posiciones abiertas (0 contratos)",
+                f"• Balance UTA: {tot:.4f} USDT (Libre: {lib:.4f} USDT)",
+            ])
+            ok_tg = await TELEMETRIA_TG.enviar_mensaje_sistema(msg_vacio)
+            print(f" 📲 [TELEGRAM] Reporte de estado enviado a tu celular: {ok_tg}")
+            return
+
+        lineas_tg = [
+            "⛓️ [RADAR CHAIN-JAIL v2.0 EN VIVO]",
+            f"💰 Balance UTA: {tot:.4f} USDT",
+        ]
+        for p in activas:
+            sym = str(p.get("symbol") or "")
+            side = str(p.get("side") or "long").lower()
+            qty = float(p.get("contracts") or 0.0)
+            ep = float(p.get("entryPrice") or 0.0)
+            mp = float(p.get("markPrice") or ep)
+            pnl_u = float(p.get("unrealizedPnl") or 0.0)
+            lev = float(p.get("leverage") or cfg.APALANCAMIENTO_BASE)
+            sl_b = (p.get("info") or {}).get("stopLoss") or "SIN SL"
+            pct = ((mp - ep) / ep if side == "long" else (ep - mp) / ep) if ep > 0 else 0.0
+            eslabon, piso_sug, _ = calcular_eslabon_chain_jail(max(0.0, pct))
+
+            if modo == "cerrar":
+                try:
+                    ords = await ex.fetch_open_orders(sym)
+                    for o in (ords or []):
+                        await ex.cancel_order(o["id"], sym)
+                except Exception:
+                    pass
+                lado_c = "buy" if side == "short" else "sell"
+                await ex.create_order(sym, "market", lado_c, qty, None, {"reduceOnly": True})
+                bal2 = await ex.fetch_balance()
+                tot2 = float(((bal2 or {}).get("USDT") or {}).get("total") or tot)
+                print(f" 🟩 COBRO MANUAL CHAIN-JAIL EJECUTADO: {sym} [{side.upper()}] ({qty} contratos)")
+                print(f" 💵 Ganancia Capturada: {pct*100:+.2f}% puro ({pnl_u:+.4f} USDT) | Nuevo Balance: {tot2:.4f} USDT")
+                print("================================================================================")
+                msg_cierre = nl.join([
+                    "💰 [COBRO MANUAL CHAIN-JAIL (verbot -x cerrar)]",
+                    f"• Activo: {sym} [{side.upper()}] ({qty} contratos)",
+                    f"• Recorrido: {ep} -> {mp} ({pct*100:+.2f}% puro | ROE {pct*lev*100:+.2f}%)",
+                    f"• PnL Capturado: {pnl_u:+.4f} USDT",
+                    f"• Nuevo Balance Consolidado: {tot2:.4f} USDT",
+                ])
+                ok_tg = await TELEMETRIA_TG.enviar_mensaje_sistema(msg_cierre)
+                print(f" 📲 [TELEGRAM] Recibo de cobro manual enviado: {ok_tg}")
+            else:
+                print(f" 🎯 ACTIVO      : {sym} [{side.upper()}] ({qty} contratos)")
+                print(f" 📈 PRECIO      : Entrada {ep} -> Marca Actual {mp}")
+                print(f" 🔥 GANANCIA    : {pct*100:+.2f}% puro ({pct*lev*100:+.2f}% ROE {lev:.0f}x) | {pnl_u:+.4f} USDT")
+                print(f" ⛓️ ESLABÓN     : {eslabon}/5 (Piso Eslabón: +{piso_sug*100:.2f}% -> Meta: +8.00%) | SL Bybit: {sl_b}")
+                print("================================================================================")
+                lineas_tg.extend([
+                    f"🎯 {sym} [{side.upper()}] ({qty} contratos)",
+                    f"• Precio: {ep} -> {mp}",
+                    f"• Ganancia: {pct*100:+.2f}% (ROE {pct*lev*100:+.2f}%) | {pnl_u:+.4f} USDT",
+                    f"• Eslabón Chain-Jail: {eslabon}/5 (Piso +{piso_sug*100:.2f}% -> Techo +8.00%)",
+                    f"• SL en Bybit: {sl_b}",
+                ])
+
+        if modo != "cerrar":
+            ok_tg = await TELEMETRIA_TG.enviar_mensaje_sistema(nl.join(lineas_tg))
+            print(f" 📲 [TELEGRAM] Alerta en vivo enviada a tu celular: {ok_tg}")
+    finally:
+        await ex.close()
