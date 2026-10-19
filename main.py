@@ -306,7 +306,7 @@ class MotorTriBrainSniper:
         """Corrutina dedicada para recibir el libro de ordenes L2 a 6.6 Hz de un activo."""
         while self._running and self.exchange is not None:
             try:
-                ob = await self.exchange.watch_order_book(symbol, limit=25)
+                ob = await self.exchange.watch_order_book(symbol, limit=50)
                 bids = (ob or {}).get("bids") or []
                 asks = (ob or {}).get("asks") or []
                 if bids and asks:

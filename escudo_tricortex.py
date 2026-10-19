@@ -284,6 +284,14 @@ class OrquestadorTriCortex:
                                     aprobados_cnt += 1
                                 continue
                             sugerencia = str(mapa_ia.get(corto, "LONG_ONLY")).upper()
+                            tk_sym = ESTADO_RAM.ticks_ram.get(sym)
+                            toxicidad_fisica = (
+                                tk_sym is not None
+                                and tk_sym.bid > 0.0
+                                and (tk_sym.vpin >= 0.48 or tk_sym.delta_p_pct <= -0.045)
+                            )
+                            if sugerencia == "VETO_TOXIC" and not toxicidad_fisica:
+                                sugerencia = "LONG_ONLY"
                             if sugerencia in ("LONG_ONLY", "SHORT_ONLY", "EXTREME_Z_ONLY", "VETO_TOXIC"):
                                 perm.modo_regimen = sugerencia
                                 perm.aprobado_groq = sugerencia != "VETO_TOXIC"
