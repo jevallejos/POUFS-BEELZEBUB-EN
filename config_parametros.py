@@ -54,7 +54,7 @@ GEMINI_API_KEY: str = (
     or os.environ.get("GOOGLE_API_KEY")
     or ""
 ).strip()
-NVIDIA_API_KEY: str = os.environ.get("NVIDIA_API_KEY", "").strip()
+NVIDIA_API_KEY: str = (os.getenv("NVIDIA_API_KEY") or os.getenv("NVIDIA_NIM_API_KEY") or "").strip()
 
 TELEGRAM_BOT_TOKEN: str = (
     os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -70,7 +70,7 @@ TELEGRAM_CHAT_ID: str = (
 # ==============================================================================
 # 3. CAPITAL BASE, APALANCAMIENTO Y DIMENSIONAMIENTO DE KELLY CONVEXO
 # ==============================================================================
-CAPITAL_BASE_USDT: float = 9.8662
+CAPITAL_BASE_USDT: float = float(os.getenv("CAPITAL_BASE_USDT", "9.8662"))
 APALANCAMIENTO_BASE: int = 3               # Apalancamiento cruzado UTA (3x)
 MAX_POSICIONES_SIMULTANEAS: int = 1        # Single-Slot Mutex (100% foco y cero colision de margen)
 

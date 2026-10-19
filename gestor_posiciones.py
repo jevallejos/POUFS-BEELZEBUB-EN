@@ -478,20 +478,23 @@ class GestorPosiciones:
                 return "TRINQUETE_RATCHET_MAKER"
 
         # ======================================================================
-        # 3. LEY 2 (CHRONOS-TRIZ): EVACUACION MAKER-SCRATCH A LOS 18 SEGUNDOS
+        # 3. LEY 2 (CHRONOS-TRIZ): EVACUACION MAKER-SCRATCH (VENTANA 18S A 65S)
         # ======================================================================
-        if edad_seg >= cfg.MAKER_SCRATCH_TIEMPO_SEG and not pos.scratch_18s_evaluado:
-            pos.scratch_18s_evaluado = True
+        if (
+            cfg.MAKER_SCRATCH_TIEMPO_SEG <= edad_seg <= 65.0
+            and not pos.scratch_18s_evaluado
+            and not pos.cosecha_50_ejecutada
+        ):
             flujo_5s_adverso = (
                 (pos.side == "long" and tk.ofi_5s <= cfg.MAKER_SCRATCH_OFI_UMBRAL)
                 or (pos.side == "short" and tk.ofi_5s >= abs(cfg.MAKER_SCRATCH_OFI_UMBRAL))
             )
             if (
-                not pos.cosecha_50_ejecutada
-                and pos.max_pnl_pct_alcanzado <= cfg.MAKER_SCRATCH_PNL_MAX_PCT
+                pos.max_pnl_pct_alcanzado <= cfg.MAKER_SCRATCH_PNL_MAX_PCT
                 and flujo_5s_adverso
-                and pnl_bruto_pct >= cfg.MAKER_SCRATCH_MAX_LOSS_PCT
+                and cfg.MAKER_SCRATCH_MAX_LOSS_PCT <= pnl_bruto_pct < 0.0
             ):
+                pos.scratch_18s_evaluado = True
                 pos.scratch_18s_activo = True
                 precio_scratch = calcular_precio_salida_maker_seguro(
                     pos.side, pos.entry_price, best_bid, best_ask, tick_size, permitir_scratch=True

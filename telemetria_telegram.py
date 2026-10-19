@@ -195,9 +195,9 @@ class GestorTelemetriaTelegram:
 
         texto = (
             f"💎 [COSECHA 50% TRIZ + BE ARMADO] {symbol} ({side.upper()})\n"
-            f" Lote Cosechado: {qty_vendida} contratos ({entry_price} -> {exit_price})\n"
-            f" Caja Asegurada: {pnl_parcial_pct:+.2f} % ({pnl_parcial_usdt:+.4f} USDT)\n"
-            f" Restante 50%: Protegido en Trinquete BE (+0.12% neto) y Trailing libre.\n"
+            f"Lote Cosechado: {qty_vendida} contratos ({entry_price} -> {exit_price})\n"
+            f"Caja Asegurada: {pnl_parcial_pct:+.2f} % ({pnl_parcial_usdt:+.4f} USDT)\n"
+            f"Restante 50%: Modo FREE-RUNNER activo (sin límite de tiempo, SL +0.05%).\n"
             f"⚙️ {cfg.TITULO_TELEGRAM_CANONICO}"
         )
         return await self._despachar_http_telegram(texto, "COSECHA_50_TRIZ", symbol)

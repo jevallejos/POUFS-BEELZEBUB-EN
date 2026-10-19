@@ -594,6 +594,8 @@ class RadarVolatilidad:
             if sobreextendido_pump
             else abs(tk.z_score)
         )
+        if z_ref_short < 2.50:
+            return None
 
         t0_ram = time.perf_counter()
         ok_ram, mot_ram, mult_gemini = ESTADO_RAM.consultar_permiso_o1(symbol, "short", z_ref_short, t_now)

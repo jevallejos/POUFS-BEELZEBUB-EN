@@ -292,6 +292,13 @@ class OrquestadorTriCortex:
                             )
                             if sugerencia == "VETO_TOXIC" and not toxicidad_fisica:
                                 sugerencia = "LONG_ONLY"
+                            presion_bajista_real = (
+                                tk_sym is not None
+                                and tk_sym.bid > 0.0
+                                and (tk_sym.ema900_dist_pct <= -0.0040 or tk_sym.delta_p_pct <= -0.0040)
+                            )
+                            if sugerencia == "SHORT_ONLY" and not presion_bajista_real:
+                                sugerencia = "LONG_ONLY"
                             if sugerencia in ("LONG_ONLY", "SHORT_ONLY", "EXTREME_Z_ONLY", "VETO_TOXIC"):
                                 perm.modo_regimen = sugerencia
                                 perm.aprobado_groq = sugerencia != "VETO_TOXIC"

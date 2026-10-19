@@ -12,9 +12,7 @@ para comunicar modulos internos.
 """
 from __future__ import annotations
 
-import asyncio
 import os
-import pathlib
 import sys
 import time
 from dataclasses import asdict, dataclass, field
