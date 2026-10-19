@@ -28,7 +28,6 @@ from escudo_tricortex import ESCUDO_TRICORTEX
 
 # Pesos exponenciales pre-calculados para los primeros 5 niveles del libro L2
 _PESOS_ML_OFI: Tuple[float, ...] = tuple(math.exp(-0.35 * i) for i in range(5))
-_SUMA_PESOS_ML_OFI: float = sum(_PESOS_ML_OFI)
 
 
 # ==============================================================================
@@ -304,7 +303,6 @@ class RadarVolatilidad:
     ) -> None:
         self.callback_disparo = callback_disparo
         self.callback_evacuacion_macro = callback_evacuacion_macro
-        self._running: bool = False
         todos = tuple(cfg.PARES_CAMPEONES_ALFA) + (cfg.SIMBOLO_CENTINELA_MACRO,)
         self.ventanas: Dict[str, VentanaZ] = {sym: VentanaZ() for sym in todos}
         self._ultimo_log_alerta_ts: Dict[str, float] = {}
@@ -478,7 +476,6 @@ class RadarVolatilidad:
         ema_dist_req = float(params_clase["ema900_dist_min_pct"])
 
         # Tunel Biclase inquebrantable: prohibido comprar sobre EMA900 o en micro-caidas superficiales
-        es_z_extremo = tk.z_score <= -4.50
         if tk.delta_p_pct > caida_min_req:
             return None
         if tk.ema900_dist_pct > ema_dist_req:
@@ -498,7 +495,7 @@ class RadarVolatilidad:
             )
             return None
 
-        if tk.hurst > cfg.HURST_MAX_ENTRADA and not es_z_extremo:
+        if tk.hurst > cfg.HURST_MAX_ENTRADA:
             self._log_alerta_throttled(
                 f"HURST:{symbol}",
                 f"⚠️ [FILTRO HURST] {symbol} persistencia tendencial alta (H={tk.hurst:.3f} > {cfg.HURST_MAX_ENTRADA:.3f}). Abortando.",
@@ -582,7 +579,7 @@ class RadarVolatilidad:
         en_short_only = perm is not None and perm.modo_regimen == "SHORT_ONLY"
 
         sobreextendido_pump = (t_now < vz.vigilancia_short_hasta_ts) and (tk.ema900_dist_pct >= 0.0035)
-        rebote_en_tendencia_bajista = en_short_only and (tk.ema900_dist_pct >= cfg.SHORT_REBOTE_DEBIL_MIN_EMA_PCT)
+        rebote_en_tendencia_bajista = en_short_only and (tk.ema900_dist_pct >= cfg.SHORT_REBOTE_DEBIL_MIN_EMA_PCT) and (tk.delta_p_pct <= -0.0010)
 
         if not (sobreextendido_pump or rebote_en_tendencia_bajista):
             return None

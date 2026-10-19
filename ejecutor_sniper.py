@@ -379,6 +379,10 @@ class EjecutorSniper:
             volatilidad_entry=volatilidad,
         )
 
+        # Ajustar el margen bloqueado en RAM exactamente a los contratos llenados (qty_llenada)
+        margen_llenado = round((qty_llenada * precio_fill) / cfg.APALANCAMIENTO_BASE, 4)
+        ESTADO_RAM.margen_bloqueado_usdt = margen_llenado
+        ESTADO_RAM.margen_libre_usdt = max(0.0, ESTADO_RAM.patrimonio_total_usdt - margen_llenado)
         ESTADO_RAM.orden_en_vuelo_symbol = None
         ESTADO_RAM.posiciones_activas[symbol] = pos
 

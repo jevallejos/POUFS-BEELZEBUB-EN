@@ -102,12 +102,8 @@ class PosicionActiva:
     trinquete_ratchet_activo: bool = False
     trailing_activo: bool = False
 
-    # Control de orden Limit PostOnly de salida en vuelo (PFQI)
-    orden_salida_id: Optional[str] = None
-    orden_salida_precio: float = 0.0
-    orden_salida_qty: float = 0.0
-    orden_salida_ts: float = 0.0
-    orden_salida_tipo: str = ""             # "COSECHA_50" | "RATCHET" | "SCRATCH_18S" | "ESCUDO_FASE2"
+    # Control de sincronizacion de Stop-Loss escalonado en servidor Bybit (Free-Runner 50%)
+    sl_bybit_ultimo_sync_price: float = 0.0
 
     # Cerrojo atomico anti-doble-contabilizacion
     cerrada: bool = False
@@ -226,8 +222,6 @@ class EstadoGlobalRAM:
         # Pares excluidos dinamicamente por filtro de lote minimo indivisible
         self.pares_excluidos_lote: set[str] = set()
 
-        # Cola asincrona de eventos para desacoplar modulos sin tocar print()
-        self.cola_eventos: asyncio.Queue[Dict[str, Any]] = asyncio.Queue(maxsize=1024)
 
     def consultar_permiso_o1(
         self,

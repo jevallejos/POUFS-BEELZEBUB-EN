@@ -1,4 +1,4 @@
-# ⚡ Tri-Brain-Sniper (Emperor Time) v1.0 — Estrategia `CHRONOS-TRIZ`
+# ⚡ Tri-Brain-Sniper (Emperor Time) v1.0 — Estrategia `CHRONOS-TRIZ` + `FREE-RUNNER 50%`
 
 Arquitectura de Trading Algorítmico de Alta Frecuencia (HFT) a **6.6 Hz (150 ms)** para **Bybit UTA (USDT Perpetual)** desplegada en Tokio (`asia-northeast1`), gobernada por las **4 Leyes Matemáticas de Dominancia Estocástica `CHRONOS-TRIZ`** y un enjambre asíncrono de tres inteligencias artificiales (**Groq LPU + Google Gemini + NVIDIA NIM**) fuera de la ruta crítica.
 
@@ -14,7 +14,8 @@ Arquitectura de Trading Algorítmico de Alta Frecuencia (HFT) a **6.6 Hz (150 ms
 2. **Ley 2 — Desplazamiento del Precio de Reserva a los 18 Segundos (*Maker-Scratch* de Avellaneda-Stoikov)**:
    - Si al cumplir `t = 18.0s` la posición nunca superó `+0.05%` bruto y el flujo acumulado de 5 segundos es adverso (`OFI_5s <= -0.15`), el gestor evacúa la posición mediante orden pasiva `Limit PostOnly` entre `-0.04%` y `-0.14%`, evitando que se convierta en un Stop-Loss Taker.
 
-3. **Ley 3 — Cosecha Fraccionada 50/50 TRIZ + Trinquete Continuo Maker (*First-Passage Ratchet*)**:
+3. **Ley 3 — Cosecha Fraccionada 50/50 TRIZ + Protocolo `FREE-RUNNER 50%` (Sin Limite de Tiempo)**:
+   - **Modo Free-Runner 50%**: Una vez cobrado el primer 50% en `+0.26%`, el segundo 50% apaga los cierres por tiempo (`32s` y `90s`), fija holgura anti-ruido (`+0.05%` interno / `+0.03%` Bybit) y persigue corridas largas con Trailing Stop escalonado sincronizado en Bybit.
    - En **`+0.26%` bruto**: Vende el **50% de los contratos** vía `Limit PostOnly` (cubriendo el 100% de las comisiones de toda la operación) y sube el Stop-Loss del 50% restante al **Piso Invariante Break-Even (`+0.12%` neto)**.
    - En **`+0.38%+` y `+0.65%+`**: Activa el *Trinquete Continuo Maker* y el *Trailing Stop* sin techo artificial.
    - **Stop-Loss Quirúrgico Acotado**: `-0.48%` interno / `-0.70%` en servidor Bybit, con tiempo máximo impostergable de `90.0s`.

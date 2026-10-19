@@ -124,7 +124,18 @@ async def ejecutar_suite_certificacion_v1() -> int:
             assert ruta_m.exists(), f"Falta archivo nuclear: {nombre_mod}"
             raw_m = ruta_m.read_bytes()
             assert not raw_m.startswith(b"\xef\xbb\xbf"), f"BOM U+FEFF detectado en {nombre_mod}"
-            ast.parse(raw_m.decode("utf-8"), filename=nombre_mod)
+            txt_m = raw_m.decode("utf-8")
+            patrones_moji = (
+                chr(0xC3) + chr(0xB3),
+                chr(0xC3) + chr(0xAD),
+                chr(0xF0) + chr(0x9F),
+                chr(0xE2) + chr(0x9C),
+                chr(0xE2) + chr(0x8C),
+                chr(63) * 2,
+            )
+            for patron_moji in patrones_moji:
+                assert patron_moji not in txt_m, f'Mojibake detectado en {nombre_mod}'
+            ast.parse(txt_m, filename=nombre_mod)
         ram.log_sniper(f"✅ [1/18] Compilación AST y codificación UTF-8 pura sin BOM verificada en los {len(MODULOS_NUCLEO)} módulos Python.")
 
         # ------------------------------------------------------------------
@@ -345,10 +356,15 @@ async def ejecutar_suite_certificacion_v1() -> int:
         await gestor.evaluar_posicion_activa(pos_triz, ahora=t_pos + 6.0)
         assert pos_triz.cosecha_50_ejecutada is True and pos_triz.qty_actual == 350.0 and pos_triz.trinquete_be_armado is True
 
+        # Verificar que en t=600s (> 90s), el Free-Runner 50% NO se cierra por ESCAPE_TEMPORAL
+        tk_z.bid, tk_z.ask, tk_z.ofi_l1_l5 = 0.02205, 0.02206, 0.20
+        mot_hold_inf = await gestor.evaluar_posicion_activa(pos_triz, ahora=t_pos + 600.0)
+        assert mot_hold_inf is None and not pos_triz.cerrada, "Free-Runner 50% no debe cerrarse por tiempo"
+
         tk_z.bid, tk_z.ask, tk_z.ofi_l1_l5 = 0.02216, 0.02217, 0.45
-        await gestor.evaluar_posicion_activa(pos_triz, ahora=t_pos + 12.0)
+        await gestor.evaluar_posicion_activa(pos_triz, ahora=t_pos + 612.0)
         tk_z.bid, tk_z.ask, tk_z.ofi_l1_l5 = 0.02214, 0.02215, -0.15
-        mot_triz = await gestor.evaluar_posicion_activa(pos_triz, ahora=t_pos + 14.0)
+        mot_triz = await gestor.evaluar_posicion_activa(pos_triz, ahora=t_pos + 614.0)
         assert mot_triz == "TRAILING_RATCHET_MAKER" and pos_triz.cerrada is True
         ram.log_sniper(
             f"✅ [15/18] Ley 3 CHRONOS-TRIZ validada: Piso BE ({sl_i_be}), Cosecha 50/50 TRIZ (+0.32%) y cierre en TRAILING_RATCHET_MAKER (+0.73%)."

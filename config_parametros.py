@@ -70,7 +70,7 @@ TELEGRAM_CHAT_ID: str = (
 # ==============================================================================
 # 3. CAPITAL BASE, APALANCAMIENTO Y DIMENSIONAMIENTO DE KELLY CONVEXO
 # ==============================================================================
-CAPITAL_BASE_USDT: float = 9.8662          # Patrimonio certificado en Estado Cero (Paso 0.2)
+CAPITAL_BASE_USDT: float = 9.8662
 APALANCAMIENTO_BASE: int = 3               # Apalancamiento cruzado UTA (3x)
 MAX_POSICIONES_SIMULTANEAS: int = 1        # Single-Slot Mutex (100% foco y cero colision de margen)
 
@@ -198,7 +198,7 @@ PERSISTENCIA_ORDEN_MAKER_SEG: float = 12.0 # Persistencia PFQI de ordenes Limit 
 SL_INTERNO_PCT: float = 0.0048             # -0.48% Stop-Loss interno (erradica perdidas de -1.41%)
 SL_BYBIT_SERVIDOR_PCT: float = 0.0070      # -0.70% Stop-Loss fisico en servidor Bybit UTA
 TIEMPO_MAX_HOLD_SEG: float = 90.0          # 90s tiempo maximo absoluto sin trinquete activo
-TIEMPO_MAX_HOLD_TRINQUETE_SEG: float = 180.0 # Hasta 180s solo si ya cobro Cosecha 50% y esta en BE+
+FREE_RUNNER_SL_HOLGURA_PCT: float = 0.0005 # Hasta 180s solo si ya cobro Cosecha 50% y esta en BE+
 COOLDOWN_POST_CIERRE_WIN_SEG: float = 90.0  # 90s de enfriamiento tras victoria
 COOLDOWN_POST_CIERRE_LOSS_SEG: float = 300.0 # 300s de cuarentena tras cierre negativo
 
