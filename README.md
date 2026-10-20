@@ -47,3 +47,12 @@ Motor autónomo de ejecución microestructural de alta frecuencia (**HFT Maker-F
 5. **Dimensionamiento de Kelly No-Monótono bajo Selección Adversa Extrema (Glosten-Milgrom, 1985)**: Mantiene la rampa convexa en $|Z| \in [2.50, 8.50]$ y contrae exponencialmente la exposición cuando $|Z| > 8.50$.
 6. **Reloj Intrínseco de Actividad Microestructural (*Activity Clock* 38s / 35 Ticks Activos) en *Maker-Scratch***: Evacúa pasivamente en `Limit PostOnly` posiciones estancadas antes de llegar al `ESCAPE_TEMPORAL` Taker de `90s`.
 7. **Guardia de Cuantización `4x` en *Chain-Jail* (`50/25/25`), Blindaje Pre-Cosecha Break-Even y Escalado Horario LVR**: Asegura el piso BE desde el primer contacto con `+0.26%`, protege contra rechazos de lote mínimo en el tramo del `25%` y normaliza la varianza de ventana (`x400`) en la métrica `LVR` (Milionis-Moallemi-Roughgarden, 2022).
+
+## Panel Forense `verbot` (Suite Completa V3.0)
+- `verbot`: Panel forense de alta señal + monitoreo en tiempo real (`tail -f`).
+- `verbot -s`: Resumen ejecutivo, matriz por par/dirección (`LONG`/`SHORT`) con Hurst medio y últimos 15 eventos clave.
+- `verbot -x`: Rayos-X en vivo de Bybit UTA (billetera, contratos abiertos, PnL flotante, órdenes Limit PostOnly y fase Chronos-TRIZ).
+- `verbot -x cierre` / `verbot -x cerrar`: Cierre manual inmediato (`reduceOnly=True`) de contratos abiertos en Bybit UTA con liberación instantánea en RAM y recibo en Telegram.
+- `verbot -t`: Prueba activa de entrega HTTP 200 a Telegram con el último estado contable.
+- `verbot -h` / `verbot -h trades`: Historial forense de operaciones y cosechas.
+- `verbot -q`: Ejecución en caliente del Evaluador Cuántico OOS Walk-Forward.

@@ -60,15 +60,26 @@ sed -i '/# === TRIBRAIN-SNIPER HUD START ===/,/# === TRIBRAIN-SNIPER HUD END ===
 
 cat << 'EOF' >> "${BASHRC_FILE}"
 # === INICIO PANEL VERBOT TRI-BRAIN-SNIPER ===
+set +e 2>/dev/null || true
+
 verbot() {
+    set +e
     local DIR="$HOME/Tri-Brain-Sniper"
     local LOCK="$DIR/.tribrain.lock"
     local LOG="$DIR/bot_hft.log"
     local STATS="$DIR/tribrain_stats_v1.jsonl"
     local PY="$DIR/venv/bin/python"
+    local ARG1="${1:-}"
+    local ARG2="${2:-}"
+
+    # Permitir atajos directos: 'verbot cierre' o 'verbot cerrar' -> equivale a 'verbot -x cierre'
+    if [ "$ARG1" = "cierre" ] || [ "$ARG1" = "cerrar" ] || [ "$ARG1" = "close" ] || [ "$ARG1" = "-c" ]; then
+        ARG1="-x"
+        ARG2="cierre"
+    fi
 
     # 1. Subcomando -q: Evaluador Cuantico OOS en caliente
-    if [ "${1:-}" = "-q" ]; then
+    if [ "$ARG1" = "-q" ]; then
         echo "=========================================================================================="
         echo " 🧠 EJECUTANDO EVALUADOR CUÁNTICO OOS WALK-FORWARD — TRI-BRAIN-SNIPER V3.0"
         echo "=========================================================================================="
@@ -78,7 +89,7 @@ verbot() {
     fi
 
     # 2. Subcomando -t: Prueba real e inmediata de entrega a Telegram + Resumen del ultimo trade
-    if [ "${1:-}" = "-t" ]; then
+    if [ "$ARG1" = "-t" ]; then
         echo "=========================================================================================="
         echo " 📨 PROBANDO ENTREGA EN VIVO A TELEGRAM — TRI-BRAIN-SNIPER V3.0 [SKILL HUNTER]"
         echo "=========================================================================================="
@@ -155,11 +166,11 @@ PYTEOF
     fi
 
     # 3. Subcomando -h / -h trades: Historial forense
-    if [ "${1:-}" = "-h" ]; then
+    if [ "$ARG1" = "-h" ]; then
         echo "=========================================================================================="
         echo " 📚 HISTORIAL FORENSE DE OPERACIONES — TRI-BRAIN-SNIPER V3.0 [SKILL HUNTER]"
         echo "=========================================================================================="
-        if [ "${2:-}" = "trades" ]; then
+        if [ "$ARG2" = "trades" ]; then
             grep -E "INICIANDO CEREBRO|\[RADAR\].*APROBADO|TELEMETRÍA DISPARO|Orden .* en |Posición .* activa|MICRO-SHIELD|MICRO-BE|PULSO POSICIÓN|Cosecha 50%|MAKER-SCRATCH|CIERRE |TELEGRAM OK" "$LOG" | tail -n 60
         else
             tail -n 80 "$LOG"
@@ -168,11 +179,11 @@ PYTEOF
         return 0
     fi
 
-    # 4. Subcomando -x y -x cerrar: Auditoria en vivo de Contratos Abiertos en Bybit UTA
-    if [ "${1:-}" = "-x" ]; then
+    # 4. Subcomando -x y -x cierre / cerrar: Auditoria en vivo y Liquidacion Manual en Bybit UTA V5
+    if [ "$ARG1" = "-x" ]; then
         echo "=========================================================================================="
-        if [ "${2:-}" = "cerrar" ]; then
-            echo " 🚨 EJECUTANDO CIERRE DE EMERGENCIA (PANIC CLOSE) EN BYBIT UTA + NOTIFICACIÓN TELEGRAM"
+        if [ "$ARG2" = "cierre" ] || [ "$ARG2" = "cerrar" ] || [ "$ARG2" = "close" ]; then
+            echo " 🚨 EJECUTANDO CIERRE MANUAL INMEDIATO (verbot -x cierre) EN BYBIT UTA + TELEGRAM"
         else
             echo " 🎯 AUDITORÍA EN VIVO DE CONTRATOS Y ÓRDENES ABIERTAS (BYBIT UTA + RAM)"
         fi
@@ -186,7 +197,7 @@ PYTEOF
                 echo " 🟢 MOTOR EN VIVO -> $PS_INFO"
             fi
         fi
-        "$PY" - "$DIR" "$LOG" "${2:-}" << 'PYXEOF'
+        "$PY" - "$DIR" "$LOG" "$ARG2" << 'PYXEOF'
 import asyncio
 import os
 import re
@@ -195,7 +206,8 @@ import pathlib
 
 base_dir = pathlib.Path(sys.argv[1])
 log_path = pathlib.Path(sys.argv[2])
-modo_arg = str(sys.argv[3] if len(sys.argv) > 3 else "").lower()
+modo_arg = str(sys.argv[3] if len(sys.argv) > 3 else "").strip().lower()
+es_cierre = modo_arg in ("cerrar", "cierre", "close", "-c", "all")
 sys.path.insert(0, str(base_dir))
 
 env_file = base_dir / ".env"
@@ -239,46 +251,84 @@ if log_path.exists():
 
 try:
     import ccxt
+    import telemetria_telegram as tg_mod
+    tg_mod._resolver_credenciales_telegram_v3()
+
     api_key = os.getenv("BYBIT_API_KEY") or os.getenv("API_KEY") or ""
     api_secret = os.getenv("BYBIT_API_SECRET") or os.getenv("API_SECRET") or ""
     ex = ccxt.bybit({
         "apiKey": api_key,
         "secret": api_secret,
         "enableRateLimit": True,
-        "options": {"defaultType": "swap"},
+        "options": {"defaultType": "swap", "recvWindow": 15000},
     })
+    ex.load_markets()
     bal = ex.fetch_balance()
     usdt = bal.get("USDT", {})
     tot_u = float(usdt.get("total") or 0.0)
     free_u = float(usdt.get("free") or 0.0)
     used_u = float(usdt.get("used") or 0.0)
 
-    positions = ex.fetch_positions()
-    abiertas = [p for p in positions if abs(float(p.get("contracts") or p.get("info", {}).get("size") or 0.0)) > 0]
-    ordenes = ex.fetch_open_orders()
+    positions = ex.fetch_positions(None, {"settleCoin": "USDT"})
+    abiertas = [p for p in (positions or []) if abs(float(p.get("contracts") or p.get("info", {}).get("size") or 0.0)) > 0]
+    try:
+        ordenes = ex.fetch_open_orders(None, None, None, {"settleCoin": "USDT"})
+    except Exception:
+        ordenes = []
 
-    if modo_arg == "cerrar":
-        import telemetria_telegram as tg_mod
+    if es_cierre:
         cerradas_n = 0
+        recibos_tg = []
+        # 1. Cancelar cualquier orden abierta en los pares con posicion o global
         for o in ordenes:
             try:
                 ex.cancel_order(o["id"], o["symbol"])
+                print(f" 🧹 Orden abierta cancelada: {o.get('symbol')} | Qty: {o.get('amount')} @ {o.get('price')}")
             except Exception:
                 pass
+        # 2. Liquidar a mercado (reduceOnly=True) el 100% de los contratos abiertos
         for p in abiertas:
             sym = str(p.get("symbol", ""))
             side = str(p.get("side", "")).lower()
             qty = abs(float(p.get("contracts") or p.get("info", {}).get("size") or 0.0))
+            ep = float(p.get("entryPrice") or p.get("info", {}).get("avgPrice") or 0.0)
+            mp = float(p.get("markPrice") or p.get("info", {}).get("markPrice") or ep)
+            upnl = float(p.get("unrealizedPnl") or p.get("info", {}).get("unrealisedPnl") or 0.0)
+            pct = ((mp - ep) / ep * 100.0) if (ep > 0 and side == "long") else (((ep - mp) / ep * 100.0) if ep > 0 else 0.0)
             if qty > 0:
+                try:
+                    ords_sym = ex.fetch_open_orders(sym)
+                    for osym in (ords_sym or []):
+                        ex.cancel_order(osym["id"], sym)
+                except Exception:
+                    pass
                 close_side = "sell" if side == "long" else "buy"
                 ex.create_order(sym, "market", close_side, qty, None, {"reduceOnly": True})
                 cerradas_n += 1
-                print(f" 🚨 [PANIC CLOSE EJECUTADO] {sym} ({side.upper()}) -> {qty} contratos cerrados a mercado.")
-        asyncio.run(tg_mod.TELEMETRIA_TG.enviar_mensaje_sistema(
-            f"🚨 [VERBOT -X CERRAR EJECUTADO]\nPosiciones cerradas manualmente: {cerradas_n}\nSaldo UTA: {tot_u:.4f} USDT"
-        ))
+                print(f" 🟩 [COBRO MANUAL EJECUTADO] {sym} [{side.upper()}] ({qty} contratos) @ {mp} | PnL: {pct:+.2f}% ({upnl:+.4f} USDT)")
+                recibos_tg.append(f"• {sym} [{side.upper()}] ({qty}): {ep} -> {mp} ({pct:+.2f}% | {upnl:+.4f} USDT)")
+
+        # Señalizar al demonio en vivo para liberar el slot en RAM en <150ms
+        if cerradas_n > 0 or estado_log:
+            try:
+                (base_dir / ".tribrain_force_close.signal").write_text("CLOSE_NOW\n", encoding="utf-8")
+            except Exception:
+                pass
+
+        bal2 = ex.fetch_balance()
+        tot2 = float((bal2.get("USDT") or {}).get("total") or tot_u)
         if cerradas_n == 0:
-            print(" ⚪ No había posiciones abiertas para cerrar en Bybit UTA.")
+            print(f" ⚪ No había posiciones abiertas en Bybit UTA para cerrar. Saldo UTA Total: {tot2:.4f} USDT")
+            msg_c = f"ℹ️ [VERBOT -X CIERRE]\nSin contratos abiertos en Bybit UTA.\n💰 Saldo Consolidado: {tot2:.4f} USDT"
+        else:
+            print(f" 💰 Nuevo Balance Consolidado en Bybit UTA: {tot2:.4f} USDT")
+            msg_c = (
+                f"💰 [COBRO MANUAL EJECUTADO (verbot -x cierre)]\n"
+                + "\n".join(recibos_tg)
+                + f"\n💵 Nuevo Balance UTA: {tot2:.4f} USDT"
+            )
+        ok_tg = asyncio.run(tg_mod.TELEMETRIA_TG.enviar_mensaje_sistema(msg_c))
+        print(f" 📲 [TELEGRAM] Confirmación enviada a tu celular: {ok_tg}")
         sys.exit(0)
 
     print("------------------------------------------------------------------------------------------")
@@ -288,9 +338,10 @@ try:
     if not abiertas:
         print(" ⚪ CONTRATOS ABIERTOS  : 0 posiciones activas en Bybit en este instante (100% en liquidez).")
     else:
-        print(f" 🟢 CONTRATOS ABIERTOS EN BYBIT ({len(abiertas)}):")
+        print(f" 🟢 CONTRATOS ABIERTOS EN BYBIT ({len(abiertas)}) — Usa 'verbot -x cierre' para cobrar a mercado:")
         print(f" {'PAR':<15} {'LADO':<6} {'CONTRATOS':<11} {'ENTRADA':<10} {'MARCA':<10} {'NOCIONAL':<10} {'PNL FLOTANTE':<18} {'SL BYBIT / INT'}")
         print("------------------------------------------------------------------------------------------")
+        lineas_tg = [f"🎯 [AUDITORÍA EN VIVO (verbot -x)] | UTA: {tot_u:.4f} USDT"]
         for p in abiertas:
             sym = str(p.get("symbol", ""))
             side = str(p.get("side", "")).upper()
@@ -307,6 +358,8 @@ try:
             ic = "🟩" if upnl >= 0 else "🔴"
             print(f" {sym.replace('/USDT:USDT',''):<15} {side:<6} {contracts:<11.4f} {entry:<10.5f} {mark:<10.5f} {notional:<9.2f}$ {ic} {upnl:+.4f}$ ({pct:+.2f}%)  SL:{sl_b} / Int:{sl_i}")
             print(f"    ↳ Estado Chronos-TRIZ: {fase} | Último evento: {info_l.get('ultimo_pulso', 'N/A')}")
+            lineas_tg.append(f"{ic} {sym.replace('/USDT:USDT','')} [{side}] {contracts} @ {entry} -> {mark} ({pct:+.2f}% | {upnl:+.4f} USDT) | {fase}")
+        asyncio.run(tg_mod.TELEMETRIA_TG.enviar_mensaje_sistema("\n".join(lineas_tg)))
 
     print("------------------------------------------------------------------------------------------")
     if not ordenes:
@@ -403,12 +456,12 @@ if log_path.exists():
                     abiertos_ram.pop(sym, None)
 
 print("------------------------------------------------------------------------------------------")
-print(f" �� CAJA NEGRA : {total} Trades ({wins}W / {losses}L | WR: {wr:.1f}%) | Scratch 18s: {scratches} | Cosechas 50%: {cosechas}")
+print(f" 📊 CAJA NEGRA : {total} Trades ({wins}W / {losses}L | WR: {wr:.1f}%) | Scratch 18s: {scratches} | Cosechas 50%: {cosechas}")
 print(f" 💰 PATRIMONIO : PnL Acumulado: {pnl_total:+.4f} USDT | UTA Real: {bal_real} | Convergence Bayes: λ={lam:.2f} ({total}/40)")
 if abiertos_ram:
-    print(f" 📂 EN CURSO   : 🟢 " + " | ".join(abiertos_ram.values()) + "  (Usa 'verbot -x' para detalle UTA)")
+    print(f" 📂 EN CURSO   : 🟢 " + " | ".join(abiertos_ram.values()) + "  (Usa 'verbot -x cierre' para cobrar)")
 else:
-    print(" 📂 EN CURSO   : ⚪ 0 contratos abiertos en este instante (Comandos: verbot -s | verbot -x | verbot -t | verbot -h trades)")
+    print(" 📂 EN CURSO   : ⚪ 0 contratos abiertos en este instante (Comandos: verbot -s | verbot -x | verbot -x cierre | verbot -t)")
 print("------------------------------------------------------------------------------------------")
 print(f" {'PAR Y DIRECCIÓN':<22} {'TRADES (W/L)':<15} {'WIN RATE':<10} {'HURST MEDIO':<13} {'PNL NETO USDT':<15}")
 print("------------------------------------------------------------------------------------------")
@@ -451,18 +504,19 @@ for i, t in enumerate(ultimos, start=idx_base):
 PYEOF
     fi
     echo "=========================================================================================="
-    if [ "${1:-}" = "-s" ]; then
-        echo " 📜 ÚLTIMOS EVENTOS CLAVE EN BOT_HFT.LOG (verbot -s | verbot -x | verbot -t | verbot -h trades):"
+    if [ "$ARG1" = "-s" ]; then
+        echo " 📜 ÚLTIMOS EVENTOS CLAVE EN BOT_HFT.LOG (verbot -s | verbot -x | verbot -x cierre | verbot -t):"
         echo "------------------------------------------------------------------------------------------"
         grep -E "INICIANDO CEREBRO|Auditoría UTA|HOT-RELOAD OOS|\[RADAR\]|\[SHORT-SNIPER\]|\[FRANCOTIRADOR\]|TELEMETRÍA DISPARO|PULSO POSICIÓN|MICRO-BE|MICRO-SHIELD|BLOQUEO HURST|ESCUDO EJECUTOR|MAKER-SCRATCH|CIERRE|TELEGRAM OK" "$LOG" | tail -n 15
         echo "=========================================================================================="
         return 0
     fi
-    echo " 🛡️  MODO MONITOREO EN VIVO: [Ctrl+C] para salir | Comandos: verbot -s | verbot -x | verbot -t | verbot -q"
+    echo " 🛡️  MODO MONITOREO EN VIVO: [Ctrl+C] para salir | Comandos: verbot -s | verbot -x | verbot -x cierre | verbot -t"
     echo "=========================================================================================="
-    tail -f -n 25 "$LOG"
+    (trap 'exit 0' INT TERM; tail -f -n 25 "$LOG" || true) || true
+    return 0
 }
 # === FIN PANEL VERBOT TRI-BRAIN-SNIPER ===
 EOF
 
-echo "✅ [VERBOT V3.0 OK] Comandos instalados en ~/.bashrc: verbot, verbot -s, verbot -x, verbot -x cerrar, verbot -h, verbot -h trades, verbot -q, verbot -t"
+echo "✅ [VERBOT V3.0 OK] Comandos instalados en ~/.bashrc: verbot, verbot -s, verbot -x, verbot -x cierre, verbot -x cerrar, verbot -h, verbot -h trades, verbot -q, verbot -t"

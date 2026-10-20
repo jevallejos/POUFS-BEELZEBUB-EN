@@ -928,6 +928,15 @@ if hasattr(GestorPosiciones, 'evaluar_posicion_individual') and not hasattr(Gest
 
     async def _evaluar_posicion_individual_v3_shield(self, pos, ahora: float):
         es_prod = __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') != '1'
+        if es_prod:
+            sig_close = cfg.ROOT_DIR / '.tribrain_force_close.signal'
+            if sig_close.exists():
+                try:
+                    sig_close.unlink()
+                except Exception:
+                    pass
+                pos.cosecha_50_ejecutada = False
+                pos.ts_apertura = ahora - (float(cfg.TIEMPO_MAX_HOLD_SEG) + 5.0)
         tk = ESTADO_RAM.ticks_ram.get(pos.symbol)
         forzar_scratch = False
         orig_ofi5s = getattr(tk, 'ofi_5s', 0.0) if tk is not None else 0.0
