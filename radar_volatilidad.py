@@ -629,3 +629,83 @@ class RadarVolatilidad:
         if self.callback_disparo is not None:
             await self.callback_disparo(senal)
         return senal
+
+# === [PASO 2 SKILL HUNTER V3.0: STOIKOV & HURST MULTIESCALA] ===
+def calcular_micro_precio_stoikov(best_bid: float, best_ask: float, vol_bid_l1: float, vol_ask_l1: float) -> float:
+    """Micro-precio continuo de Stoikov (2018) ponderado por presion inversa de volumen L1."""
+    if best_bid <= 0.0 or best_ask <= 0.0:
+        return max(best_bid, best_ask, 0.0)
+    v_tot = vol_bid_l1 + vol_ask_l1
+    if v_tot <= 1e-12:
+        return 0.5 * (best_bid + best_ask)
+    return (best_bid * vol_ask_l1 + best_ask * vol_bid_l1) / v_tot
+
+
+def _hurst_multiescala_ticks_activos_v3(precios_seq) -> float:
+    """Variograma multiescala tau=(1,2,4) sobre ticks activos (Delta P != 0) libre de Rebote de Roll."""
+    pts = [float(x) for x in precios_seq if float(x) > 0.0]
+    if len(pts) < 6:
+        return 0.45
+    activos = [pts[0]]
+    for i in range(1, len(pts)):
+        if abs(pts[i] - pts[i - 1]) > 1e-12:
+            activos.append(pts[i])
+    na = len(activos)
+    if na < 6:
+        return 0.45
+    d1 = [abs(math.log(activos[i] / activos[i - 1])) for i in range(1, na) if activos[i - 1] > 0.0]
+    d2 = [abs(math.log(activos[i] / activos[i - 2])) for i in range(2, na) if activos[i - 2] > 0.0]
+    d4 = [abs(math.log(activos[i] / activos[i - 4])) for i in range(4, na) if activos[i - 4] > 0.0]
+    m1 = (sum(d1) / len(d1)) if d1 else 1e-6
+    m2 = (sum(d2) / len(d2)) if d2 else (m1 * 1.32)
+    m4 = (sum(d4) / len(d4)) if d4 else (m2 * 1.32)
+    if m1 <= 1e-9 or m2 <= 1e-9 or m4 <= 1e-9:
+        return 0.45
+    r12 = max(1.05, min(1.95, m2 / m1))
+    h12 = math.log(r12) / math.log(2.0)
+    if na >= 10 and len(d4) >= 4:
+        r24 = max(1.05, min(1.95, m4 / m2))
+        h24 = math.log(r24) / math.log(2.0)
+        h_val = 0.35 * h12 + 0.65 * h24
+    else:
+        h_val = h12
+    return round(max(0.20, min(0.80, h_val)), 4)
+
+
+# Envolver metodo de Hurst en VentanaZ preservando 100% la aceleracion de Lyapunov original
+for _attr_vz in dir(VentanaZ):
+    if "hurst" in _attr_vz.lower():
+        _orig_vz_fn = getattr(VentanaZ, _attr_vz)
+        if callable(_orig_vz_fn) and not hasattr(VentanaZ, "_orig_hurst_v3"):
+            VentanaZ._orig_hurst_v3 = _orig_vz_fn
+
+            def _wrapped_hurst_vz_v3(self, *args, **kwargs):
+                res_orig = self._orig_hurst_v3(*args, **kwargs)
+                pts = list(getattr(self, "precios", []))
+                # Detectar si existen ticks planos consecutivos (Delta P == 0) en muestreo 6.6 Hz
+                tiene_ticks_planos = any(abs(pts[i] - pts[i - 1]) <= 1e-12 for i in range(1, len(pts)))
+                if not tiene_ticks_planos:
+                    return res_orig
+                h_clean = _hurst_multiescala_ticks_activos_v3(pts)
+                if isinstance(res_orig, tuple) and len(res_orig) == 2:
+                    return h_clean, res_orig[1]
+                return h_clean
+
+            setattr(VentanaZ, _attr_vz, _wrapped_hurst_vz_v3)
+
+
+def calcular_hurst_y_lyapunov(precios) -> tuple[float, float]:
+    """Evalua Hurst multiescala sobre ticks activos y aceleracion de Lyapunov via VentanaZ."""
+    vz = VentanaZ()
+    for p in precios:
+        if hasattr(vz, "agregar_precio"):
+            vz.agregar_precio(float(p))
+        elif hasattr(vz, "precios"):
+            vz.precios.append(float(p))
+    for attr in dir(vz):
+        if "hurst" in attr.lower() and not attr.startswith("_orig"):
+            out = getattr(vz, attr)()
+            if isinstance(out, tuple) and len(out) == 2:
+                return out
+            return float(out), 0.0
+    return _hurst_multiescala_ticks_activos_v3(precios), 0.0

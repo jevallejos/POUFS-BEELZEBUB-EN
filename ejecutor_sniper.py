@@ -404,3 +404,16 @@ class EjecutorSniper:
             await self.callback_posicion_abierta(pos)
 
         return pos
+
+# === [PASO 2 SKILL HUNTER V3.0: GUARDIA MUTEX ANTI-110007] ===
+if hasattr(EjecutorSniper, "ejecutar_senal_sniper") and not hasattr(EjecutorSniper, "_orig_ejecutar_v3"):
+    EjecutorSniper._orig_ejecutar_v3 = EjecutorSniper.ejecutar_senal_sniper
+
+    async def _ejecutar_senal_sniper_blindado_v3(self, *args, **kwargs):
+        try:
+            return await self._orig_ejecutar_v3(*args, **kwargs)
+        finally:
+            if not ESTADO_RAM.posiciones_activas and ESTADO_RAM.orden_en_vuelo_symbol is None:
+                ESTADO_RAM.slot_ocupado = False
+
+    EjecutorSniper.ejecutar_senal_sniper = _ejecutar_senal_sniper_blindado_v3
