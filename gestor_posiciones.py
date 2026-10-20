@@ -858,3 +858,48 @@ if hasattr(GestorPosiciones, "evaluar_posicion_individual") and not hasattr(Gest
         return await self._orig_p6_evaluar_pos(self, pos, ahora)
 
     GestorPosiciones.evaluar_posicion_individual = _wrapped_evaluar_posicion_individual_p6
+
+# === [PASO 7 SKILL HUNTER V3.0: BLINDAJE CHAIN-JAIL & CUANTIZACION 4X] ===
+def validar_cuantizacion_chain_jail_4x(
+    qty_restante: float,
+    precio: float,
+    step_qty: float,
+    min_qty: float,
+    min_notional: float = 2.50,
+) -> tuple[bool, float, float]:
+    """Verifica si el remanente post-1ra-tirada admite partirse en 25%/25% respetando min_qty y min_notional."""
+    q_res = float(qty_restante)
+    p_val = float(precio)
+    st = max(1e-9, float(step_qty))
+    mq = max(st, float(min_qty))
+    q_25 = math.floor(((q_res * 0.50) + 1e-12) / st) * st
+    q_25 = round(q_25, 8)
+    q_final = round(q_res - q_25, 8)
+    if q_25 >= mq and q_final >= mq and (q_25 * p_val) >= min_notional and (q_final * p_val) >= min_notional:
+        return True, q_25, q_final
+    return False, 0.0, round(q_res, 8)
+
+
+if hasattr(GestorPosiciones, "evaluar_posicion_individual") and not hasattr(GestorPosiciones, "_orig_p7_evaluar_pos"):
+    GestorPosiciones._orig_p7_evaluar_pos = GestorPosiciones.evaluar_posicion_individual
+
+    async def _wrapped_evaluar_posicion_individual_p7(self, pos, ahora=None):
+        res = await self._orig_p7_evaluar_pos(self, pos, ahora)
+        try:
+            # Blindaje Pre-Cosecha: si ya alcanzo el umbral +0.26%, asegurar trinquete BE en RAM aunque PostOnly reintente
+            umbral_c1 = float(getattr(cfg, "COSECHA_TRIZ_ACTIVACION_PCT", 0.0026))
+            if not pos.cerrada and pos.max_pnl_pct_alcanzado >= umbral_c1 and pos.entry_price > 0.0:
+                pos.trinquete_be_armado = True
+                if pos.side == "long":
+                    piso_be = round(pos.entry_price * (1.0 + float(getattr(cfg, "TRINQUETE_BE_OFFSET_PCT", 0.0005))), 8)
+                    if pos.sl_interno_price < piso_be:
+                        pos.sl_interno_price = piso_be
+                else:
+                    piso_be = round(pos.entry_price * (1.0 - float(getattr(cfg, "TRINQUETE_BE_OFFSET_PCT", 0.0005))), 8)
+                    if pos.sl_interno_price > piso_be or pos.sl_interno_price <= 0.0:
+                        pos.sl_interno_price = piso_be
+        except Exception:
+            pass
+        return res
+
+    GestorPosiciones.evaluar_posicion_individual = _wrapped_evaluar_posicion_individual_p7

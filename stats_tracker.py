@@ -353,3 +353,11 @@ class GestorCajaNegra:
 
 # Instancia Singleton global de la Caja Negra
 CAJA_NEGRA: GestorCajaNegra = GestorCajaNegra()
+
+# === [PASO 7 SKILL HUNTER V3.0: ESCALADO HORARIO LVR] ===
+def calcular_lvr_horario_usdt(volatilidad_ventana_9s: float, map_usdt: float, hold_seg: float) -> float:
+    """Calcula LVR (Milionis-Moallemi-Roughgarden 2022) escalando la varianza de ventana (9s) a varianza horaria (x400)."""
+    sigma_v = max(0.00045, float(volatilidad_ventana_9s))
+    var_horaria = (sigma_v ** 2) * 400.0
+    lvr_val = (var_horaria / 8.0) * max(0.0, float(map_usdt)) * (max(0.0, float(hold_seg)) / 3600.0)
+    return round(lvr_val, 6)
