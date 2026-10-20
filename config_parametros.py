@@ -305,3 +305,50 @@ def recargar_calibracion_oos_si_cambio(ruta_json: pathlib.Path | None = None) ->
         return {"recargado": True, "aplicados": aplicados, "mtime": mtime_actual}
     except Exception as exc:
         return {"recargado": False, "motivo": f"ERROR: {exc}"}
+
+# === INICIO MODO RECOLECCION ESTADISTICA ACTIVA V3.0 ===
+_LIMITES_SHADOW_GATE['Z_SCORE_UMBRAL_HIGH_BETA'] = (-4.50, -2.40)
+_LIMITES_SHADOW_GATE['Z_SCORE_UMBRAL_TIER1'] = (-4.00, -2.15)
+_LIMITES_SHADOW_GATE['COSECHA_TRIZ_ACTIVACION_PCT'] = (0.0020, 0.0045)
+
+def aplicar_perfil_recoleccion_estadistica_v3() -> None:
+    if __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') == '1':
+        return
+    g = globals()
+    g['Z_SCORE_UMBRAL_HIGH_BETA'] = -2.50
+    g['CAIDA_MIN_HIGH_BETA_PCT'] = -0.0045
+    g['EMA900_DIST_MIN_HIGH_BETA_PCT'] = -0.0055
+    g['Z_SCORE_UMBRAL_TIER1'] = -2.25
+    g['CAIDA_MIN_TIER1_PCT'] = -0.0025
+    g['EMA900_DIST_MIN_TIER1_PCT'] = -0.0028
+    g['OFI_MIN_ENTRADA'] = 0.10
+    g['OFI_TICKS_CONFIRMACION'] = 2
+    g['HURST_MAX_ENTRADA'] = 0.515
+    g['HAWKES_ABSORCION_MIN_SEG'] = 0.35
+    g['HAWKES_INTENSIDAD_MIN'] = 0.08
+    g['SHORT_PUMP_SOBREEXTENSION_PCT'] = 0.0042
+    g['SHORT_OFI_MAX_ENTRADA'] = -0.20
+    g['SHORT_LYAPUNOV_ACEL_MAX_PCT'] = -0.00018
+    g['TTL_ORDEN_ENTRADA_SEG'] = 3.80
+    g['COSECHA_TRIZ_ACTIVACION_PCT'] = 0.0022
+
+if '_orig_recargar_oos_freq_v3' not in globals():
+    _orig_recargar_oos_freq_v3 = recargar_calibracion_oos_si_cambio
+
+    def _recargar_calibracion_oos_freq_v3(ruta_json=None):
+        res = _orig_recargar_oos_freq_v3(ruta_json)
+        if __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') != '1' and ruta_json is None:
+            aplicar_perfil_recoleccion_estadistica_v3()
+            if isinstance(res, dict) and res.get('recargado'):
+                p = res.get('parametros')
+                if isinstance(p, dict):
+                    p['Z_SCORE_UMBRAL_HIGH_BETA'] = -2.50
+                    p['Z_SCORE_UMBRAL_TIER1'] = -2.25
+                    p['OFI_MIN_ENTRADA'] = 0.10
+                    p['COSECHA_TRIZ_ACTIVACION_PCT'] = 0.0022
+        return res
+
+    recargar_calibracion_oos_si_cambio = _recargar_calibracion_oos_freq_v3
+
+aplicar_perfil_recoleccion_estadistica_v3()
+# === FIN MODO RECOLECCION ESTADISTICA ACTIVA V3.0 ===

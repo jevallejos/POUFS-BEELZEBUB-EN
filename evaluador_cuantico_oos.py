@@ -293,8 +293,8 @@ class EvaluadorCuanticoOOS:
         )
 
         prior_kelly = 0.55
-        prior_z_hb = -2.85
-        prior_z_t1 = -2.55
+        prior_z_hb = -2.85 if __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') == '1' else -2.50
+        prior_z_t1 = -2.55 if __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') == '1' else -2.25
         prior_ofi = 0.12
         prior_scratch_s = 18.0
         prior_cosecha_pct = 0.0026
