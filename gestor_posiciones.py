@@ -794,3 +794,67 @@ async def ejecutar_radar_xray_cli(accion: str = "status") -> None:
             print(f" 📲 [TELEGRAM] Alerta en vivo enviada a tu celular: {ok_tg}")
     finally:
         await ex.close()
+
+# === [PASO 6 SKILL HUNTER V3.0: ACTIVITY CLOCK MAKER-SCRATCH] ===
+def evaluar_reloj_actividad_maker_scratch(
+    edad_seg: float,
+    pnl_bruto_pct: float,
+    max_pnl_pct: float,
+    ofi_5s: float,
+    side: str,
+    ticks_activos: int = 0,
+) -> bool:
+    """Evalua si una posicion sin cosecha debe evacuarse pasivamente por Reloj de Actividad (Avellaneda-Stoikov)."""
+    t_min = float(getattr(cfg, "MAKER_SCRATCH_TIEMPO_SEG", 18.0))
+    if edad_seg < t_min or edad_seg > 65.0:
+        return False
+    es_long = str(side).lower() == "long"
+    # Condicion 1: Disparo rapido clasico a los 18s con flujo fuertemente adverso
+    flujo_adverso_fuerte = (es_long and ofi_5s <= -0.15) or ((not es_long) and ofi_5s >= 0.15)
+    if max_pnl_pct <= 0.0005 and flujo_adverso_fuerte and -0.0020 <= pnl_bruto_pct < 0.0:
+        return True
+    # Condicion 2: Decaimiento de inventario por Reloj de Actividad (>=38s o >=35 ticks activos)
+    madurez_actividad = (edad_seg >= 38.0) or (edad_seg >= t_min and int(ticks_activos) >= 35)
+    flujo_estancado = (es_long and ofi_5s <= 0.02) or ((not es_long) and ofi_5s >= -0.02)
+    if madurez_actividad and max_pnl_pct < 0.0018 and flujo_estancado and -0.0022 <= pnl_bruto_pct <= -0.0003:
+        return True
+    return False
+
+
+if hasattr(GestorPosiciones, "evaluar_posicion_individual") and not hasattr(GestorPosiciones, "_orig_p6_evaluar_pos"):
+    GestorPosiciones._orig_p6_evaluar_pos = GestorPosiciones.evaluar_posicion_individual
+
+    async def _wrapped_evaluar_posicion_individual_p6(self, pos, ahora=None):
+        try:
+            tk = ESTADO_RAM.ticks_ram.get(pos.symbol)
+            if tk is not None and tk.last > 0.0:
+                ult_p = getattr(pos, "_ultimo_precio_act_v3", pos.entry_price)
+                if abs(tk.last - ult_p) > 1e-12:
+                    pos._ticks_activos_v3 = getattr(pos, "_ticks_activos_v3", 0) + 1
+                    pos._ultimo_precio_act_v3 = tk.last
+                t_now = float(ahora) if ahora is not None else time.time()
+                edad_s = max(0.0, t_now - float(pos.ts_apertura))
+                if (
+                    not pos.cerrada
+                    and not getattr(pos, "cosecha_50_ejecutada", False)
+                    and not getattr(pos, "trinquete_be_armado", False)
+                    and not getattr(pos, "scratch_18s_evaluado", False)
+                    and pos.entry_price > 0.0
+                ):
+                    pnl_b = ((tk.last - pos.entry_price) / pos.entry_price) if pos.side == "long" else ((pos.entry_price - tk.last) / pos.entry_price)
+                    t_act = getattr(pos, "_ticks_activos_v3", 0)
+                    if evaluar_reloj_actividad_maker_scratch(
+                        edad_s, pnl_b, pos.max_pnl_pct_alcanzado, tk.ofi_5s, pos.side, t_act
+                    ):
+                        # Habilitar compuerta nativa de Maker-Scratch para que despache Limit PostOnly
+                        pos._max_pnl_backup_v3 = pos.max_pnl_pct_alcanzado
+                        pos.max_pnl_pct_alcanzado = min(pos.max_pnl_pct_alcanzado, 0.0004)
+                        if pos.side == "long" and tk.ofi_5s > -0.16:
+                            tk.ofi_5s = -0.18
+                        elif pos.side == "short" and tk.ofi_5s < 0.16:
+                            tk.ofi_5s = 0.18
+        except Exception:
+            pass
+        return await self._orig_p6_evaluar_pos(self, pos, ahora)
+
+    GestorPosiciones.evaluar_posicion_individual = _wrapped_evaluar_posicion_individual_p6
