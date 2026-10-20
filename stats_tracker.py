@@ -363,6 +363,7 @@ def calcular_lvr_horario_usdt(volatilidad_ventana_9s: float, map_usdt: float, ho
     return round(lvr_val, 6)
 
 
+
 # === [V4.0 SANITIZE HOLD_SEG] ===
 def _sanear_jsonl_hold_seg_v4() -> None:
     import json as _json

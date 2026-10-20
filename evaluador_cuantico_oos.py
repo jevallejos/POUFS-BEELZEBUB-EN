@@ -446,11 +446,12 @@ if __name__ == "__main__":
     sys.exit(main_cli())
 
 
+
 # === [V4.0 OOS EXPORT SYNC] ===
 if hasattr(EvaluadorCuanticoOOS, "ejecutar_ciclo_evaluacion_completo") and not hasattr(EvaluadorCuanticoOOS, "_orig_ciclo_v4"):
     EvaluadorCuanticoOOS._orig_ciclo_v4 = EvaluadorCuanticoOOS.ejecutar_ciclo_evaluacion_completo
     async def _ejecutar_ciclo_evaluacion_completo_v4(self, *args, **kwargs):
-        res = await self._orig_ciclo_v4(*args, **kwargs)
+        res = await EvaluadorCuanticoOOS._orig_ciclo_v4(self, *args, **kwargs)
         if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1":
             try:
                 if self.ruta_json_oos.exists():

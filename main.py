@@ -470,15 +470,17 @@ if __name__ == "__main__":
         sys.exit(0)
 
 
+
 # === [V4.0 BOOT RECONCILIATION FIX] ===
 if "reconciliar_posiciones_arranque" in globals() and "_orig_reconciliar_v4" not in globals():
     _orig_reconciliar_v4 = reconciliar_posiciones_arranque
-    async def reconciliar_posiciones_arranque(exchange) -> int:
-        procesadas = await _orig_reconciliar_v4(exchange)
-        ahora_r = time.time()
-        for sym_k, pos_obj in list(ESTADO_RAM.posiciones_activas.items()):
-            edad_actual = ahora_r - float(getattr(pos_obj, "ts_apertura", ahora_r))
-            if edad_actual > 3600.0 or edad_actual < 0.0:
-                pos_obj.ts_apertura = ahora_r
-                log_sniper(f"🛡️ [RECONCILIADOR V4.0] Edad de posicion adoptada en {sym_k} normalizada a 0s (updatedTime).")
+    async def reconciliar_posiciones_arranque(*args, **kwargs) -> int:
+        procesadas = await _orig_reconciliar_v4(*args, **kwargs)
+        if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1":
+            ahora_r = time.time()
+            for sym_k, pos_obj in list(ESTADO_RAM.posiciones_activas.items()):
+                edad_actual = ahora_r - float(getattr(pos_obj, "ts_apertura", ahora_r))
+                if edad_actual > 3600.0 or edad_actual < 0.0:
+                    pos_obj.ts_apertura = ahora_r
+                    log_sniper(f"🛡️ [RECONCILIADOR V4.0] Edad de posicion adoptada en {sym_k} normalizada a 0s (updatedTime).")
         return procesadas

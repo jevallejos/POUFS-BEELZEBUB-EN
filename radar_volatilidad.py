@@ -893,17 +893,16 @@ if hasattr(RadarVolatilidad, 'procesar_instantanea_libro') and not hasattr(Radar
 # === FIN AJUSTES QUIRURGICOS V3.0 (SKILL HUNTER) ===
 
 
+
 # === [V4.0 RADAR PRECISION & WS COOLDOWN] ===
 _TS_ULTIMO_TICK_POR_PAR_V4: dict[str, float] = {}
 _COOLDOWN_RECONEXION_HASTA_V4: dict[str, float] = {}
 
 if hasattr(VentanaZ, "calcular_hurst_y_lyapunov") and not hasattr(VentanaZ, "_orig_hurst_lyap_v4"):
     VentanaZ._orig_hurst_lyap_v4 = VentanaZ.calcular_hurst_y_lyapunov
-    def _calcular_hurst_y_lyapunov_v4(self):
-        h_val, lyap_val = self._orig_hurst_lyap_v4()
+    def _calcular_hurst_y_lyapunov_v4(self, *args, **kwargs):
+        h_val, lyap_val = VentanaZ._orig_hurst_lyap_v4(self, *args, **kwargs)
         if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1":
-            # Si el variograma satura en >= 0.78 por caida monotonica corta pero Lyapunov ya freno (>= -0.00005),
-            # des-saturar hacia el regimen de reversion local para no bloquear WAL/INJ/TAO/XRP/AVAX
             if h_val >= 0.78 and lyap_val >= -0.00005 and len(getattr(self, "precios", ())) >= 45:
                 h_val = 0.465
         return h_val, lyap_val
@@ -911,32 +910,37 @@ if hasattr(VentanaZ, "calcular_hurst_y_lyapunov") and not hasattr(VentanaZ, "_or
 
 if hasattr(RadarVolatilidad, "verificar_contagio_cross_asset") and not hasattr(RadarVolatilidad, "_orig_contagio_v4"):
     RadarVolatilidad._orig_contagio_v4 = RadarVolatilidad.verificar_contagio_cross_asset
-    def _verificar_contagio_cross_asset_v4(self, symbol: str, z_score: float, ahora_ts: float) -> bool:
-        if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1":
-            if ahora_ts < _COOLDOWN_RECONEXION_HASTA_V4.get(symbol, 0.0):
-                return False
-        res = self._orig_contagio_v4(symbol, z_score, ahora_ts)
-        if res and __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1":
-            ESTADO_RAM.pausa_macro_hasta_ts = ahora_ts + 30.0
+    async def _verificar_contagio_cross_asset_v4(self, *args, **kwargs) -> bool:
+        if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") == "1":
+            return await RadarVolatilidad._orig_contagio_v4(self, *args, **kwargs)
+        sym = str(args[0]) if len(args) > 0 else str(kwargs.get("symbol", ""))
+        t_eval = float(args[2]) if len(args) > 2 and args[2] is not None else float(kwargs.get("ahora_ts") or time.time())
+        if t_eval < _COOLDOWN_RECONEXION_HASTA_V4.get(sym, 0.0):
+            return False
+        res = await RadarVolatilidad._orig_contagio_v4(self, *args, **kwargs)
+        if res:
+            ESTADO_RAM.pausa_macro_hasta_ts = t_eval + 30.0
         return res
     RadarVolatilidad.verificar_contagio_cross_asset = _verificar_contagio_cross_asset_v4
 
 if hasattr(RadarVolatilidad, "procesar_instantanea_libro") and not hasattr(RadarVolatilidad, "_orig_proc_libro_v4"):
     RadarVolatilidad._orig_proc_libro_v4 = RadarVolatilidad.procesar_instantanea_libro
-    async def _procesar_instantanea_libro_v4(self, symbol: str, orderbook: dict, ahora_ts: float | None = None):
-        ts_now = float(ahora_ts if ahora_ts is not None else time.time())
-        prev_ts = _TS_ULTIMO_TICK_POR_PAR_V4.get(symbol, 0.0)
+    async def _procesar_instantanea_libro_v4(self, *args, **kwargs):
+        if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") == "1":
+            return await RadarVolatilidad._orig_proc_libro_v4(self, *args, **kwargs)
+        sym = str(args[0]) if len(args) > 0 else str(kwargs.get("symbol", ""))
+        ts_now = float(args[3]) if len(args) > 3 and args[3] is not None else float(kwargs.get("ahora") or time.time())
+        prev_ts = _TS_ULTIMO_TICK_POR_PAR_V4.get(sym, 0.0)
         if prev_ts > 0.0 and (ts_now - prev_ts) > 2.20:
-            _COOLDOWN_RECONEXION_HASTA_V4[symbol] = ts_now + 3.50
-        _TS_ULTIMO_TICK_POR_PAR_V4[symbol] = ts_now
-        res = await self._orig_proc_libro_v4(symbol, orderbook, ahora_ts=ahora_ts)
+            _COOLDOWN_RECONEXION_HASTA_V4[sym] = ts_now + 3.50
+        _TS_ULTIMO_TICK_POR_PAR_V4[sym] = ts_now
+        res = await RadarVolatilidad._orig_proc_libro_v4(self, *args, **kwargs)
         if isinstance(res, dict) and str(res.get("side", "")).lower() == "short":
-            if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1":
-                h_act = float(res.get("hurst", 0.45))
-                z_act = float(res.get("z_score", 0.0))
-                ema_d = float(res.get("ema900_dist_pct", 0.0))
-                h_max = float(getattr(cfg, "HURST_MAX_ENTRADA", 0.495))
-                if h_act > h_max and abs(z_act) < 11.0 and ema_d < 0.010:
-                    return None
+            h_act = float(res.get("hurst", 0.45))
+            z_act = float(res.get("z_score", 0.0))
+            ema_d = float(res.get("ema900_dist_pct", 0.0))
+            h_max = float(getattr(cfg, "HURST_MAX_ENTRADA", 0.495))
+            if h_act > h_max and abs(z_act) < 11.0 and ema_d < 0.010:
+                return None
         return res
     RadarVolatilidad.procesar_instantanea_libro = _procesar_instantanea_libro_v4

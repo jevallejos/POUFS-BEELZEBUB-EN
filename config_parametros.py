@@ -372,8 +372,8 @@ _aplicar_overrides_v4_prod()
 
 if "_orig_recargar_v4" not in globals() and "recargar_calibracion_oos_si_cambio" in globals():
     _orig_recargar_v4 = globals()["recargar_calibracion_oos_si_cambio"]
-    def _recargar_calibracion_oos_v4(ruta_json=None):
-        res = _orig_recargar_v4(ruta_json) if ruta_json is not None else _orig_recargar_v4()
+    def _recargar_calibracion_oos_v4(*args, **kwargs):
+        res = _orig_recargar_v4(*args, **kwargs)
         _aplicar_overrides_v4_prod()
         return res
     globals()["recargar_calibracion_oos_si_cambio"] = _recargar_calibracion_oos_v4

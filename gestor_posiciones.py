@@ -629,6 +629,7 @@ class GestorPosiciones:
         self._running = False
 
 
+
 # === [V4.0 CONVEX 50/25/25 & CLI SUITE] ===
 def calcular_eslabon_chain_jail(pnl_max_pct: float, es_tier1: bool = False) -> tuple[int, float, bool]:
     """
@@ -674,9 +675,12 @@ _metodo_eval_nombre = "evaluar_posicion_activa" if hasattr(GestorPosiciones, "ev
 if hasattr(GestorPosiciones, _metodo_eval_nombre) and not hasattr(GestorPosiciones, "_orig_eval_pos_v4"):
     GestorPosiciones._orig_eval_pos_v4 = getattr(GestorPosiciones, _metodo_eval_nombre)
 
-    async def _evaluar_posicion_activa_v4(self, pos, ahora: float | None = None, *args, **kwargs):
-        es_prod = __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1"
-        if es_prod and not getattr(pos, "cerrada", False):
+    async def _evaluar_posicion_activa_v4(self, *args, **kwargs):
+        if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") == "1":
+            return await GestorPosiciones._orig_eval_pos_v4(self, *args, **kwargs)
+
+        pos = args[0] if len(args) > 0 else kwargs.get("pos")
+        if pos is not None and not getattr(pos, "cerrada", False):
             tick = ESTADO_RAM.ticks_ram.get(pos.symbol)
             precio_actual = float(getattr(tick, "last", 0.0) or getattr(tick, "bid", 0.0) or pos.entry_price)
             if precio_actual > 0.0 and pos.entry_price > 0.0:
@@ -754,10 +758,10 @@ if hasattr(GestorPosiciones, _metodo_eval_nombre) and not hasattr(GestorPosicion
                             f"(Max PnL {pos.max_pnl_pct_alcanzado*100:+.2f}% -> Piso SL +{piso_sl*100:.2f}%)"
                         )
 
-        res_eval = await self._orig_eval_pos_v4(pos, ahora=ahora, *args, **kwargs)
+        res_eval = await GestorPosiciones._orig_eval_pos_v4(self, *args, **kwargs)
 
         # Guardia Zero-Orphan en produccion al cerrarse una posicion
-        if es_prod and getattr(pos, "cerrada", False) and hasattr(self.exchange, "fetch_positions"):
+        if pos is not None and getattr(pos, "cerrada", False) and hasattr(self.exchange, "fetch_positions"):
             try:
                 pos_bybit = await self.exchange.fetch_positions([pos.symbol])
                 for pb in (pos_bybit or []):
