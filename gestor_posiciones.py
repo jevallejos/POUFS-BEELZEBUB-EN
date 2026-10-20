@@ -790,7 +790,7 @@ def imprimir_status_cli_verbot() -> None:
     from collections import defaultdict
 
     stats_f = cfg.ROOT_DIR / cfg.ARCHIVO_STATS_JSONL
-    log_f = cfg.ROOT_DIR / cfg.ARCHIVO_LOG_LOCAL
+    log_f = cfg.ROOT_DIR / cfg.ARCHIVO_LOG_SESION
     ops = [
         json.loads(l)
         for l in stats_f.read_text(encoding="utf-8", errors="ignore").splitlines()
