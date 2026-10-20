@@ -247,8 +247,8 @@ _ULTIMO_MTIME_OOS: float = 0.0
 # Limites fisicos inquebrantables (Shadow Gate): ninguna calibracion OOS puede salir de estos rangos
 _LIMITES_SHADOW_GATE: Dict[str, Tuple[float, float]] = {
     "KELLY_FRACCION_BASE": (0.35, 0.62),
-    "Z_SCORE_UMBRAL_HIGH_BETA": (-4.50, -2.90),
-    "Z_SCORE_UMBRAL_TIER1": (-4.00, -2.60),
+    "Z_SCORE_UMBRAL_HIGH_BETA": (-4.50, -2.85),
+    "Z_SCORE_UMBRAL_TIER1": (-4.00, -2.55),
     "OFI_MIN_ENTRADA": (0.08, 0.45),
     "MAKER_SCRATCH_TIEMPO_SEG": (12.0, 25.0),
     "COSECHA_TRIZ_ACTIVACION_PCT": (0.0022, 0.0045),
