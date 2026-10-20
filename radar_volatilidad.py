@@ -797,49 +797,85 @@ if hasattr(RadarVolatilidad, "procesar_instantanea_libro") and not hasattr(Radar
 
 # === INICIO AJUSTES QUIRURGICOS V3.0 (SKILL HUNTER) ===
 def verificar_compuerta_hurst_short_v3(
-    hurst_actual: float, z_score: float, ema900_dist_pct: float = 0.0
+    hurst_actual: float,
+    z_score: float,
+    ema900_dist_pct: float = 0.0,
+    symbol: str = '',
 ) -> bool:
-    if abs(float(z_score)) >= 11.0 or float(ema900_dist_pct) >= 0.0100:
+    if symbol in getattr(cfg, 'CLASE_HIGH_BETA', ()):
+        if float(ema900_dist_pct) < 0.0052 or float(z_score) < 4.50:
+            return False
+    if abs(float(z_score)) >= 11.5 and float(ema900_dist_pct) >= 0.0120:
         return True
-    cota_h = max(0.515, float(cfg.HURST_MAX_ENTRADA))
-    return float(hurst_actual) <= cota_h
+    return float(hurst_actual) <= 0.495
 
 
-if hasattr(RadarVolatilidad, 'procesar_instantanea_libro') and not hasattr(RadarVolatilidad, '_orig_proc_libro_v3_hurst'):
-    RadarVolatilidad._orig_proc_libro_v3_hurst = RadarVolatilidad.procesar_instantanea_libro
+if hasattr(RadarVolatilidad, '_evaluar_gatillo_short_chronos') and not hasattr(RadarVolatilidad, '_orig_eval_short_pre_v3'):
+    RadarVolatilidad._orig_eval_short_pre_v3 = RadarVolatilidad._evaluar_gatillo_short_chronos
     _ULT_LOG_HURST_SHORT_V3: dict[str, float] = {}
 
-    async def _procesar_instantanea_libro_hurst_short_v3(
+    async def _evaluar_gatillo_short_chronos_pre_v3(
+        self, symbol: str, vz, tk, spread_ok: bool, ahora: float, *args, **kwargs
+    ):
+        if __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') != '1':
+            n_pts = len(getattr(vz, 'precios', [])) if vz is not None else 0
+            if n_pts >= 40:
+                h_val = float(getattr(tk, 'hurst', 0.45) or 0.45)
+                z_val = float(getattr(tk, 'z_score', 0.0) or 0.0)
+                ema_d = float(getattr(tk, 'ema900_dist_pct', 0.0) or 0.0)
+                if not verificar_compuerta_hurst_short_v3(h_val, z_val, ema_d, symbol):
+                    ult = _ULT_LOG_HURST_SHORT_V3.get(symbol, 0.0)
+                    if ahora - ult >= 2.0:
+                        _ULT_LOG_HURST_SHORT_V3[symbol] = ahora
+                        log_sniper(
+                            f'\u26a0\ufe0f [FILTRO HURST SHORT] {symbol} bloqueado pre-orden '
+                            f'(H={h_val:.3f} > 0.495 | Z={z_val:+.2f} | EMA={ema_d*100:+.2f}%).'
+                        )
+                    return None
+        res = RadarVolatilidad._orig_eval_short_pre_v3(
+            self, symbol, vz, tk, spread_ok, ahora, *args, **kwargs
+        )
+        if hasattr(res, '__await__'):
+            res = await res
+        return res
+
+    RadarVolatilidad._evaluar_gatillo_short_chronos = _evaluar_gatillo_short_chronos_pre_v3
+
+
+if hasattr(RadarVolatilidad, 'procesar_instantanea_libro') and not hasattr(RadarVolatilidad, '_orig_proc_libro_v3_clean'):
+    RadarVolatilidad._orig_proc_libro_v3_clean = RadarVolatilidad.procesar_instantanea_libro
+
+    async def _procesar_instantanea_libro_v3_clean(
         self, symbol: str, bids: list, asks: list, timestamp: float | None = None
     ):
         ahora_ts = float(timestamp if timestamp is not None else time.time())
         pausa_prev = ESTADO_RAM.pausa_macro_hasta_ts
-        res = await RadarVolatilidad._orig_proc_libro_v3_hurst(
-            self, symbol, bids, asks, timestamp
-        )
+        tk = ESTADO_RAM.ticks_ram.get(symbol)
+        orig_h_max = cfg.HURST_MAX_ENTRADA
+        try:
+            if (
+                tk is not None
+                and __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') != '1'
+                and float(getattr(tk, 'z_score', 0.0)) <= -2.80
+                and float(getattr(tk, 'ofi', 0.0)) >= 0.20
+                and float(getattr(tk, 'lyapunov_acel', -1.0)) >= 0.00005
+            ):
+                cfg.HURST_MAX_ENTRADA = 0.680
+            res = await RadarVolatilidad._orig_proc_libro_v3_clean(
+                self, symbol, bids, asks, timestamp
+            )
+        finally:
+            cfg.HURST_MAX_ENTRADA = orig_h_max
         if (
             ESTADO_RAM.pausa_macro_hasta_ts > pausa_prev
             and __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') != '1'
         ):
-            ESTADO_RAM.pausa_macro_hasta_ts = ahora_ts + 30.0
-        if isinstance(res, dict) and str(res.get('side', '')).lower() == 'short':
-            vz = getattr(self, 'ventanas', {}).get(symbol)
-            n_pts = len(getattr(vz, 'precios', [])) if vz is not None else 0
-            if n_pts >= 45:
-                tk = ESTADO_RAM.ticks_ram.get(symbol)
-                h_val = float(res.get('hurst', getattr(tk, 'hurst', 0.45)) or 0.45)
-                z_val = float(res.get('z_score', getattr(tk, 'z_score', 0.0)) or 0.0)
-                ema_d = float(getattr(tk, 'ema900_dist_pct', 0.0) or 0.0)
-                if not verificar_compuerta_hurst_short_v3(h_val, z_val, ema_d):
-                    ult = _ULT_LOG_HURST_SHORT_V3.get(symbol, 0.0)
-                    if ahora_ts - ult >= 1.0:
-                        _ULT_LOG_HURST_SHORT_V3[symbol] = ahora_ts
-                        log_sniper.info(
-                            f'\u26a0\ufe0f [FILTRO HURST] {symbol} persistencia alcista en SHORT '
-                            f'(H={h_val:.3f} > 0.515). Abortando.'
-                        )
-                    return None
+            ESTADO_RAM.pausa_macro_hasta_ts = ahora_ts + 25.0
+            for d_attr in ('_precios_10s', 'precios_10s', 'ventana_contagio'):
+                d_obj = getattr(self, d_attr, None)
+                if isinstance(d_obj, dict):
+                    d_obj.clear()
         return res
 
-    RadarVolatilidad.procesar_instantanea_libro = _procesar_instantanea_libro_hurst_short_v3
+    RadarVolatilidad.procesar_instantanea_libro = _procesar_instantanea_libro_v3_clean
 # === FIN AJUSTES QUIRURGICOS V3.0 (SKILL HUNTER) ===

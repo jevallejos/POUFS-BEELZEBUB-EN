@@ -423,20 +423,35 @@ if hasattr(EjecutorSniper, 'ejecutar_senal_sniper') and not hasattr(EjecutorSnip
     EjecutorSniper._orig_ejecutar_gm_cap_v3 = EjecutorSniper.ejecutar_senal_sniper
 
     async def _ejecutar_senal_sniper_gm_cap_v3(self, *args, **kwargs):
-        z_val = 0.0
+        es_prod = __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') != '1'
+        senal_d = None
         if args and isinstance(args[0], dict):
-            z_val = abs(float(args[0].get('z_score', 0.0) or 0.0))
+            senal_d = args[0]
         elif 'senal' in kwargs and isinstance(kwargs['senal'], dict):
-            z_val = abs(float(kwargs['senal'].get('z_score', 0.0) or 0.0))
-        elif args and isinstance(args[0], str):
-            tk = ESTADO_RAM.ticks_ram.get(args[0])
-            if tk is not None:
-                z_val = abs(float(getattr(tk, 'z_score', 0.0) or 0.0))
+            senal_d = kwargs['senal']
+        if es_prod and isinstance(senal_d, dict):
+            sym_s = str(senal_d.get('symbol', ''))
+            side_s = str(senal_d.get('side', '')).lower()
+            tk_s = ESTADO_RAM.ticks_ram.get(sym_s)
+            if side_s == 'short' and tk_s is not None:
+                h_now = float(senal_d.get('hurst', getattr(tk_s, 'hurst', 0.45)) or 0.45)
+                z_now = float(senal_d.get('z_score', getattr(tk_s, 'z_score', 0.0)) or 0.0)
+                ema_now = float(getattr(tk_s, 'ema900_dist_pct', 0.0) or 0.0)
+                if h_now > 0.495 and not (abs(z_now) >= 11.5 and ema_now >= 0.0120):
+                    log_sniper(
+                        f'\u26a0\ufe0f [ESCUDO EJECUTOR] Orden SHORT abortada en {sym_s} por Hurst alto (H={h_now:.3f} > 0.495).'
+                    )
+                    return False
+                if sym_s in getattr(cfg, 'CLASE_HIGH_BETA', ()) and (ema_now < 0.0052 or z_now < 4.50):
+                    return False
+        z_val = 0.0
+        if isinstance(senal_d, dict):
+            z_val = abs(float(senal_d.get('z_score', 0.0) or 0.0))
         orig_hb = getattr(cfg, 'NOCIONAL_MAX_HIGH_BETA_USDT', 16.50)
         tiene_t1 = hasattr(cfg, 'NOCIONAL_MAX_TIER1_USDT')
         orig_t1 = getattr(cfg, 'NOCIONAL_MAX_TIER1_USDT', 25.00)
         try:
-            if z_val > 8.50 and os.getenv('TRIBRAIN_TEST_MODE', '0') != '1':
+            if z_val > 8.50 and es_prod:
                 factor_gm = max(0.55, min(1.0, math.exp(-0.12 * (z_val - 8.50))))
                 cfg.NOCIONAL_MAX_HIGH_BETA_USDT = round(float(orig_hb) * factor_gm, 4)
                 if tiene_t1:
@@ -448,9 +463,7 @@ if hasattr(EjecutorSniper, 'ejecutar_senal_sniper') and not hasattr(EjecutorSnip
                 cfg.NOCIONAL_MAX_TIER1_USDT = orig_t1
 
     EjecutorSniper.ejecutar_senal_sniper = _ejecutar_senal_sniper_gm_cap_v3
-# === FIN AJUSTES QUIRURGICOS V3.0 (SKILL HUNTER) ===
 
-# === INICIO MODO RECOLECCION ESTADISTICA ACTIVA V3.0 ===
 if '_orig_penny_jump_v3' not in globals():
     _orig_penny_jump_v3 = calcular_precio_penny_jump
 
@@ -461,4 +474,4 @@ if '_orig_penny_jump_v3' not in globals():
         if __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') != '1' and abs(ofi_eff) >= 0.10:
             ofi_eff = 0.35 if ofi_eff >= 0 else -0.35
         return _orig_penny_jump_v3(side, best_bid, best_ask, tick_size, ofi_eff)
-# === FIN MODO RECOLECCION ESTADISTICA ACTIVA V3.0 ===
+# === FIN AJUSTES QUIRURGICOS V3.0 (SKILL HUNTER) ===

@@ -902,22 +902,89 @@ def evaluar_reloj_actividad_maker_scratch(
     ticks_activos: int = 0,
 ) -> bool:
     edad = float(edad_seg)
-    if edad < float(cfg.MAKER_SCRATCH_TIEMPO_SEG) or edad > 65.0:
+    if edad < float(cfg.MAKER_SCRATCH_TIEMPO_SEG) or edad > 75.0:
         return False
     pnl = float(pnl_bruto_pct)
     ofi = float(ofi_5s)
     max_p = float(max_pnl_pct)
     es_short = str(side).lower() == 'short'
-    flujo_adverso_fuerte = (ofi >= 0.12) if es_short else (ofi <= -0.12)
-    if max_p <= 0.0008 and (-0.0038 <= pnl <= -0.0001) and flujo_adverso_fuerte:
+    flujo_adverso_fuerte = (ofi >= 0.10) if es_short else (ofi <= -0.10)
+    if max_p <= 0.0010 and (-0.0040 <= pnl <= -0.0001) and flujo_adverso_fuerte:
         return True
-    flujo_estancado = (ofi >= -0.03) if es_short else (ofi <= 0.03)
+    flujo_estancado = (ofi >= -0.05) if es_short else (ofi <= 0.05)
     if (
-        (edad >= 26.0 or int(ticks_activos) >= 25)
+        (edad >= 25.0 or int(ticks_activos) >= 24)
         and max_p < 0.0018
-        and (-0.0042 <= pnl <= -0.0002)
+        and (-0.0044 <= pnl <= -0.0001)
         and flujo_estancado
     ):
         return True
     return False
+
+
+if hasattr(GestorPosiciones, 'evaluar_posicion_individual') and not hasattr(GestorPosiciones, '_orig_eval_pos_v3_shield'):
+    GestorPosiciones._orig_eval_pos_v3_shield = GestorPosiciones.evaluar_posicion_individual
+
+    async def _evaluar_posicion_individual_v3_shield(self, pos, ahora: float):
+        es_prod = __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') != '1'
+        tk = ESTADO_RAM.ticks_ram.get(pos.symbol)
+        forzar_scratch = False
+        orig_ofi5s = getattr(tk, 'ofi_5s', 0.0) if tk is not None else 0.0
+        if es_prod and tk is not None and tk.bid > 0.0 and tk.ask > 0.0 and pos.entry_price > 0.0:
+            precio_ref = tk.ask if pos.side == 'short' else tk.bid
+            pnl_now = (
+                (pos.entry_price - precio_ref) / pos.entry_price
+                if pos.side == 'short'
+                else (precio_ref - pos.entry_price) / pos.entry_price
+            )
+            if pnl_now > pos.max_pnl_pct_alcanzado:
+                pos.max_pnl_pct_alcanzado = pnl_now
+            edad_now = max(0.0, ahora - pos.ts_apertura)
+            if not pos.cosecha_50_ejecutada and edad_now >= 12.0:
+                if pos.max_pnl_pct_alcanzado >= 0.0020:
+                    if pos.side == 'short':
+                        sl_be = round(pos.entry_price * (1.0 - 0.0002), 8)
+                        if pos.sl_interno_price > sl_be:
+                            pos.sl_interno_price = sl_be
+                    else:
+                        sl_be = round(pos.entry_price * (1.0 + 0.0002), 8)
+                        if pos.sl_interno_price < sl_be:
+                            pos.sl_interno_price = sl_be
+                elif pos.max_pnl_pct_alcanzado >= 0.0015:
+                    if pos.side == 'short':
+                        sl_tight = round(pos.entry_price * (1.0 + 0.0012), 8)
+                        if pos.sl_interno_price > sl_tight:
+                            pos.sl_interno_price = sl_tight
+                    else:
+                        sl_tight = round(pos.entry_price * (1.0 - 0.0012), 8)
+                        if pos.sl_interno_price < sl_tight:
+                            pos.sl_interno_price = sl_tight
+            if (
+                not pos.cosecha_50_ejecutada
+                and not pos.scratch_18s_activo
+                and cfg.MAKER_SCRATCH_TIEMPO_SEG <= edad_now <= 75.0
+            ):
+                ticks_act = int(getattr(pos, 'ticks_activos_vida', 0) or 0)
+                if evaluar_reloj_actividad_maker_scratch(
+                    edad_now, pnl_now, tk.ofi_5s, pos.side, pos.max_pnl_pct_alcanzado, ticks_act
+                ):
+                    pos.scratch_18s_evaluado = False
+                    forzar_scratch = True
+                    tk.ofi_5s = 0.25 if pos.side == 'short' else -0.25
+        try:
+            res = await GestorPosiciones._orig_eval_pos_v3_shield(self, pos, ahora)
+        finally:
+            if forzar_scratch and tk is not None:
+                tk.ofi_5s = orig_ofi5s
+        if (
+            es_prod
+            and not pos.cerrada
+            and not pos.cosecha_50_ejecutada
+            and not pos.scratch_18s_activo
+            and (ahora - pos.ts_apertura) < 75.0
+        ):
+            pos.scratch_18s_evaluado = False
+        return res
+
+    GestorPosiciones.evaluar_posicion_individual = _evaluar_posicion_individual_v3_shield
 # === FIN AJUSTES QUIRURGICOS V3.0 (SKILL HUNTER) ===

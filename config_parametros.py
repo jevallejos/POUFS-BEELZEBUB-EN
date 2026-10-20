@@ -323,14 +323,16 @@ def aplicar_perfil_recoleccion_estadistica_v3() -> None:
     g['EMA900_DIST_MIN_TIER1_PCT'] = -0.0028
     g['OFI_MIN_ENTRADA'] = 0.10
     g['OFI_TICKS_CONFIRMACION'] = 2
-    g['HURST_MAX_ENTRADA'] = 0.515
-    g['HAWKES_ABSORCION_MIN_SEG'] = 0.35
-    g['HAWKES_INTENSIDAD_MIN'] = 0.08
+    g['HURST_MAX_ENTRADA'] = 0.495
+    g['HAWKES_ABSORCION_MIN_SEG'] = 0.30
+    g['HAWKES_INTENSIDAD_MIN'] = 0.05
     g['SHORT_PUMP_SOBREEXTENSION_PCT'] = 0.0042
-    g['SHORT_OFI_MAX_ENTRADA'] = -0.20
+    g['SHORT_OFI_MAX_ENTRADA'] = -0.22
     g['SHORT_LYAPUNOV_ACEL_MAX_PCT'] = -0.00018
     g['TTL_ORDEN_ENTRADA_SEG'] = 3.80
     g['COSECHA_TRIZ_ACTIVACION_PCT'] = 0.0022
+    g['CONTAGIO_MIN_PARES_COLAPSO'] = 4
+    g['CONTAGIO_CAIDA_10S_PCT'] = -0.0060
 
 if '_orig_recargar_oos_freq_v3' not in globals():
     _orig_recargar_oos_freq_v3 = recargar_calibracion_oos_si_cambio
