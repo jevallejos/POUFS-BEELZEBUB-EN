@@ -415,7 +415,6 @@ if '_orig_log_sniper_v3' not in globals():
             return _orig_log_sniper_v3(msg)
         ahora = time.time()
         st = _TELEMETRIA_ESTADO_V3
-        # 1. Marcar eventos de arranque o cierre para permitir siempre su Caja Negra
         if (
             'INICIANDO CEREBRO' in msg
             or 'CIERRE ' in msg
@@ -423,7 +422,6 @@ if '_orig_log_sniper_v3' not in globals():
             or 'Auditor\u00eda UTA' in msg
         ):
             st['evento_importante_ts'] = ahora
-        # 2. Coalescer reconexiones ping-pong de Bybit (8 lineas -> 1 linea limpia)
         if '[RADAR] Error en ' in msg and ('RequestTimeout' in msg or 'closing code 1006' in msg):
             ult_ws = float(st.get('ws_timeout_ts', 0.0) or 0.0)
             if ahora - ult_ws < 12.0:
@@ -432,7 +430,6 @@ if '_orig_log_sniper_v3' not in globals():
             return _orig_log_sniper_v3(
                 '\U0001f504 [WS BYBIT] Reconexi\u00f3n autom\u00e1tica de stream p\u00fablico completada (keepalive ping-pong).'
             )
-        # 3. Filtrar Groq LPU cuando permanece en 7/7 sin cambios (1 resumen cada 30m)
         if '[ESCUDO RAM TRI-CORTEX] Matriz Direccional Groq LPU' in msg:
             partes = msg.split(': ')
             estado_g = partes[-1].strip() if len(partes) > 1 else msg
@@ -442,7 +439,6 @@ if '_orig_log_sniper_v3' not in globals():
             st['groq_state'] = estado_g
             st['groq_ts'] = ahora
             return _orig_log_sniper_v3(msg)
-        # 4. Filtrar Oraculo Gemini cuando no han cambiado los trades (1 resumen cada 30m)
         if '[TRI-CORTEX GOOGLE AI]' in msg:
             idx_p = msg.find('(Ultimos')
             estado_m = msg[idx_p:] if idx_p != -1 else msg
@@ -452,7 +448,6 @@ if '_orig_log_sniper_v3' not in globals():
             st['gemini_state'] = estado_m
             st['gemini_ts'] = ahora
             return _orig_log_sniper_v3(msg)
-        # 5. Filtrar cuadros CAJA NEGRA repetitivos cada 5m si no hubo cierre reciente (1 cada 30m)
         if '\u2554\u2550\u2550\u2550\u2550\u2550\u2550 [CAJA NEGRA]' in msg:
             reciente = (ahora - float(st.get('evento_importante_ts', 0.0) or 0.0)) <= 6.0
             caduco = (ahora - float(st.get('box_ts', 0.0) or 0.0)) >= 1800.0
@@ -469,7 +464,6 @@ if '_orig_log_sniper_v3' not in globals():
                     st['suprimir_box_actual'] = False
                 return
             return _orig_log_sniper_v3(msg)
-        # 6. Cooldown de 20s por par para avisos de filtros (evita rafagas repetidas)
         for tag_w in ('[REPULSOR LYAPUNOV]', '[FILTRO HURST]', '[MEMORIA HAWKES]', '[ANTI-PUMP-TOP]', '[MICROESTRUCTURA]'):
             if tag_w in msg:
                 palabras = msg.split()

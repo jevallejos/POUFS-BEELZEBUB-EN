@@ -266,3 +266,54 @@ class GestorTelemetriaTelegram:
 
 # Instancia Singleton global del gestor de telemetria
 TELEMETRIA_TG: GestorTelemetriaTelegram = GestorTelemetriaTelegram()
+
+# === INICIO GARANTIA ENTREGA TELEGRAM V3.0 ===
+def _resolver_credenciales_telegram_v3() -> tuple[str, str]:
+    env_p = __import__('pathlib').Path(__file__).resolve().parent / '.env'
+    if env_p.exists():
+        for lin in env_p.read_text(encoding='utf-8', errors='ignore').splitlines():
+            s = lin.strip()
+            if s and not s.startswith('#') and '=' in s:
+                k, v = s.split('=', 1)
+                os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+    token = (
+        os.environ.get('TELEGRAM_BOT_TOKEN')
+        or os.environ.get('TELEGRAM_TOKEN')
+        or getattr(cfg, 'TELEGRAM_BOT_TOKEN', '')
+        or ''
+    ).strip()
+    chat_id = (
+        os.environ.get('TELEGRAM_CHAT_ID')
+        or os.environ.get('CHAT_ID')
+        or getattr(cfg, 'TELEGRAM_CHAT_ID', '')
+        or ''
+    ).strip()
+    cfg.TELEGRAM_BOT_TOKEN = token
+    cfg.TELEGRAM_CHAT_ID = chat_id
+    return token, chat_id
+
+if not hasattr(GestorTelemetriaTelegram, '_orig_despachar_http_v3'):
+    GestorTelemetriaTelegram._orig_despachar_http_v3 = GestorTelemetriaTelegram._despachar_http_telegram
+
+    async def _despachar_http_telegram_v3(self, texto: str, tipo_evento: str, symbol: str) -> bool:
+        if os.environ.get('TRIBRAIN_TEST_MODE') != '1':
+            tok, cid = _resolver_credenciales_telegram_v3()
+            for attr_t in ('bot_token', 'token'):
+                if hasattr(self, attr_t):
+                    setattr(self, attr_t, tok)
+            for attr_c in ('chat_id',):
+                if hasattr(self, attr_c):
+                    setattr(self, attr_c, cid)
+        ok = await GestorTelemetriaTelegram._orig_despachar_http_v3(self, texto, tipo_evento, symbol)
+        if os.environ.get('TRIBRAIN_TEST_MODE') != '1':
+            if ok:
+                primera = str(texto or '').splitlines()[0][:75]
+                log_sniper(f'\U0001f4e8 [TELEGRAM OK] ({tipo_evento}) {primera}')
+            else:
+                tok, cid = _resolver_credenciales_telegram_v3()
+                if not tok or not cid:
+                    log_sniper('\u26a0\ufe0f [TELEGRAM ALERTA] Faltan TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID en .env')
+        return ok
+
+    GestorTelemetriaTelegram._despachar_http_telegram = _despachar_http_telegram_v3
+# === FIN GARANTIA ENTREGA TELEGRAM V3.0 ===

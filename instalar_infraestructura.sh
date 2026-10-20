@@ -1,173 +1,468 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# ARCHIVO #13: instalar_infraestructura.sh
+# ARCHIVO #11: instalar_infraestructura.sh
 # SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V3.0 — ESTRATEGIA CHRONOS-TRIZ
 # ==============================================================================
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PY_BIN="${REPO_DIR}/venv/bin/python"
-SERVICE_NAME="tribrain-eval-oos"
-SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
-TIMER_FILE="/etc/systemd/system/${SERVICE_NAME}.timer"
-USER_NAME="$(whoami)"
+VENV_PY="${REPO_DIR}/venv/bin/python"
+SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
+BASHRC_FILE="${HOME}/.bashrc"
 
 echo "=================================================================="
 echo "⚙️  INSTALANDO INFRAESTRUCTURA TRI-BRAIN-SNIPER (SKILL HUNTER) V3.0"
 echo "   Repositorio : ${REPO_DIR}"
-echo "   Python VENV : ${PY_BIN}"
+echo "   Python VENV : ${VENV_PY}"
 echo "=================================================================="
 
-if [ ! -x "${PY_BIN}" ]; then
-    echo "❌ [ERROR] No se encontro el ejecutable Python en ${PY_BIN}"
-    exit 1
-fi
+mkdir -p "${SYSTEMD_USER_DIR}"
 
-git -C "${REPO_DIR}" config core.fileMode false || true
-chmod +x "${REPO_DIR}/instalar_infraestructura.sh" "${REPO_DIR}/main.py" "${REPO_DIR}/evaluador_cuantico_oos.py" 2>/dev/null || true
-
-sudo tee "${SERVICE_FILE}" >/dev/null <<EOF
+cat <<EOF > "${SYSTEMD_USER_DIR}/tribrain-eval-oos.service"
 [Unit]
-Description=Evaluador Cuantico Walk-Forward OOS TRI-BRAIN-SNIPER (Skill Hunter) V3.0
+Description=Evaluador Cuantico OOS Tri-Brain-Sniper V3.0 (Skill Hunter)
 After=network-online.target
-Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=${USER_NAME}
 WorkingDirectory=${REPO_DIR}
 Environment="PYTHONUTF8=1"
 Nice=15
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7
-ExecStart=${PY_BIN} ${REPO_DIR}/evaluador_cuantico_oos.py --repo ${REPO_DIR} --horas 8 --telegram
-StandardOutput=append:${REPO_DIR}/bot_hft_h.log
-StandardError=append:${REPO_DIR}/bot_hft_h.log
+ExecStart=${VENV_PY} ${REPO_DIR}/evaluador_cuantico_oos.py
+StandardOutput=null
+StandardError=null
 EOF
 
-sudo tee "${TIMER_FILE}" >/dev/null <<EOF
+cat <<EOF > "${SYSTEMD_USER_DIR}/tribrain-eval-oos.timer"
 [Unit]
-Description=Timer Tri-Sesion (00:00, 08:00, 16:00 UTC) para TRI-BRAIN-SNIPER (Skill Hunter) V3.0
+Description=Timer 8h Evaluador Cuantico OOS Tri-Brain-Sniper V3.0
 
 [Timer]
 OnCalendar=*-*-* 00,08,16:00:00 UTC
+RandomizedDelaySec=30
 Persistent=true
-RandomizedDelaySec=25
-Unit=${SERVICE_NAME}.service
+Unit=tribrain-eval-oos.service
 
 [Install]
 WantedBy=timers.target
 EOF
 
-sudo systemctl daemon-reload
-sudo systemctl enable "${SERVICE_NAME}.timer"
-sudo systemctl restart "${SERVICE_NAME}.timer"
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl --user daemon-reload 2>/dev/null || true
+    systemctl --user enable --now tribrain-eval-oos.timer 2>/dev/null || true
+    echo "✅ [SYSTEMD OK] Timer tribrain-eval-oos.timer habilitado y activo."
+fi
 
-echo "✅ [SYSTEMD OK] Timer ${SERVICE_NAME}.timer habilitado y activo:"
-systemctl list-timers "${SERVICE_NAME}.timer" --no-pager || true
+sed -i '/# === INICIO PANEL VERBOT TRI-BRAIN-SNIPER ===/,/# === FIN PANEL VERBOT TRI-BRAIN-SNIPER ===/d' "${BASHRC_FILE}" 2>/dev/null || true
+sed -i '/# === TRIBRAIN-SNIPER HUD START ===/,/# === TRIBRAIN-SNIPER HUD END ===/d' "${BASHRC_FILE}" 2>/dev/null || true
 
-python3 - "${REPO_DIR}" << 'PYEOF'
-import pathlib, re, sys
+cat << 'EOF' >> "${BASHRC_FILE}"
+# === INICIO PANEL VERBOT TRI-BRAIN-SNIPER ===
+verbot() {
+    local DIR="$HOME/Tri-Brain-Sniper"
+    local LOCK="$DIR/.tribrain.lock"
+    local LOG="$DIR/bot_hft.log"
+    local STATS="$DIR/tribrain_stats_v1.jsonl"
+    local PY="$DIR/venv/bin/python"
 
-repo_dir = sys.argv[1]
-rc_path = pathlib.Path.home() / ".bashrc"
-txt = rc_path.read_text(encoding="utf-8", errors="ignore") if rc_path.exists() else ""
+    # 1. Subcomando -q: Evaluador Cuantico OOS en caliente
+    if [ "${1:-}" = "-q" ]; then
+        echo "=========================================================================================="
+        echo " 🧠 EJECUTANDO EVALUADOR CUÁNTICO OOS WALK-FORWARD — TRI-BRAIN-SNIPER V3.0"
+        echo "=========================================================================================="
+        (cd "$DIR" && "$PY" evaluador_cuantico_oos.py)
+        echo "=========================================================================================="
+        return 0
+    fi
 
-txt = re.sub(
-    r"# === INICIO PANEL VERBOT TRI-BRAIN-SNIPER ===.*?# === FIN PANEL VERBOT TRI-BRAIN-SNIPER ===\n?",
-    "",
-    txt,
-    flags=re.DOTALL,
+    # 2. Subcomando -t: Prueba real e inmediata de entrega a Telegram + Resumen del ultimo trade
+    if [ "${1:-}" = "-t" ]; then
+        echo "=========================================================================================="
+        echo " 📨 PROBANDO ENTREGA EN VIVO A TELEGRAM — TRI-BRAIN-SNIPER V3.0 [SKILL HUNTER]"
+        echo "=========================================================================================="
+        "$PY" - "$DIR" "$STATS" "$LOG" << 'PYTEOF'
+import asyncio
+import json
+import os
+import pathlib
+import sys
+
+base_dir = pathlib.Path(sys.argv[1])
+stats_path = pathlib.Path(sys.argv[2])
+log_path = pathlib.Path(sys.argv[3])
+sys.path.insert(0, str(base_dir))
+
+import telemetria_telegram as tg_mod
+
+tok, cid = tg_mod._resolver_credenciales_telegram_v3()
+if not tok or not cid:
+    print(" 🔴 ERROR: No se encontraron TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID en .env")
+    sys.exit(1)
+
+trades = []
+if stats_path.exists():
+    for l in stats_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        if l.strip():
+            try:
+                trades.append(json.loads(l))
+            except Exception:
+                pass
+
+total = len(trades)
+wins = sum(1 for t in trades if float(t.get("pnl_usdt", 0.0)) > 0)
+losses = total - wins
+wr = (wins / total * 100.0) if total else 0.0
+pnl_total = sum(float(t.get("pnl_usdt", 0.0)) for t in trades)
+
+bal_real = "N/A"
+if log_path.exists():
+    for l in reversed(log_path.read_text(encoding="utf-8", errors="ignore").splitlines()[-500:]):
+        if "real:" in l and "USDT" in l:
+            try:
+                bal_real = l.split("real:")[1].split("USDT")[0].strip() + " USDT"
+                break
+            except Exception:
+                pass
+
+ult_str = "Sin operaciones aún"
+if trades:
+    u = trades[-1]
+    sym_u = str(u.get("symbol", "")).replace("/USDT:USDT", "")
+    side_u = str(u.get("side", "long")).upper()
+    pnl_u = float(u.get("pnl_usdt", 0.0))
+    pct_u = float(u.get("pnl_pct", u.get("pnl_percentage", 0.0)))
+    mot_u = str(u.get("motivo", "CIERRE"))
+    ic_u = "🟩" if pnl_u >= 0 else "🔴"
+    ult_str = f"{ic_u} #{total} {sym_u} [{side_u}] {pct_u:+.2f}% ({pnl_u:+.4f} USDT | {mot_u})"
+
+msg_tg = (
+    f"⚡ [REPORTE DE ESTADO EN VIVO — TRI-BRAIN-SNIPER V3.0]\n"
+    f"📊 Caja Negra: {total} Trades ({wins}W / {losses}L | WR: {wr:.1f}%)\n"
+    f"💰 PnL Neto: {pnl_total:+.4f} USDT | UTA Real: {bal_real}\n"
+    f"🎯 Último Cierre: {ult_str}"
 )
 
-plantilla_raw = r"""# === INICIO PANEL VERBOT TRI-BRAIN-SNIPER ===
-set +e 2>/dev/null || true
+ok = asyncio.run(tg_mod.TELEMETRIA_TG.enviar_mensaje_sistema(msg_tg))
+if ok:
+    print(" ✅ [TELEGRAM HTTP 200 OK] Mensaje entregado exitosamente a tu chat de Telegram.")
+else:
+    print(" 🔴 [TELEGRAM ERROR] Falló el envío HTTP a Telegram. Revisa bot_hft.log.")
+PYTEOF
+        echo "=========================================================================================="
+        return 0
+    fi
 
-tmuxro() {
-    set +e
-    echo "🔒 Entrando a tmux en MODO SOLO LECTURA (-r). Para salir sin apagar el bot presiona: Ctrl+B y luego d"
-    sleep 1
-    command tmux attach -t demonio_hft -r || true
-    return 0
-}
-
-verbot() {
-    set +e
-    local REPO="__REPO_DIR__"
-    local PY="${REPO}/venv/bin/python"
-    local LOCK="${REPO}/.tribrain.lock"
-    local LOG="${REPO}/bot_hft.log"
-    local LOG_H="${REPO}/bot_hft_h.log"
-    local MODO="${1:-live}"
-    local SUBMODO="${2:-status}"
-
-    echo "================================================================================"
-    echo " 👁️  PANEL FORENSE EN TIEMPO REAL — TRI-BRAIN-SNIPER V3.0 [SKILL HUNTER]"
-    echo "================================================================================"
-
-    if [ -f "${LOCK}" ]; then
-        local PID
-        PID=$(cat "${LOCK}" 2>/dev/null | tr -d '[:space:]' || true)
-        if [ -n "${PID}" ] && kill -0 "${PID}" 2>/dev/null; then
-            local PS_INFO
-            PS_INFO=$(ps -p "${PID}" -o pid=,etime=,rss=,%cpu= 2>/dev/null | awk '{printf "PID: %s | Uptime: %s | RAM: %.1f MB | CPU: %s%%", $1, $2, $3/1024, $4}' || true)
-            echo " 🟢 MOTOR EN VIVO -> ${PS_INFO}"
+    # 3. Subcomando -h / -h trades: Historial forense
+    if [ "${1:-}" = "-h" ]; then
+        echo "=========================================================================================="
+        echo " 📚 HISTORIAL FORENSE DE OPERACIONES — TRI-BRAIN-SNIPER V3.0 [SKILL HUNTER]"
+        echo "=========================================================================================="
+        if [ "${2:-}" = "trades" ]; then
+            grep -E "INICIANDO CEREBRO|\[RADAR\].*APROBADO|TELEMETRÍA DISPARO|Orden .* en |Posición .* activa|MICRO-SHIELD|MICRO-BE|PULSO POSICIÓN|Cosecha 50%|MAKER-SCRATCH|CIERRE |TELEGRAM OK" "$LOG" | tail -n 60
         else
-            echo " 🔴 ALERTA: Archivo .tribrain.lock presente (PID ${PID}), pero el proceso no responde."
+            tail -n 80 "$LOG"
+        fi
+        echo "=========================================================================================="
+        return 0
+    fi
+
+    # 4. Subcomando -x y -x cerrar: Auditoria en vivo de Contratos Abiertos en Bybit UTA
+    if [ "${1:-}" = "-x" ]; then
+        echo "=========================================================================================="
+        if [ "${2:-}" = "cerrar" ]; then
+            echo " 🚨 EJECUTANDO CIERRE DE EMERGENCIA (PANIC CLOSE) EN BYBIT UTA + NOTIFICACIÓN TELEGRAM"
+        else
+            echo " 🎯 AUDITORÍA EN VIVO DE CONTRATOS Y ÓRDENES ABIERTAS (BYBIT UTA + RAM)"
+        fi
+        echo "=========================================================================================="
+        if [ -f "$LOCK" ]; then
+            local PID
+            PID=$(cat "$LOCK" | tr -d '[:space:]')
+            if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+                local PS_INFO
+                PS_INFO=$(ps -p "$PID" -o pid=,etime=,rss=,%cpu= 2>/dev/null | awk '{printf "PID: %s | Uptime: %s | RAM: %.1f MB | CPU: %s%%", $1, $2, $3/1024, $4}')
+                echo " 🟢 MOTOR EN VIVO -> $PS_INFO"
+            fi
+        fi
+        "$PY" - "$DIR" "$LOG" "${2:-}" << 'PYXEOF'
+import asyncio
+import os
+import re
+import sys
+import pathlib
+
+base_dir = pathlib.Path(sys.argv[1])
+log_path = pathlib.Path(sys.argv[2])
+modo_arg = str(sys.argv[3] if len(sys.argv) > 3 else "").lower()
+sys.path.insert(0, str(base_dir))
+
+env_file = base_dir / ".env"
+if env_file.exists():
+    for line in env_file.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+
+estado_log = {}
+if log_path.exists():
+    for l in log_path.read_text(encoding="utf-8", errors="ignore").splitlines()[-1500:]:
+        if "Posición" in l and "activa en " in l:
+            m = re.search(r"activa en ([A-Z0-9/]+:USDT):\s*([0-9.]+)\s*@\s*([0-9.]+).*SL interno\s*([0-9.]+)\s*\|\s*SL Bybit\s*([0-9.]+)", l)
+            if m:
+                sym = m.group(1)
+                side = "SHORT" if "SHORT" in l else "LONG"
+                estado_log[sym] = {
+                    "side": side,
+                    "qty_log": float(m.group(2)),
+                    "entry_log": float(m.group(3)),
+                    "sl_int": m.group(4),
+                    "sl_bybit": m.group(5),
+                    "fase": "FASE_1 (90s máx)",
+                    "ultimo_pulso": l[:29],
+                }
+        elif "Cosecha 50% TRIZ PostOnly ejecutada" in l:
+            for sym in list(estado_log.keys()):
+                if sym in l:
+                    estado_log[sym]["fase"] = "FREE-RUNNER 50% (Sin límite tiempo)"
+                    estado_log[sym]["ultimo_pulso"] = l.split("] ", 1)[-1]
+        elif "[MICRO-BE" in l or "[MICRO-SHIELD" in l or "[PULSO POSICIÓN]" in l:
+            for sym in list(estado_log.keys()):
+                if sym in l:
+                    estado_log[sym]["ultimo_pulso"] = l.split("] ", 1)[-1]
+        elif "CIERRE " in l:
+            for sym in list(estado_log.keys()):
+                if sym in l:
+                    estado_log.pop(sym, None)
+
+try:
+    import ccxt
+    api_key = os.getenv("BYBIT_API_KEY") or os.getenv("API_KEY") or ""
+    api_secret = os.getenv("BYBIT_API_SECRET") or os.getenv("API_SECRET") or ""
+    ex = ccxt.bybit({
+        "apiKey": api_key,
+        "secret": api_secret,
+        "enableRateLimit": True,
+        "options": {"defaultType": "swap"},
+    })
+    bal = ex.fetch_balance()
+    usdt = bal.get("USDT", {})
+    tot_u = float(usdt.get("total") or 0.0)
+    free_u = float(usdt.get("free") or 0.0)
+    used_u = float(usdt.get("used") or 0.0)
+
+    positions = ex.fetch_positions()
+    abiertas = [p for p in positions if abs(float(p.get("contracts") or p.get("info", {}).get("size") or 0.0)) > 0]
+    ordenes = ex.fetch_open_orders()
+
+    if modo_arg == "cerrar":
+        import telemetria_telegram as tg_mod
+        cerradas_n = 0
+        for o in ordenes:
+            try:
+                ex.cancel_order(o["id"], o["symbol"])
+            except Exception:
+                pass
+        for p in abiertas:
+            sym = str(p.get("symbol", ""))
+            side = str(p.get("side", "")).lower()
+            qty = abs(float(p.get("contracts") or p.get("info", {}).get("size") or 0.0))
+            if qty > 0:
+                close_side = "sell" if side == "long" else "buy"
+                ex.create_order(sym, "market", close_side, qty, None, {"reduceOnly": True})
+                cerradas_n += 1
+                print(f" 🚨 [PANIC CLOSE EJECUTADO] {sym} ({side.upper()}) -> {qty} contratos cerrados a mercado.")
+        asyncio.run(tg_mod.TELEMETRIA_TG.enviar_mensaje_sistema(
+            f"🚨 [VERBOT -X CERRAR EJECUTADO]\nPosiciones cerradas manualmente: {cerradas_n}\nSaldo UTA: {tot_u:.4f} USDT"
+        ))
+        if cerradas_n == 0:
+            print(" ⚪ No había posiciones abiertas para cerrar en Bybit UTA.")
+        sys.exit(0)
+
+    print("------------------------------------------------------------------------------------------")
+    print(f" 💰 BILLETERA BYBIT UTA : Total: {tot_u:.4f} USDT | Libre: {free_u:.4f} USDT | Margen en Uso: {used_u:.4f} USDT")
+    print("------------------------------------------------------------------------------------------")
+
+    if not abiertas:
+        print(" ⚪ CONTRATOS ABIERTOS  : 0 posiciones activas en Bybit en este instante (100% en liquidez).")
+    else:
+        print(f" 🟢 CONTRATOS ABIERTOS EN BYBIT ({len(abiertas)}):")
+        print(f" {'PAR':<15} {'LADO':<6} {'CONTRATOS':<11} {'ENTRADA':<10} {'MARCA':<10} {'NOCIONAL':<10} {'PNL FLOTANTE':<18} {'SL BYBIT / INT'}")
+        print("------------------------------------------------------------------------------------------")
+        for p in abiertas:
+            sym = str(p.get("symbol", ""))
+            side = str(p.get("side", "")).upper()
+            contracts = float(p.get("contracts") or p.get("info", {}).get("size") or 0.0)
+            entry = float(p.get("entryPrice") or p.get("info", {}).get("avgPrice") or 0.0)
+            mark = float(p.get("markPrice") or p.get("info", {}).get("markPrice") or 0.0)
+            notional = abs(float(p.get("notional") or (contracts * mark) or 0.0))
+            upnl = float(p.get("unrealizedPnl") or p.get("info", {}).get("unrealisedPnl") or 0.0)
+            pct = ((mark - entry) / entry * 100.0) if (entry > 0 and side == "LONG") else (((entry - mark) / entry * 100.0) if entry > 0 else 0.0)
+            sl_b = p.get("stopLossPrice") or p.get("info", {}).get("stopLoss") or "-"
+            info_l = estado_log.get(sym, {})
+            sl_i = info_l.get("sl_int", "-")
+            fase = info_l.get("fase", "ACTIVA")
+            ic = "🟩" if upnl >= 0 else "🔴"
+            print(f" {sym.replace('/USDT:USDT',''):<15} {side:<6} {contracts:<11.4f} {entry:<10.5f} {mark:<10.5f} {notional:<9.2f}$ {ic} {upnl:+.4f}$ ({pct:+.2f}%)  SL:{sl_b} / Int:{sl_i}")
+            print(f"    ↳ Estado Chronos-TRIZ: {fase} | Último evento: {info_l.get('ultimo_pulso', 'N/A')}")
+
+    print("------------------------------------------------------------------------------------------")
+    if not ordenes:
+        print(" ⚪ ÓRDENES EN LIBRO    : 0 órdenes Limit PostOnly pendientes.")
+    else:
+        print(f" 📝 ÓRDENES ABIERTAS EN LIBRO ({len(ordenes)}):")
+        for o in ordenes:
+            print(f"   • {o.get('symbol')} | {str(o.get('side')).upper()} {o.get('type')} | Qty: {o.get('amount')} @ {o.get('price')} | ID: {o.get('id')}")
+except Exception as e:
+    print(f" ⚠️ [MODO OFFLINE LOG] No se pudo consultar REST en vivo ({e}). Mostrando estado en RAM/Log:")
+    if not estado_log:
+        print(" ⚪ CONTRATOS EN RAM/LOG: 0 posiciones abiertas actualmente.")
+    else:
+        for sym, d in estado_log.items():
+            print(f" 🟢 {sym} [{d['side']}] | Contratos: {d['qty_log']} @ {d['entry_log']} | SL Int: {d['sl_int']} | Fase: {d['fase']}")
+PYXEOF
+        echo "=========================================================================================="
+        return 0
+    fi
+
+    # 5. Vista Principal (verbot y verbot -s)
+    echo "=========================================================================================="
+    echo " 👁️  PANEL FORENSE DE ALTA SEÑAL — TRI-BRAIN-SNIPER V3.0 [SKILL HUNTER]"
+    echo "=========================================================================================="
+
+    if [ -f "$LOCK" ]; then
+        local PID
+        PID=$(cat "$LOCK" | tr -d '[:space:]')
+        if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+            local PS_INFO
+            PS_INFO=$(ps -p "$PID" -o pid=,etime=,rss=,%cpu= 2>/dev/null | awk '{printf "PID: %s | Uptime: %s | RAM: %.1f MB | CPU: %s%%", $1, $2, $3/1024, $4}')
+            echo " 🟢 MOTOR EN VIVO -> $PS_INFO"
+        else
+            echo " 🔴 ALERTA: Archivo .lock presente (PID $PID), pero el proceso no responde."
         fi
     else
         echo " ⚪ MOTOR DETENIDO: No existe archivo .tribrain.lock activo."
     fi
 
-    case "${MODO}" in
-        -s|--status)
-            "${PY}" -c "import sys; sys.path.insert(0, '${REPO}'); import gestor_posiciones as gp; gp.imprimir_status_cli_verbot()" || true
-            ;;
-        -x|--xray)
-            "${PY}" -c "import asyncio, sys; sys.path.insert(0, '${REPO}'); import gestor_posiciones as gp; asyncio.run(gp.ejecutar_radar_xray_cli('${SUBMODO}'))" || true
-            ;;
-        -h|--history)
-            if [ ! -f "${LOG_H}" ]; then
-                echo "Aun no existe ${LOG_H}"
-            elif [ "${SUBMODO}" = "trades" ]; then
-                echo " 🎯 FILTRO ACTIVO: MOSTRANDO SOLO DISPAROS, ÓRDENES, COSECHAS Y CIERRES HISTÓRICOS"
-                echo "--------------------------------------------------------------------------------"
-                grep -E "INICIANDO CEREBRO|\[RADAR\]|Orden |Posición|Trinquete|Cosecha|CHAIN-JAIL|Trailing|MAKER-SCRATCH|CIERRE|no llenada" "${LOG_H}" | tail -n 50 || true
-            else
-                tail -n 60 "${LOG_H}" || true
-            fi
-            ;;
-        -q|--quantum)
-            "${PY}" "${REPO}/evaluador_cuantico_oos.py" --repo "${REPO}" --horas 8 --telegram || true
-            [ -f "${REPO}/reporte_cuantico_oos.md" ] && cat "${REPO}/reporte_cuantico_oos.md" || true
-            ;;
-        -t|--telegram-last)
-            "${PY}" -c "import asyncio, sys; sys.path.insert(0, '${REPO}'); import gestor_posiciones as gp; asyncio.run(gp.reenviar_ultimo_cierre_cli())" || true
-            ;;
-        *)
-            echo "--------------------------------------------------------------------------------"
-            echo " 🛡️  MODO AISLADO ACTIVO: Presiona [Ctrl + C] para salir de la vista"
-            echo "    y volver al prompt SSH sin apagar el bot ni cerrar tu consola."
-            echo "================================================================================"
-            if [ -f "${LOG}" ]; then
-                (trap 'exit 0' INT TERM; tail -n 40 -f "${LOG}" || true) || true
-            else
-                echo "Aun no existe ${LOG}"
-            fi
-            echo ""
-            echo "✅ Vista en vivo cerrada de forma segura (El demonio sigue operando en segundo plano)."
-            ;;
-    esac
-    return 0
+    if [ -f "$STATS" ] && [ -x "$PY" ]; then
+        "$PY" - "$STATS" "$LOG" << 'PYEOF'
+import json
+import re
+import sys
+import pathlib
+from collections import defaultdict
+
+stats_path = pathlib.Path(sys.argv[1])
+log_path = pathlib.Path(sys.argv[2])
+
+trades = []
+if stats_path.exists():
+    for line in stats_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        if line.strip():
+            try:
+                trades.append(json.loads(line))
+            except Exception:
+                pass
+
+total = len(trades)
+wins = sum(1 for t in trades if float(t.get("pnl_usdt", 0.0)) > 0)
+losses = total - wins
+scratches = sum(1 for t in trades if "SCRATCH" in str(t.get("motivo", "")))
+cosechas = sum(1 for t in trades if t.get("cosecha_50_ejecutada") or "TRINQUETE" in str(t.get("motivo", "")) or "TRAILING" in str(t.get("motivo", "")))
+pnl_total = sum(float(t.get("pnl_usdt", 0.0)) for t in trades)
+wr = (wins / total * 100.0) if total else 0.0
+lam = min(1.0, total / 40.0)
+
+bal_real = "N/A"
+abiertos_ram = {}
+if log_path.exists():
+    lineas_log = log_path.read_text(encoding="utf-8", errors="ignore").splitlines()[-800:]
+    for l in reversed(lineas_log):
+        if "real:" in l and "USDT" in l:
+            try:
+                bal_real = l.split("real:")[1].split("USDT")[0].strip() + " USDT"
+                break
+            except Exception:
+                pass
+    for l in lineas_log:
+        if "Posición" in l and "activa en " in l:
+            m = re.search(r"activa en ([A-Z0-9/]+:USDT):\s*([0-9.]+)\s*@\s*([0-9.]+).*SL interno\s*([0-9.]+)", l)
+            if m:
+                sym = m.group(1)
+                side = "SHORT" if "SHORT" in l else "LONG"
+                abiertos_ram[sym] = f"{sym.replace('/USDT:USDT','')} [{side}] {m.group(2)} @ {m.group(3)} (SL Int {m.group(4)})"
+        elif "Cosecha 50% TRIZ PostOnly ejecutada" in l:
+            for sym in list(abiertos_ram.keys()):
+                if sym in l:
+                    abiertos_ram[sym] += " [FREE-RUNNER 50%]"
+        elif "CIERRE " in l:
+            for sym in list(abiertos_ram.keys()):
+                if sym in l:
+                    abiertos_ram.pop(sym, None)
+
+print("------------------------------------------------------------------------------------------")
+print(f" �� CAJA NEGRA : {total} Trades ({wins}W / {losses}L | WR: {wr:.1f}%) | Scratch 18s: {scratches} | Cosechas 50%: {cosechas}")
+print(f" 💰 PATRIMONIO : PnL Acumulado: {pnl_total:+.4f} USDT | UTA Real: {bal_real} | Convergence Bayes: λ={lam:.2f} ({total}/40)")
+if abiertos_ram:
+    print(f" 📂 EN CURSO   : 🟢 " + " | ".join(abiertos_ram.values()) + "  (Usa 'verbot -x' para detalle UTA)")
+else:
+    print(" 📂 EN CURSO   : ⚪ 0 contratos abiertos en este instante (Comandos: verbot -s | verbot -x | verbot -t | verbot -h trades)")
+print("------------------------------------------------------------------------------------------")
+print(f" {'PAR Y DIRECCIÓN':<22} {'TRADES (W/L)':<15} {'WIN RATE':<10} {'HURST MEDIO':<13} {'PNL NETO USDT':<15}")
+print("------------------------------------------------------------------------------------------")
+
+grupos = defaultdict(list)
+for t in trades:
+    sym = str(t.get("symbol", "")).replace("/USDT:USDT", "")
+    side = str(t.get("side", "long")).upper()
+    grupos[f"{sym} [{side}]"].append(t)
+
+for k in sorted(grupos.keys(), key=lambda x: sum(float(i.get("pnl_usdt", 0.0)) for i in grupos[x]), reverse=True):
+    lista = grupos[k]
+    w_g = sum(1 for i in lista if float(i.get("pnl_usdt", 0.0)) > 0)
+    l_g = len(lista) - w_g
+    wr_g = (w_g / len(lista) * 100.0) if lista else 0.0
+    h_vals = [float(i.get("hurst_entry", 0.0)) for i in lista if i.get("hurst_entry") is not None]
+    h_med = (sum(h_vals) / len(h_vals)) if h_vals else 0.0
+    pnl_g = sum(float(i.get("pnl_usdt", 0.0)) for i in lista)
+    ic = "🟩" if pnl_g >= 0 else "🔴"
+    print(f" {k:<22} {f'{len(lista)} ({w_g}W/{l_g}L)':<15} {f'{wr_g:5.1f}%':<10} {f'H={h_med:.3f}':<13} {ic} {pnl_g:+.4f} USDT")
+
+print("------------------------------------------------------------------------------------------")
+print(f" {'#':<3} {'HORA UTC':<9} {'PAR':<8} {'LADO':<6} {'Z_IN':<7} {'OFI':<7} {'HURST':<7} {'HOLD':<6} {'PNL %':<8} {'PNL USDT':<11} {'MOTIVO'}")
+print("------------------------------------------------------------------------------------------")
+ultimos = trades[-12:]
+idx_base = total - len(ultimos) + 1
+for i, t in enumerate(ultimos, start=idx_base):
+    ts = str(t.get("timestamp", ""))[11:19]
+    sym = str(t.get("symbol", "")).replace("/USDT:USDT", "")[:7]
+    side = str(t.get("side", "long")).upper()[:5]
+    z_in = float(t.get("z_score_entry") or 0.0)
+    ofi_in = float(t.get("ofi_entry") or 0.0)
+    h_in = float(t.get("hurst_entry") or 0.0)
+    hold = f"{float(t.get('hold_seg') or 0.0):.0f}s"
+    pnl_p = float(t.get("pnl_pct") or t.get("pnl_percentage") or 0.0)
+    pnl_u = float(t.get("pnl_usdt") or 0.0)
+    mot = str(t.get("motivo", ""))[:22]
+    ic = "🟩" if pnl_u > 0 else ("🟨" if "SCRATCH" in mot else "🔴")
+    print(f" {i:<3} {ts:<9} {sym:<8} {side:<6} {z_in:+6.2f} {ofi_in:+6.2f} {h_in:6.3f}  {hold:<6} {pnl_p:+6.2f}%  {ic} {pnl_u:+.4f}  {mot}")
+PYEOF
+    fi
+    echo "=========================================================================================="
+    if [ "${1:-}" = "-s" ]; then
+        echo " 📜 ÚLTIMOS EVENTOS CLAVE EN BOT_HFT.LOG (verbot -s | verbot -x | verbot -t | verbot -h trades):"
+        echo "------------------------------------------------------------------------------------------"
+        grep -E "INICIANDO CEREBRO|Auditoría UTA|HOT-RELOAD OOS|\[RADAR\]|\[SHORT-SNIPER\]|\[FRANCOTIRADOR\]|TELEMETRÍA DISPARO|PULSO POSICIÓN|MICRO-BE|MICRO-SHIELD|BLOQUEO HURST|ESCUDO EJECUTOR|MAKER-SCRATCH|CIERRE|TELEGRAM OK" "$LOG" | tail -n 15
+        echo "=========================================================================================="
+        return 0
+    fi
+    echo " 🛡️  MODO MONITOREO EN VIVO: [Ctrl+C] para salir | Comandos: verbot -s | verbot -x | verbot -t | verbot -q"
+    echo "=========================================================================================="
+    tail -f -n 25 "$LOG"
 }
 # === FIN PANEL VERBOT TRI-BRAIN-SNIPER ===
-"""
+EOF
 
-bloque_verbot = plantilla_raw.replace("__REPO_DIR__", repo_dir)
-rc_path.write_text(txt.rstrip() + "\n\n" + bloque_verbot, encoding="utf-8")
-print("✅ [VERBOT V2.0 OK] Comandos instalados en ~/.bashrc: verbot, verbot -s, verbot -x, verbot -x cerrar, verbot -h, verbot -q, verbot -t")
-PYEOF
-
-echo "=================================================================="
-echo "✅ INFRAESTRUCTURA TRI-BRAIN-SNIPER (SKILL HUNTER) V3.0 INSTALADA"
-echo "=================================================================="
+echo "✅ [VERBOT V3.0 OK] Comandos instalados en ~/.bashrc: verbot, verbot -s, verbot -x, verbot -x cerrar, verbot -h, verbot -h trades, verbot -q, verbot -t"

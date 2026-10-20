@@ -941,7 +941,6 @@ if hasattr(GestorPosiciones, 'evaluar_posicion_individual') and not hasattr(Gest
             if pnl_now > pos.max_pnl_pct_alcanzado:
                 pos.max_pnl_pct_alcanzado = pnl_now
             edad_now = max(0.0, ahora - pos.ts_apertura)
-            # 1. Candado Micro-Break-Even con telemetria explicita
             if not pos.cosecha_50_ejecutada and edad_now >= 12.0:
                 if pos.max_pnl_pct_alcanzado >= 0.0020:
                     if pos.side == 'short':
@@ -973,7 +972,6 @@ if hasattr(GestorPosiciones, 'evaluar_posicion_individual') and not hasattr(Gest
                             log_sniper(
                                 f'\U0001f6e1\ufe0f [MICRO-SHIELD +0.15%] {pos.symbol} [LONG] SL interno comprimido a -0.12% @ {sl_tight} (MaxPnL={pos.max_pnl_pct_alcanzado*100:+.2f}%)'
                             )
-            # 2. Pulso Forense cada 15s mientras la posicion esta abierta
             ult_p = _PULSO_POS_TS_V3.get(pos.symbol, pos.ts_apertura)
             if ahora - ult_p >= 15.0:
                 _PULSO_POS_TS_V3[pos.symbol] = ahora
@@ -982,7 +980,6 @@ if hasattr(GestorPosiciones, 'evaluar_posicion_individual') and not hasattr(Gest
                     f'PnL={pnl_now*100:+.2f}% (Max={pos.max_pnl_pct_alcanzado*100:+.2f}%) | '
                     f'SL_Int={pos.sl_interno_price} | OFI_5s={tk.ofi_5s:+.2f} | H={tk.hurst:.2f}'
                 )
-            # 3. Re-evaluacion continua de Maker-Scratch entre 18s y 75s
             if (
                 not pos.cosecha_50_ejecutada
                 and not pos.scratch_18s_activo

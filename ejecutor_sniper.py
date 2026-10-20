@@ -431,7 +431,7 @@ if hasattr(EjecutorSniper, 'ejecutar_senal_sniper') and not hasattr(EjecutorSnip
             senal_d = kwargs['senal']
         if es_prod and isinstance(senal_d, dict):
             sym_s = str(senal_d.get('symbol', ''))
-            side_s = str(senal_d.get('side', '')).lower()
+            side_s = str(senal_d.get('side', 'long')).lower()
             tk_s = ESTADO_RAM.ticks_ram.get(sym_s)
             if side_s == 'short' and tk_s is not None:
                 h_now = float(senal_d.get('hurst', getattr(tk_s, 'hurst', 0.45)) or 0.45)
@@ -441,12 +441,10 @@ if hasattr(EjecutorSniper, 'ejecutar_senal_sniper') and not hasattr(EjecutorSnip
                     log_sniper(
                         f'\u26a0\ufe0f [ESCUDO EJECUTOR] Orden SHORT abortada en {sym_s} por Hurst alto (H={h_now:.3f} > 0.495).'
                     )
-                    return False
+                    return None
                 if sym_s in getattr(cfg, 'CLASE_HIGH_BETA', ()) and (ema_now < 0.0040 or z_now < 4.20):
-                    return False
-        z_val = 0.0
-        if isinstance(senal_d, dict):
-            z_val = abs(float(senal_d.get('z_score', 0.0) or 0.0))
+                    return None
+        z_val = abs(float(senal_d.get('z_score', 0.0) or 0.0)) if isinstance(senal_d, dict) else 0.0
         orig_hb = getattr(cfg, 'NOCIONAL_MAX_HIGH_BETA_USDT', 16.50)
         tiene_t1 = hasattr(cfg, 'NOCIONAL_MAX_TIER1_USDT')
         orig_t1 = getattr(cfg, 'NOCIONAL_MAX_TIER1_USDT', 25.00)
