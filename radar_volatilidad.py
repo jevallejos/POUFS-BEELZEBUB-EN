@@ -794,3 +794,45 @@ if hasattr(RadarVolatilidad, "procesar_instantanea_libro") and not hasattr(Radar
         return await self._orig_p4_procesar_libro(symbol, bids, asks, ahora)
 
     RadarVolatilidad.procesar_instantanea_libro = _wrapped_procesar_instantanea_libro_p4
+
+# === INICIO AJUSTES QUIRURGICOS V3.0 (SKILL HUNTER) ===
+def verificar_compuerta_hurst_short_v3(
+    hurst_actual: float, z_score: float, ema900_dist_pct: float = 0.0
+) -> bool:
+    if abs(float(z_score)) >= 12.0 and float(ema900_dist_pct) >= 0.0120:
+        return True
+    return float(hurst_actual) <= float(cfg.HURST_MAX_ENTRADA)
+
+
+if hasattr(RadarVolatilidad, 'procesar_instantanea_libro') and not hasattr(RadarVolatilidad, '_orig_proc_libro_v3_hurst'):
+    RadarVolatilidad._orig_proc_libro_v3_hurst = RadarVolatilidad.procesar_instantanea_libro
+    _ULT_LOG_HURST_SHORT_V3: dict[str, float] = {}
+
+    async def _procesar_instantanea_libro_hurst_short_v3(
+        self, symbol: str, bids: list, asks: list, timestamp: float | None = None
+    ):
+        res = await RadarVolatilidad._orig_proc_libro_v3_hurst(
+            self, symbol, bids, asks, timestamp
+        )
+        if isinstance(res, dict) and str(res.get('side', '')).lower() == 'short':
+            vz = getattr(self, 'ventanas', {}).get(symbol)
+            n_pts = len(getattr(vz, 'precios', [])) if vz is not None else 0
+            if n_pts >= 45:
+                tk = ESTADO_RAM.ticks_ram.get(symbol)
+                h_val = float(res.get('hurst', getattr(tk, 'hurst', 0.45)) or 0.45)
+                z_val = float(res.get('z_score', getattr(tk, 'z_score', 0.0)) or 0.0)
+                ema_d = float(getattr(tk, 'ema900_dist_pct', 0.0) or 0.0)
+                if not verificar_compuerta_hurst_short_v3(h_val, z_val, ema_d):
+                    ahora = float(timestamp if timestamp is not None else time.time())
+                    ult = _ULT_LOG_HURST_SHORT_V3.get(symbol, 0.0)
+                    if ahora - ult >= 1.0:
+                        _ULT_LOG_HURST_SHORT_V3[symbol] = ahora
+                        log_sniper.info(
+                            f'\u26a0\ufe0f [FILTRO HURST] {symbol} persistencia alcista en SHORT '
+                            f'(H={h_val:.3f} > {cfg.HURST_MAX_ENTRADA:.3f}). Abortando.'
+                        )
+                    return None
+        return res
+
+    RadarVolatilidad.procesar_instantanea_libro = _procesar_instantanea_libro_hurst_short_v3
+# === FIN AJUSTES QUIRURGICOS V3.0 (SKILL HUNTER) ===

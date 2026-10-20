@@ -891,3 +891,33 @@ if hasattr(GestorPosiciones, "evaluar_posicion_individual") and not hasattr(Gest
         return res
 
     GestorPosiciones.evaluar_posicion_individual = _wrapped_evaluar_posicion_individual_v3
+
+# === INICIO AJUSTES QUIRURGICOS V3.0 (SKILL HUNTER) ===
+def evaluar_reloj_actividad_maker_scratch(
+    edad_seg: float,
+    pnl_bruto_pct: float,
+    ofi_5s: float,
+    side: str,
+    max_pnl_pct: float,
+    ticks_activos: int = 0,
+) -> bool:
+    edad = float(edad_seg)
+    if edad < float(cfg.MAKER_SCRATCH_TIEMPO_SEG) or edad > 65.0:
+        return False
+    pnl = float(pnl_bruto_pct)
+    ofi = float(ofi_5s)
+    max_p = float(max_pnl_pct)
+    es_short = str(side).lower() == 'short'
+    flujo_adverso_fuerte = (ofi >= 0.12) if es_short else (ofi <= -0.12)
+    if max_p <= 0.0008 and (-0.0038 <= pnl <= -0.0001) and flujo_adverso_fuerte:
+        return True
+    flujo_estancado = (ofi >= -0.03) if es_short else (ofi <= 0.03)
+    if (
+        (edad >= 26.0 or int(ticks_activos) >= 25)
+        and max_p < 0.0018
+        and (-0.0042 <= pnl <= -0.0002)
+        and flujo_estancado
+    ):
+        return True
+    return False
+# === FIN AJUSTES QUIRURGICOS V3.0 (SKILL HUNTER) ===

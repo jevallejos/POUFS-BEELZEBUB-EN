@@ -417,3 +417,35 @@ if hasattr(EjecutorSniper, "ejecutar_senal_sniper") and not hasattr(EjecutorSnip
                 ESTADO_RAM.slot_ocupado = False
 
     EjecutorSniper.ejecutar_senal_sniper = _ejecutar_senal_sniper_blindado_v3
+
+# === INICIO AJUSTES QUIRURGICOS V3.0 (SKILL HUNTER) ===
+if hasattr(EjecutorSniper, 'ejecutar_senal_sniper') and not hasattr(EjecutorSniper, '_orig_ejecutar_gm_cap_v3'):
+    EjecutorSniper._orig_ejecutar_gm_cap_v3 = EjecutorSniper.ejecutar_senal_sniper
+
+    async def _ejecutar_senal_sniper_gm_cap_v3(self, *args, **kwargs):
+        z_val = 0.0
+        if args and isinstance(args[0], dict):
+            z_val = abs(float(args[0].get('z_score', 0.0) or 0.0))
+        elif 'senal' in kwargs and isinstance(kwargs['senal'], dict):
+            z_val = abs(float(kwargs['senal'].get('z_score', 0.0) or 0.0))
+        elif args and isinstance(args[0], str):
+            tk = ESTADO_RAM.ticks_ram.get(args[0])
+            if tk is not None:
+                z_val = abs(float(getattr(tk, 'z_score', 0.0) or 0.0))
+        orig_hb = getattr(cfg, 'NOCIONAL_MAX_HIGH_BETA_USDT', 16.50)
+        tiene_t1 = hasattr(cfg, 'NOCIONAL_MAX_TIER1_USDT')
+        orig_t1 = getattr(cfg, 'NOCIONAL_MAX_TIER1_USDT', 25.00)
+        try:
+            if z_val > 8.50 and os.getenv('TRIBRAIN_TEST_MODE', '0') != '1':
+                factor_gm = max(0.55, min(1.0, math.exp(-0.12 * (z_val - 8.50))))
+                cfg.NOCIONAL_MAX_HIGH_BETA_USDT = round(float(orig_hb) * factor_gm, 4)
+                if tiene_t1:
+                    cfg.NOCIONAL_MAX_TIER1_USDT = round(float(orig_t1) * factor_gm, 4)
+            return await EjecutorSniper._orig_ejecutar_gm_cap_v3(self, *args, **kwargs)
+        finally:
+            cfg.NOCIONAL_MAX_HIGH_BETA_USDT = orig_hb
+            if tiene_t1:
+                cfg.NOCIONAL_MAX_TIER1_USDT = orig_t1
+
+    EjecutorSniper.ejecutar_senal_sniper = _ejecutar_senal_sniper_gm_cap_v3
+# === FIN AJUSTES QUIRURGICOS V3.0 (SKILL HUNTER) ===

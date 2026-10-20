@@ -541,3 +541,14 @@ if "calcular_fraccion_kelly_antifragil" in globals() and not hasattr(sys.modules
                 lista[1] = round(float(lista[1]) * (f_gm / f_orig), 4)
             return tuple(lista)
         return res
+
+# === INICIO AJUSTES QUIRURGICOS V3.0 (SKILL HUNTER) ===
+def calcular_factor_tope_glosten_milgrom(
+    z_score: float, z_crit: float = 8.50, kappa: float = 0.12
+) -> float:
+    z_abs = abs(float(z_score))
+    if z_abs <= float(z_crit):
+        return 1.0
+    factor = math.exp(-float(kappa) * (z_abs - float(z_crit)))
+    return float(max(0.55, min(1.0, factor)))
+# === FIN AJUSTES QUIRURGICOS V3.0 (SKILL HUNTER) ===
