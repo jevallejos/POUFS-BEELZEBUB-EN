@@ -1,4 +1,4 @@
-# ⛓️ Tri-Brain-Sniper (Chain-Jail) v2.0
+# ⛓️ TRI-BRAIN-SNIPER (Skill Hunter) V3.0
 
 Motor autónomo de ejecución microestructural de alta frecuencia (**HFT Maker-First**) sobre **Bybit Unified Trading Account (UTA V5)**, gobernado en tiempo constante $\mathcal{O}(1)$ (`~0.41 µs`) por un enjambre cognitivo asíncrono **Tri-Córtex** (**Groq LPU + Google Gemini + NVIDIA NIM**) y el protocolo de salida convexa asimétrica **`Chain-Jail (50 / 25 / 25)`**.
 

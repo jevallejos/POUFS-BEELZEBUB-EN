@@ -3,7 +3,7 @@
 """
 ==============================================================================
 ARCHIVO #03: config_parametros.py
-SISTEMA: TRI-BRAIN-SNIPER (CHAIN-JAIL) V2.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V3.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Fuente Unica de Verdad (Zero-Duplicate-AST).
 Codifica las 4 Leyes Matematicas de CHRONOS-TRIZ:
@@ -28,10 +28,10 @@ from dotenv import load_dotenv
 ROOT_DIR: pathlib.Path = pathlib.Path(__file__).resolve().parent
 load_dotenv(ROOT_DIR / ".env")
 
-VERSION_SISTEMA: str = "2.0.0"
-NOMBRE_ESTRATEGIA: str = "Tri-Brain-Sniper (Chain-Jail) v2.0"
+VERSION_SISTEMA: str = "3.0.0"
+NOMBRE_ESTRATEGIA: str = "TRI-BRAIN-SNIPER (Skill Hunter) V3.0"
 ESTRATEGIA_MATEMATICA: str = "CHRONOS-TRIZ (Stochastic Time-Decay & 50/50 Ratchet)"
-TITULO_TELEGRAM_CANONICO: str = "Motor Tri-Brain-Sniper (Chain-Jail) v2.0 [CHRONOS-TRIZ]"
+TITULO_TELEGRAM_CANONICO: str = "Motor TRI-BRAIN-SNIPER (Skill Hunter) V3.0 [CHRONOS-TRIZ]"
 
 ARCHIVO_LOCK_PRODUCCION: str = ".tribrain.lock"
 ARCHIVO_LOCK_TEST: str = ".tribrain_test.lock"

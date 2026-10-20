@@ -3,7 +3,7 @@
 """
 ==============================================================================
 ARCHIVO #06: stats_tracker.py
-SISTEMA: TRI-BRAIN-SNIPER (CHAIN-JAIL) V2.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V3.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Motor Contable de Caja Negra (tribrain_stats_v1.jsonl), Paridad 1:1 Bybit UTA,
 Calculo de MAP, LVR (Milionis-Moallemi-Roughgarden), Velocidad Geometrica g*
@@ -340,7 +340,7 @@ class GestorCajaNegra:
         bal_real = ESTADO_RAM.patrimonio_total_usdt if ESTADO_RAM.patrimonio_total_usdt > 0 else bal_contable
         pnl_map_ratio = (self.pnl_total_usdt / self.map_promedio_usdt) if self.map_promedio_usdt > 0.0 else 0.0
 
-        l1 = "╔══════ [CAJA NEGRA] TRI-BRAIN-SNIPER V2.0 [CHAIN-JAIL]   ═══════╗"
+        l1 = "╔══════ [CAJA NEGRA] TRI-BRAIN-SNIPER V3.0 [SKILL HUNTER]   ═══════╗"
         l2 = f"║ Trades: {self.trades_totales:<3d} (W {self.wins} / L {self.losses} / S {self.scratches_18s}) | Win Rate: {wr:5.1f} %".ljust(65) + "║"
         l3 = f"║ PnL total: {self.pnl_total_usdt:+.4f} USDT   mejor {self.mejor_trade_usdt:+.4f} / peor {self.peor_trade_usdt:+.4f}".ljust(65) + "║"
         l4 = f"║ MAP: {self.map_promedio_usdt:5.2f} USDT | PnL/MAP: {pnl_map_ratio:+.4f} | LVR: {self.lvr_acumulado_usdt:.4f}".ljust(65) + "║"

@@ -3,7 +3,7 @@
 """
 ==============================================================================
 ARCHIVO #10: gestor_posiciones.py
-SISTEMA: TRI-BRAIN-SNIPER (CHAIN-JAIL) V2.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V3.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Guardian de Geometria de Pagos 10/10 con Protocolo "FREE-RUNNER 50%":
   - Ley 2 (CHRONOS-TRIZ): Desplazamiento del Precio de Reserva a los 18.0s

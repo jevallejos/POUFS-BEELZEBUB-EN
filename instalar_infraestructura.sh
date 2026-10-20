@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # ARCHIVO #13: instalar_infraestructura.sh
-# SISTEMA: TRI-BRAIN-SNIPER (CHAIN-JAIL) V2.0 — ESTRATEGIA CHRONOS-TRIZ
+# SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V3.0 — ESTRATEGIA CHRONOS-TRIZ
 # ==============================================================================
 set -euo pipefail
 
@@ -13,7 +13,7 @@ TIMER_FILE="/etc/systemd/system/${SERVICE_NAME}.timer"
 USER_NAME="$(whoami)"
 
 echo "=================================================================="
-echo "⚙️  INSTALANDO INFRAESTRUCTURA TRI-BRAIN-SNIPER (CHAIN-JAIL) V2.0"
+echo "⚙️  INSTALANDO INFRAESTRUCTURA TRI-BRAIN-SNIPER (SKILL HUNTER) V3.0"
 echo "   Repositorio : ${REPO_DIR}"
 echo "   Python VENV : ${PY_BIN}"
 echo "=================================================================="
@@ -28,7 +28,7 @@ chmod +x "${REPO_DIR}/instalar_infraestructura.sh" "${REPO_DIR}/main.py" "${REPO
 
 sudo tee "${SERVICE_FILE}" >/dev/null <<EOF
 [Unit]
-Description=Evaluador Cuantico Walk-Forward OOS Tri-Brain-Sniper (Chain-Jail) v2.0
+Description=Evaluador Cuantico Walk-Forward OOS TRI-BRAIN-SNIPER (Skill Hunter) V3.0
 After=network-online.target
 Wants=network-online.target
 
@@ -47,7 +47,7 @@ EOF
 
 sudo tee "${TIMER_FILE}" >/dev/null <<EOF
 [Unit]
-Description=Timer Tri-Sesion (00:00, 08:00, 16:00 UTC) para Tri-Brain-Sniper (Chain-Jail) v2.0
+Description=Timer Tri-Sesion (00:00, 08:00, 16:00 UTC) para TRI-BRAIN-SNIPER (Skill Hunter) V3.0
 
 [Timer]
 OnCalendar=*-*-* 00,08,16:00:00 UTC
@@ -102,7 +102,7 @@ verbot() {
     local SUBMODO="${2:-status}"
 
     echo "================================================================================"
-    echo " 👁️  PANEL FORENSE EN TIEMPO REAL — TRI-BRAIN-SNIPER V2.0 [CHAIN-JAIL]"
+    echo " 👁️  PANEL FORENSE EN TIEMPO REAL — TRI-BRAIN-SNIPER V3.0 [SKILL HUNTER]"
     echo "================================================================================"
 
     if [ -f "${LOCK}" ]; then
@@ -169,5 +169,5 @@ print("✅ [VERBOT V2.0 OK] Comandos instalados en ~/.bashrc: verbot, verbot -s,
 PYEOF
 
 echo "=================================================================="
-echo "✅ INFRAESTRUCTURA TRI-BRAIN-SNIPER (CHAIN-JAIL) V2.0 INSTALADA"
+echo "✅ INFRAESTRUCTURA TRI-BRAIN-SNIPER (SKILL HUNTER) V3.0 INSTALADA"
 echo "=================================================================="

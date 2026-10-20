@@ -3,7 +3,7 @@
 """
 ==============================================================================
 ARCHIVO #11: main.py
-SISTEMA: TRI-BRAIN-SNIPER (CHAIN-JAIL) V2.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V3.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Cerebro Central Orquestador Asincrono (uvloop + Bybit UTA WebSocket L2):
   - Cerrojo fisico de instancia unica (.tribrain.lock / .tribrain_test.lock).

@@ -3,7 +3,7 @@
 """
 ==============================================================================
 ARCHIVO #08: radar_volatilidad.py
-SISTEMA: TRI-BRAIN-SNIPER (CHAIN-JAIL) V2.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V3.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Radar Microestructural de Alta Frecuencia (6.6 Hz / 150 ms) con:
   - Estimador VentanaZ Bipower (Barndorff-Nielsen & Shephard) y EMA900.
