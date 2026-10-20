@@ -28,8 +28,8 @@ from dotenv import load_dotenv
 ROOT_DIR: pathlib.Path = pathlib.Path(__file__).resolve().parent
 load_dotenv(ROOT_DIR / ".env")
 
-VERSION_SISTEMA: str = "3.0.0"
-NOMBRE_ESTRATEGIA: str = "TRI-BRAIN-SNIPER (Skill Hunter) V3.0"
+VERSION_SISTEMA: str = "4.0.0"
+NOMBRE_ESTRATEGIA: str = "TRI-BRAIN-SNIPER (Skill Hunter) V4.0"
 ESTRATEGIA_MATEMATICA: str = "CHRONOS-TRIZ (Stochastic Time-Decay & 50/50 Ratchet)"
 TITULO_TELEGRAM_CANONICO: str = "Motor TRI-BRAIN-SNIPER (Skill Hunter) V3.0 [CHRONOS-TRIZ]"
 
@@ -354,3 +354,26 @@ if '_orig_recargar_oos_freq_v3' not in globals():
 
 aplicar_perfil_recoleccion_estadistica_v3()
 # === FIN MODO RECOLECCION ESTADISTICA ACTIVA V3.0 ===
+
+
+# === [V4.0 CONVEX EXIT & OOS SYNC] ===
+def _aplicar_overrides_v4_prod() -> None:
+    _os = __import__("os")
+    if _os.getenv("TRIBRAIN_TEST_MODE", "0") != "1":
+        globals()["VERSION_SISTEMA"] = "4.0.0"
+        globals()["NOMBRE_ESTRATEGIA"] = "TRI-BRAIN-SNIPER (Skill Hunter) V4.0"
+        globals()["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
+        globals()["OFI_MIN_ENTRADA"] = 0.10
+        globals()["OFI_TICKS_CONFIRMACION"] = 2
+        globals()["TTL_ORDEN_ENTRADA_SEG"] = 3.80
+        globals()["HURST_MAX_ENTRADA"] = 0.495
+
+_aplicar_overrides_v4_prod()
+
+if "_orig_recargar_v4" not in globals() and "recargar_calibracion_oos_si_cambio" in globals():
+    _orig_recargar_v4 = globals()["recargar_calibracion_oos_si_cambio"]
+    def _recargar_calibracion_oos_v4(ruta_json=None):
+        res = _orig_recargar_v4(ruta_json) if ruta_json is not None else _orig_recargar_v4()
+        _aplicar_overrides_v4_prod()
+        return res
+    globals()["recargar_calibracion_oos_si_cambio"] = _recargar_calibracion_oos_v4

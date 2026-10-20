@@ -3,7 +3,7 @@
 """
 ==============================================================================
 ARCHIVO #14: test_tribrain_v1_suite.py
-SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V3.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V4.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Suite Maestra de Certificacion Integral (18/18 Pruebas Deterministas).
 Audita con paridad 100% real entre prueba y produccion los 11 archivos del

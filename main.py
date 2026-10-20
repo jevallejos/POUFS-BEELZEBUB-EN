@@ -3,7 +3,7 @@
 """
 ==============================================================================
 ARCHIVO #11: main.py
-SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V3.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V4.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Cerebro Central Orquestador Asincrono (uvloop + Bybit UTA WebSocket L2):
   - Cerrojo fisico de instancia unica (.tribrain.lock / .tribrain_test.lock).
@@ -468,3 +468,17 @@ if __name__ == "__main__":
         sys.exit(asyncio.run(main_async()))
     except KeyboardInterrupt:
         sys.exit(0)
+
+
+# === [V4.0 BOOT RECONCILIATION FIX] ===
+if "reconciliar_posiciones_arranque" in globals() and "_orig_reconciliar_v4" not in globals():
+    _orig_reconciliar_v4 = reconciliar_posiciones_arranque
+    async def reconciliar_posiciones_arranque(exchange) -> int:
+        procesadas = await _orig_reconciliar_v4(exchange)
+        ahora_r = time.time()
+        for sym_k, pos_obj in list(ESTADO_RAM.posiciones_activas.items()):
+            edad_actual = ahora_r - float(getattr(pos_obj, "ts_apertura", ahora_r))
+            if edad_actual > 3600.0 or edad_actual < 0.0:
+                pos_obj.ts_apertura = ahora_r
+                log_sniper(f"🛡️ [RECONCILIADOR V4.0] Edad de posicion adoptada en {sym_k} normalizada a 0s (updatedTime).")
+        return procesadas

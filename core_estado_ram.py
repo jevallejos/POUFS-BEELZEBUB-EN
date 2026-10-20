@@ -3,7 +3,7 @@
 """
 ==============================================================================
 ARCHIVO #04: core_estado_ram.py
-SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V3.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V4.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Nucleo de Memoria Compartida O(1), Contratos @dataclass y Logger Dual (CL/UTC).
 Erradica al 100% el uso de builtins.print hooks y expresiones regulares

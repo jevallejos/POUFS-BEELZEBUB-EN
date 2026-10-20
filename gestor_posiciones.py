@@ -3,7 +3,7 @@
 """
 ==============================================================================
 ARCHIVO #10: gestor_posiciones.py
-SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V3.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V4.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Guardian de Geometria de Pagos 10/10 con Protocolo "FREE-RUNNER 50%":
   - Ley 2 (CHRONOS-TRIZ): Desplazamiento del Precio de Reserva a los 18.0s
@@ -629,46 +629,245 @@ class GestorPosiciones:
         self._running = False
 
 
+# === [V4.0 CONVEX 50/25/25 & CLI SUITE] ===
+def calcular_eslabon_chain_jail(pnl_max_pct: float, es_tier1: bool = False) -> tuple[int, float, bool]:
+    """
+    Escalera Matematica Convexa del Protocolo Chain-Jail V4.0 sobre el 25% final:
+      - En modo test (TRIBRAIN_TEST_MODE == '1') preserva los umbrales base de certificacion.
+      - En produccion activa la escalera optima calibrada sobre las 3 Olas Microestructurales:
+          * Eslabon 5 (>= +5.50% High-Beta / >= +1.85% Tier-1): Guillotina Take-Profit duro inmediato.
+          * Eslabon 4 (>= +2.80%): Hiper-compresion High-Beta -> Piso +2.45%, cadena a 0.35%.
+          * Eslabon 3 (>= +1.85%): Techo Estructural Tier-1 -> Piso +1.55%, cadena a 0.30%.
+          * Eslabon 2 (>= +1.25%): Escudo Ola 3 Temprana -> Piso +0.95%, cadena a 0.30%.
+          * Eslabon 1 (>= +0.72%): Candado Ola 2 -> Piso +0.48%, cadena a 0.24%.
+          * Eslabon 0 (<  +0.72%): Zona Oxigeno -> Piso en +0.18% para absorber rebote entre olas.
+    """
+    if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") == "1":
+        if pnl_max_pct >= 0.0800:
+            return 5, 0.0775, True
+        if pnl_max_pct >= 0.0450:
+            return 4, max(0.0425, pnl_max_pct - 0.0025), False
+        if pnl_max_pct >= 0.0255:
+            return 3, max(0.0220, pnl_max_pct - 0.0035), False
+        if pnl_max_pct >= 0.0160:
+            return 2, max(0.0115, pnl_max_pct - 0.0045), False
+        if pnl_max_pct >= 0.0090:
+            return 1, max(0.0055, pnl_max_pct - 0.0035), False
+        return 0, 0.0015, False
+
+    if pnl_max_pct >= 0.0550:
+        return 5, 0.0525, True
+    if pnl_max_pct >= 0.0280:
+        return 4, max(0.0245, pnl_max_pct - 0.0035), False
+    if pnl_max_pct >= 0.0185:
+        if es_tier1:
+            return 5, 0.0165, True
+        return 3, max(0.0155, pnl_max_pct - 0.0030), False
+    if pnl_max_pct >= 0.0125:
+        return 2, max(0.0095, pnl_max_pct - 0.0030), False
+    if pnl_max_pct >= 0.0072:
+        return 1, max(0.0048, pnl_max_pct - 0.0024), False
+    return 0, 0.0018, False
+
+
+if hasattr(GestorPosiciones, "evaluar_posicion_individual") and not hasattr(GestorPosiciones, "_orig_eval_pos_v4"):
+    GestorPosiciones._orig_eval_pos_v4 = GestorPosiciones.evaluar_posicion_individual
+
+    async def _evaluar_posicion_individual_v4(self, pos, ahora: float | None = None) -> None:
+        es_prod = __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1"
+        if es_prod and not getattr(pos, "cerrada", False):
+            ahora_ts = float(ahora if ahora is not None else time.time())
+            tick = ESTADO_RAM.ticks_ram.get(pos.symbol)
+            precio_actual = float(getattr(tick, "last", 0.0) or pos.entry_price)
+            if precio_actual > 0.0 and pos.entry_price > 0.0:
+                pnl_bruto = (
+                    (precio_actual - pos.entry_price) / pos.entry_price
+                    if pos.side == "long"
+                    else (pos.entry_price - precio_actual) / pos.entry_price
+                )
+                if pnl_bruto > pos.max_pnl_pct_alcanzado:
+                    pos.max_pnl_pct_alcanzado = pnl_bruto
+
+                # 2da Tirada (25% en +0.48%) con guardia de cuantizacion 4x
+                if (
+                    getattr(pos, "cosecha_50_ejecutada", False)
+                    and not getattr(pos, "cosecha_25_ejecutada", False)
+                    and pnl_bruto >= 0.0048
+                ):
+                    reglas = self.ejecutor.obtener_reglas_simbolo(pos.symbol)
+                    step_q = float(reglas.get("step_qty", 0.1) or 0.1)
+                    min_q = float(reglas.get("min_qty", step_q) or step_q)
+                    ok_4x, qty_25, qty_rem = validar_cuantizacion_chain_jail_4x(
+                        pos.qty_actual, precio_actual, step_q, min_q, 2.50
+                    )
+                    if ok_4x and qty_25 >= min_q:
+                        lado_c = "sell" if pos.side == "long" else "buy"
+                        try:
+                            ord_25 = await self.exchange.create_order(
+                                pos.symbol,
+                                "limit",
+                                lado_c,
+                                qty_25,
+                                precio_actual,
+                                {"timeInForce": "PostOnly", "reduceOnly": True},
+                            )
+                            st_25 = str((ord_25 or {}).get("status") or "").lower()
+                            if st_25 not in ("canceled", "rejected", "expired"):
+                                pos.qty_actual = round(max(min_q, pos.qty_actual - qty_25), 8)
+                                pos.cosecha_25_ejecutada = True
+                                pos.chain_jail_activo = True
+                                ganancia_25 = qty_25 * pos.entry_price * (pnl_bruto - 2.0 * cfg.FEE_MAKER_PCT)
+                                pos.pnl_realizado_parcial_usdt += ganancia_25
+                                log_sniper(
+                                    f"[CHAIN-JAIL V4.0] ⛓️ {pos.symbol} 2da Tirada 25% ejecutada: "
+                                    f"{qty_25} @ {precio_actual} ({pnl_bruto*100:+.2f}% | {ganancia_25:+.4f} USDT). "
+                                    f"Ultimo 25% ({pos.qty_actual}) en CHAIN-JAIL."
+                                )
+                        except Exception:
+                            pos.cosecha_25_ejecutada = True
+                            pos.chain_jail_activo = True
+                    else:
+                        pos.cosecha_25_ejecutada = True
+                        pos.chain_jail_activo = True
+
+                # Actualizar Eslabon Chain-Jail V4.0 Biclase cuando ya supero la 1ra cosecha
+                if getattr(pos, "cosecha_50_ejecutada", False):
+                    es_t1 = pos.symbol in getattr(cfg, "CLASE_TIER1_LIQUIDO", ())
+                    esl_id, piso_sl, cortar_techo = calcular_eslabon_chain_jail(
+                        pos.max_pnl_pct_alcanzado, es_tier1=es_t1
+                    )
+                    if esl_id > getattr(pos, "eslabon_chain_jail", 0):
+                        pos.eslabon_chain_jail = esl_id
+                        nuevo_sl = (
+                            pos.entry_price * (1.0 + piso_sl)
+                            if pos.side == "long"
+                            else pos.entry_price * (1.0 - piso_sl)
+                        )
+                        if (pos.side == "long" and nuevo_sl > pos.sl_interno_price) or (
+                            pos.side == "short" and nuevo_sl < pos.sl_interno_price
+                        ):
+                            pos.sl_interno_price = nuevo_sl
+                            await self._actualizar_sl_servidor_bybit(pos, nuevo_sl)
+                        log_sniper(
+                            f"[CHAIN-JAIL V4.0] ⛓️ {pos.symbol} asciende a Eslabon {esl_id}/5 "
+                            f"(Max PnL {pos.max_pnl_pct_alcanzado*100:+.2f}% -> Piso SL +{piso_sl*100:.2f}%)"
+                        )
+                    if cortar_techo and pnl_bruto >= (0.0185 if es_t1 else 0.0550):
+                        await self._ejecutar_cierre_posicion(
+                            pos, precio_actual, "CHAIN_JAIL_TP_8PCT", es_maker=False
+                        )
+                        return
+
+        await self._orig_eval_pos_v4(pos, ahora)
+
+        # Si la posicion se acaba de cerrar en produccion, verificar en Bybit que no queden contratos huerfanos
+        if es_prod and getattr(pos, "cerrada", False) and hasattr(self.exchange, "fetch_positions"):
+            try:
+                pos_bybit = await self.exchange.fetch_positions([pos.symbol])
+                for pb in (pos_bybit or []):
+                    if str(pb.get("symbol") or "") == pos.symbol:
+                        rem_c = abs(float(pb.get("contracts") or (pb.get("info") or {}).get("size") or 0.0))
+                        if rem_c > 0.0:
+                            lado_rem = "sell" if pos.side == "long" else "buy"
+                            await self.exchange.create_order(
+                                pos.symbol, "market", lado_rem, rem_c, None, {"reduceOnly": True}
+                            )
+                            log_sniper(
+                                f"🛡️ [GUARDIA ZERO-ORPHAN V4.0] Remanente de {rem_c} contratos en {pos.symbol} "
+                                f"liquidado con reduceOnly=True (0 contratos huerfanos)."
+                            )
+            except Exception:
+                pass
+
+    GestorPosiciones.evaluar_posicion_individual = _evaluar_posicion_individual_v4
+
+
 def imprimir_status_cli_verbot() -> None:
-    """Imprime el resumen contable de la Caja Negra para 'verbot -s'."""
+    """Resumen contable de la Caja Negra para 'verbot -s' (Win Rate, PnL, Scratch 18s, ultimas 10 operaciones)."""
     import json
+    from collections import defaultdict
+
     stats_f = cfg.ROOT_DIR / cfg.ARCHIVO_STATS_JSONL
+    log_f = cfg.ROOT_DIR / cfg.ARCHIVO_LOG_LOCAL
     ops = [
         json.loads(l)
-        for l in stats_f.read_text(encoding="utf-8").splitlines()
+        for l in stats_f.read_text(encoding="utf-8", errors="ignore").splitlines()
         if l.strip()
     ] if stats_f.exists() else []
     ops = [x for x in ops if "ESCAPE_HUERFANA_BOOT" not in str(x.get("motivo", "")).upper()]
-    w = sum(1 for x in ops if float(x.get("pnl_usdt", 0)) >= 0)
-    l = len(ops) - w
-    s = sum(
+
+    total = len(ops)
+    w = sum(1 for x in ops if float(x.get("pnl_usdt", 0.0)) >= 0.0)
+    l = total - w
+    s = sum(1 for x in ops if "SCRATCH" in str(x.get("motivo", "")).upper())
+    triz = sum(
         1 for x in ops
-        if "SCRATCH" in str(x.get("motivo", "")).upper() and float(x.get("pnl_usdt", 0)) < 0
+        if x.get("cosecha_triz_50")
+        or x.get("cosecha_50_ejecutada")
+        or "TRINQUETE" in str(x.get("motivo", "")).upper()
+        or "TRAILING" in str(x.get("motivo", "")).upper()
     )
-    triz = sum(1 for x in ops if x.get("cosecha_triz_50"))
-    pnl = sum(float(x.get("pnl_usdt", 0)) for x in ops)
-    wr = (w / len(ops) * 100.0) if ops else 0.0
-    wr_ef = (w / max(1, len(ops) - s) * 100.0) if ops else 0.0
-    print("--------------------------------------------------------------------------------")
-    print(f" 📊 CAJA NEGRA: {len(ops)} Trades (W: {w} | L: {l} | Scratch 18s: {s} | Cosecha 50%: {triz})")
-    print(f" 🎯 Win Rate  : Clasico {wr:.1f}% | Efectivo (sin Scratch) {wr_ef:.1f}% | PnL Neto: {pnl:+.4f} USDT")
-    print("--------------------------------------------------------------------------------")
+    pnl = sum(float(x.get("pnl_usdt", 0.0)) for x in ops)
+    wr = (w / total * 100.0) if total else 0.0
+    wr_ef = (w / max(1, total - s) * 100.0) if total else 0.0
+    lam = min(1.0, total / 40.0)
+
+    bal_real = "N/A"
+    if log_f.exists():
+        for linea in reversed(log_f.read_text(encoding="utf-8", errors="ignore").splitlines()[-600:]):
+            if "real:" in linea and "USDT" in linea:
+                try:
+                    bal_real = linea.split("real:")[1].split("USDT")[0].strip() + " USDT"
+                    break
+                except Exception:
+                    pass
+
+    print("------------------------------------------------------------------------------------------")
+    print(f" 📊 CAJA NEGRA : {total} Trades (W: {w} | L: {l} | Scratch 18s: {s} | Cosecha 50%: {triz})")
+    print(f" 🎯 Win Rate   : Clasico {wr:.1f}% | Efectivo {wr_ef:.1f}% | PnL Neto: {pnl:+.4f} USDT | UTA Real: {bal_real} | λ={lam:.2f}")
+    print("------------------------------------------------------------------------------------------")
+    print(f" {'PAR Y DIRECCION':<22} {'TRADES (W/L)':<15} {'WIN RATE':<10} {'HURST MEDIO':<13} {'PNL NETO USDT':<15}")
+    print("------------------------------------------------------------------------------------------")
+
+    grupos = defaultdict(list)
+    for t in ops:
+        sym = str(t.get("symbol", "")).replace("/USDT:USDT", "")
+        side = str(t.get("side", "long")).upper()
+        grupos[f"{sym} [{side}]"].append(t)
+
+    for k in sorted(grupos.keys(), key=lambda x: sum(float(i.get("pnl_usdt", 0.0)) for i in grupos[x]), reverse=True):
+        lista = grupos[k]
+        w_g = sum(1 for i in lista if float(i.get("pnl_usdt", 0.0)) >= 0.0)
+        l_g = len(lista) - w_g
+        wr_g = (w_g / len(lista) * 100.0) if lista else 0.0
+        h_vals = [float(i.get("hurst_entry", 0.0)) for i in lista if i.get("hurst_entry") is not None]
+        h_med = (sum(h_vals) / len(h_vals)) if h_vals else 0.0
+        pnl_g = sum(float(i.get("pnl_usdt", 0.0)) for i in lista)
+        ic = "🟩" if pnl_g >= 0 else "🔴"
+        print(f" {k:<22} {f'{len(lista)} ({w_g}W/{l_g}L)':<15} {f'{wr_g:5.1f}%':<10} {f'H={h_med:.3f}':<13} {ic} {pnl_g:+.4f} USDT")
+
+    print("------------------------------------------------------------------------------------------")
+    print(" 📜 ULTIMAS 10 OPERACIONES REGISTRADAS EN LA CAJA NEGRA:")
+    print("------------------------------------------------------------------------------------------")
     if ops:
-        for op in ops[-10:]:
-            pnl_u = float(op.get("pnl_usdt", 0))
+        idx_base = max(1, total - 9)
+        for idx, op in enumerate(ops[-10:], start=idx_base):
+            pnl_u = float(op.get("pnl_usdt", 0.0))
             mot = str(op.get("motivo", ""))
-            ic = "🟩" if pnl_u >= 0 else ("🟨" if "SCRATCH" in mot.upper() else "🔴")
+            ic = "🟩" if pnl_u >= 0 else ("🟨" if "SCRATCH" in mot.upper() else "��")
             ts_s = str(op.get("timestamp", ""))[:19]
-            sym_s = str(op.get("symbol", "")).ljust(17)
-            pct_s = float(op.get("pnl_percentage", 0))
-            print(f"  {ic} {ts_s} | {sym_s} | {pct_s:+6.2f}% ({pnl_u:+.4f} USDT) | {mot}")
+            sym_s = str(op.get("symbol", "")).replace("/USDT:USDT", "").ljust(10)
+            side_s = str(op.get("side", "long")).upper().ljust(5)
+            pct_s = float(op.get("pnl_percentage", 0.0))
+            hold_s = float(op.get("hold_seg", 0.0))
+            print(f" #{idx:<2} {ic} {ts_s} | {sym_s} [{side_s}] | {pct_s:+6.2f}% ({pnl_u:+.4f} USDT) | {hold_s:4.0f}s | {mot}")
     else:
         print("  ⏳ Esperando el primer disparo confirmado...")
-    print("================================================================================")
+    print("==========================================================================================")
 
 
 async def reenviar_ultimo_cierre_cli() -> None:
-    """Reenvia manualmente a Telegram el ultimo cierre registrado ('verbot -t')."""
+    """Reenvia manualmente a Telegram el ultimo cierre registrado en la Caja Negra ('verbot -t')."""
     import json
     stats_f = cfg.ROOT_DIR / cfg.ARCHIVO_STATS_JSONL
     if not stats_f.exists():
@@ -687,20 +886,18 @@ async def reenviar_ultimo_cierre_cli() -> None:
         pnl_usdt=float(u["pnl_usdt"]),
         hold_seg=float(u["hold_seg"]),
         motivo=str(u["motivo"]),
-        entry_price=float(u.get("entry_price", 0)),
-        exit_price=float(u.get("exit_price", 0)),
+        entry_price=float(u.get("entry_price", 0.0)),
+        exit_price=float(u.get("exit_price", 0.0)),
         cosecha_50_previa=bool(u.get("cosecha_triz_50", False)),
     )
-    print(f"  ✅ Reenvio manual a Telegram del ultimo cierre ({u['symbol']}): {ok}")
+    print(f"  ✅ [VERBOT -T] Reenvio manual a Telegram del ultimo cierre ({u['symbol']}): {ok}")
 
 
 async def ejecutar_radar_xray_cli(accion: str = "status") -> None:
     """
     Comando tactico 'verbot -x' y 'verbot -x cerrar':
-      - 'status' / 'all': Muestra en consola el estado Chain-Jail en vivo y envia
-        reporte instantaneo a Telegram sin cerrar la posicion.
-      - 'cerrar': Cancela ordenes abiertas, liquida el 100% de contratos abiertos
-        a mercado con reduceOnly=True y envia recibo de cobro a Telegram.
+      - 'status': Radar Chain-Jail en vivo: muestra ganancia actual en consola y envia reporte a Telegram sin cerrar.
+      - 'cerrar': Cobro Manual Instantaneo: cierra a mercado (reduceOnly=True) los contratos abiertos y notifica en Telegram.
     """
     import ccxt.async_support as ccxt
     nl = chr(10)
@@ -714,21 +911,24 @@ async def ejecutar_radar_xray_cli(accion: str = "status") -> None:
     try:
         await ex.load_markets()
         posiciones = await ex.fetch_positions(None, {"settleCoin": "USDT"})
-        activas = [p for p in (posiciones or []) if float(p.get("contracts") or 0.0) > 0.0]
+        activas = [
+            p for p in (posiciones or [])
+            if abs(float(p.get("contracts") or (p.get("info") or {}).get("size") or 0.0)) > 0.0
+        ]
         bal = await ex.fetch_balance()
         usdt = (bal or {}).get("USDT") or {}
         tot = float(usdt.get("total") or 0.0)
         lib = float(usdt.get("free") or tot)
 
-        print("--------------------------------------------------------------------------------")
-        print(f" ⛓️  RADAR TÁCTICO CHAIN-JAIL (verbot -x) | Balance UTA: {tot:.4f} USDT (Libre: {lib:.4f})")
-        print("--------------------------------------------------------------------------------")
+        print("------------------------------------------------------------------------------------------")
+        print(f" ⛓️  RADAR TACTICO CHAIN-JAIL V4.0 (verbot -x) | Balance UTA: {tot:.4f} USDT (Libre: {lib:.4f})")
+        print("------------------------------------------------------------------------------------------")
 
         if not activas:
-            print(" �� Sin posiciones abiertas en Bybit en este instante (0 contratos corriendo).")
-            print("================================================================================")
+            print(" 🟢 Sin posiciones abiertas en Bybit en este instante (0 contratos corriendo).")
+            print("==========================================================================================")
             msg_vacio = nl.join([
-                "⛓️ [RADAR CHAIN-JAIL v2.0 EN VIVO]",
+                "⛓️ [RADAR CHAIN-JAIL V4.0 EN VIVO]",
                 "• Estado: Sin posiciones abiertas (0 contratos)",
                 f"• Balance UTA: {tot:.4f} USDT (Libre: {lib:.4f} USDT)",
             ])
@@ -737,20 +937,22 @@ async def ejecutar_radar_xray_cli(accion: str = "status") -> None:
             return
 
         lineas_tg = [
-            "⛓️ [RADAR CHAIN-JAIL v2.0 EN VIVO]",
-            f"💰 Balance UTA: {tot:.4f} USDT",
+            "⛓️ [RADAR CHAIN-JAIL V4.0 EN VIVO]",
+            f"💰 Balance UTA: {tot:.4f} USDT (Libre: {lib:.4f} USDT)",
         ]
         for p in activas:
             sym = str(p.get("symbol") or "")
             side = str(p.get("side") or "long").lower()
-            qty = float(p.get("contracts") or 0.0)
-            ep = float(p.get("entryPrice") or 0.0)
-            mp = float(p.get("markPrice") or ep)
-            pnl_u = float(p.get("unrealizedPnl") or 0.0)
+            qty = abs(float(p.get("contracts") or (p.get("info") or {}).get("size") or 0.0))
+            ep = float(p.get("entryPrice") or (p.get("info") or {}).get("avgPrice") or 0.0)
+            mp = float(p.get("markPrice") or (p.get("info") or {}).get("markPrice") or ep)
+            pnl_u = float(p.get("unrealizedPnl") or (p.get("info") or {}).get("unrealisedPnl") or 0.0)
             lev = float(p.get("leverage") or cfg.APALANCAMIENTO_BASE)
-            sl_b = (p.get("info") or {}).get("stopLoss") or "SIN SL"
+            sl_b = p.get("stopLossPrice") or (p.get("info") or {}).get("stopLoss") or "SIN SL"
             pct = ((mp - ep) / ep if side == "long" else (ep - mp) / ep) if ep > 0 else 0.0
-            eslabon, piso_sug, _ = calcular_eslabon_chain_jail(max(0.0, pct))
+            es_t1 = sym in getattr(cfg, "CLASE_TIER1_LIQUIDO", ())
+            eslabon, piso_sug, _ = calcular_eslabon_chain_jail(max(0.0, pct), es_tier1=es_t1)
+            techo_str = "+1.85%" if es_t1 else "+5.50%"
 
             if modo == "cerrar":
                 try:
@@ -764,10 +966,10 @@ async def ejecutar_radar_xray_cli(accion: str = "status") -> None:
                 bal2 = await ex.fetch_balance()
                 tot2 = float(((bal2 or {}).get("USDT") or {}).get("total") or tot)
                 print(f" 🟩 COBRO MANUAL CHAIN-JAIL EJECUTADO: {sym} [{side.upper()}] ({qty} contratos)")
-                print(f" 💵 Ganancia Capturada: {pct*100:+.2f}% puro ({pnl_u:+.4f} USDT) | Nuevo Balance: {tot2:.4f} USDT")
-                print("================================================================================")
+                print(f" 💵 Resultado Capturado: {pct*100:+.2f}% puro ({pnl_u:+.4f} USDT) | Nuevo Balance: {tot2:.4f} USDT")
+                print("==========================================================================================")
                 msg_cierre = nl.join([
-                    "💰 [COBRO MANUAL CHAIN-JAIL (verbot -x cerrar)]",
+                    "💰 [COBRO MANUAL CHAIN-JAIL V4.0 (verbot -x cerrar)]",
                     f"• Activo: {sym} [{side.upper()}] ({qty} contratos)",
                     f"• Recorrido: {ep} -> {mp} ({pct*100:+.2f}% puro | ROE {pct*lev*100:+.2f}%)",
                     f"• PnL Capturado: {pnl_u:+.4f} USDT",
@@ -779,13 +981,13 @@ async def ejecutar_radar_xray_cli(accion: str = "status") -> None:
                 print(f" 🎯 ACTIVO      : {sym} [{side.upper()}] ({qty} contratos)")
                 print(f" 📈 PRECIO      : Entrada {ep} -> Marca Actual {mp}")
                 print(f" 🔥 GANANCIA    : {pct*100:+.2f}% puro ({pct*lev*100:+.2f}% ROE {lev:.0f}x) | {pnl_u:+.4f} USDT")
-                print(f" ⛓️ ESLABÓN     : {eslabon}/5 (Piso Eslabón: +{piso_sug*100:.2f}% -> Meta: +8.00%) | SL Bybit: {sl_b}")
-                print("================================================================================")
+                print(f" ⛓️ ESLABON     : {eslabon}/5 (Piso Eslabon: +{piso_sug*100:.2f}% -> Meta: {techo_str}) | SL Bybit: {sl_b}")
+                print("==========================================================================================")
                 lineas_tg.extend([
                     f"🎯 {sym} [{side.upper()}] ({qty} contratos)",
                     f"• Precio: {ep} -> {mp}",
                     f"• Ganancia: {pct*100:+.2f}% (ROE {pct*lev*100:+.2f}%) | {pnl_u:+.4f} USDT",
-                    f"• Eslabón Chain-Jail: {eslabon}/5 (Piso +{piso_sug*100:.2f}% -> Techo +8.00%)",
+                    f"• Eslabon Chain-Jail: {eslabon}/5 (Piso +{piso_sug*100:.2f}% -> Techo {techo_str})",
                     f"• SL en Bybit: {sl_b}",
                 ])
 
@@ -794,228 +996,3 @@ async def ejecutar_radar_xray_cli(accion: str = "status") -> None:
             print(f" 📲 [TELEGRAM] Alerta en vivo enviada a tu celular: {ok_tg}")
     finally:
         await ex.close()
-
-# === [PASOS 6 & 7 SKILL HUNTER V3.0: ACTIVITY CLOCK 38S & GUARDIA CHAIN-JAIL 4X] ===
-def evaluar_reloj_actividad_maker_scratch(
-    edad_seg: float,
-    pnl_bruto_pct: float,
-    max_pnl_pct: float,
-    ofi_5s: float,
-    side: str,
-    ticks_activos: int = 0,
-) -> bool:
-    """Evalua si una posicion sin cosecha debe evacuarse pasivamente por Reloj de Actividad (Avellaneda-Stoikov)."""
-    t_min = float(getattr(cfg, "MAKER_SCRATCH_TIEMPO_SEG", 18.0))
-    if edad_seg < t_min or edad_seg > 65.0:
-        return False
-    es_long = str(side).lower() == "long"
-    flujo_adverso_fuerte = (es_long and ofi_5s <= -0.15) or ((not es_long) and ofi_5s >= 0.15)
-    if max_pnl_pct <= 0.0005 and flujo_adverso_fuerte and -0.0020 <= pnl_bruto_pct < 0.0:
-        return True
-    madurez_actividad = (edad_seg >= 38.0) or (edad_seg >= t_min and int(ticks_activos) >= 35)
-    flujo_estancado = (es_long and ofi_5s <= 0.02) or ((not es_long) and ofi_5s >= -0.02)
-    if madurez_actividad and max_pnl_pct < 0.0018 and flujo_estancado and -0.0022 <= pnl_bruto_pct <= -0.0003:
-        return True
-    return False
-
-
-def validar_cuantizacion_chain_jail_4x(
-    qty_restante: float,
-    precio: float,
-    step_qty: float,
-    min_qty: float,
-    min_notional: float = 2.50,
-) -> tuple[bool, float, float]:
-    """Verifica si el remanente post-1ra-tirada admite partirse en 25%/25% respetando min_qty y min_notional."""
-    q_res = float(qty_restante)
-    p_val = float(precio)
-    st = max(1e-9, float(step_qty))
-    mq = max(st, float(min_qty))
-    q_25 = round(math.floor(((q_res * 0.50) + 1e-12) / st) * st, 8)
-    q_final = round(q_res - q_25, 8)
-    if q_25 >= mq and q_final >= mq and (q_25 * p_val) >= min_notional and (q_final * p_val) >= min_notional:
-        return True, q_25, q_final
-    return False, 0.0, round(q_res, 8)
-
-
-if hasattr(GestorPosiciones, "evaluar_posicion_individual") and not hasattr(GestorPosiciones, "_orig_v3_evaluar_pos"):
-    GestorPosiciones._orig_v3_evaluar_pos = GestorPosiciones.evaluar_posicion_individual
-
-    async def _wrapped_evaluar_posicion_individual_v3(self, pos, ahora=None):
-        try:
-            tk = ESTADO_RAM.ticks_ram.get(pos.symbol)
-            if tk is not None and tk.last > 0.0:
-                ult_p = getattr(pos, "_ultimo_precio_act_v3", pos.entry_price)
-                if abs(tk.last - ult_p) > 1e-12:
-                    pos._ticks_activos_v3 = getattr(pos, "_ticks_activos_v3", 0) + 1
-                    pos._ultimo_precio_act_v3 = tk.last
-                t_now = float(ahora) if ahora is not None else time.time()
-                edad_s = max(0.0, t_now - float(pos.ts_apertura))
-                if (
-                    not pos.cerrada
-                    and not getattr(pos, "cosecha_50_ejecutada", False)
-                    and not getattr(pos, "trinquete_be_armado", False)
-                    and not getattr(pos, "scratch_18s_evaluado", False)
-                    and pos.entry_price > 0.0
-                ):
-                    pnl_b = ((tk.last - pos.entry_price) / pos.entry_price) if pos.side == "long" else ((pos.entry_price - tk.last) / pos.entry_price)
-                    t_act = getattr(pos, "_ticks_activos_v3", 0)
-                    if evaluar_reloj_actividad_maker_scratch(
-                        edad_s, pnl_b, pos.max_pnl_pct_alcanzado, tk.ofi_5s, pos.side, t_act
-                    ):
-                        pos.max_pnl_pct_alcanzado = min(pos.max_pnl_pct_alcanzado, 0.0004)
-                        if pos.side == "long" and tk.ofi_5s > -0.16:
-                            tk.ofi_5s = -0.18
-                        elif pos.side == "short" and tk.ofi_5s < 0.16:
-                            tk.ofi_5s = 0.18
-        except Exception:
-            pass
-
-        res = await self._orig_v3_evaluar_pos(pos, ahora)
-
-        try:
-            umbral_c1 = float(getattr(cfg, "COSECHA_TRIZ_ACTIVACION_PCT", 0.0026))
-            if not pos.cerrada and pos.max_pnl_pct_alcanzado >= umbral_c1 and pos.entry_price > 0.0:
-                pos.trinquete_be_armado = True
-                offset_be = float(getattr(cfg, "TRINQUETE_BE_OFFSET_PCT", 0.0005))
-                if pos.side == "long":
-                    piso_be = round(pos.entry_price * (1.0 + offset_be), 8)
-                    if pos.sl_interno_price < piso_be:
-                        pos.sl_interno_price = piso_be
-                else:
-                    piso_be = round(pos.entry_price * (1.0 - offset_be), 8)
-                    if pos.sl_interno_price > piso_be or pos.sl_interno_price <= 0.0:
-                        pos.sl_interno_price = piso_be
-        except Exception:
-            pass
-        return res
-
-    GestorPosiciones.evaluar_posicion_individual = _wrapped_evaluar_posicion_individual_v3
-
-# === INICIO AJUSTES QUIRURGICOS V3.0 (SKILL HUNTER) ===
-def evaluar_reloj_actividad_maker_scratch(
-    edad_seg: float,
-    pnl_bruto_pct: float,
-    ofi_5s: float,
-    side: str,
-    max_pnl_pct: float,
-    ticks_activos: int = 0,
-) -> bool:
-    edad = float(edad_seg)
-    if edad < float(cfg.MAKER_SCRATCH_TIEMPO_SEG) or edad > 75.0:
-        return False
-    pnl = float(pnl_bruto_pct)
-    ofi = float(ofi_5s)
-    max_p = float(max_pnl_pct)
-    es_short = str(side).lower() == 'short'
-    flujo_adverso_fuerte = (ofi >= 0.10) if es_short else (ofi <= -0.10)
-    if max_p <= 0.0010 and (-0.0040 <= pnl <= -0.0001) and flujo_adverso_fuerte:
-        return True
-    flujo_estancado = (ofi >= -0.05) if es_short else (ofi <= 0.05)
-    if (
-        (edad >= 25.0 or int(ticks_activos) >= 24)
-        and max_p < 0.0018
-        and (-0.0044 <= pnl <= -0.0001)
-        and flujo_estancado
-    ):
-        return True
-    return False
-
-
-if hasattr(GestorPosiciones, 'evaluar_posicion_individual') and not hasattr(GestorPosiciones, '_orig_eval_pos_v3_shield'):
-    GestorPosiciones._orig_eval_pos_v3_shield = GestorPosiciones.evaluar_posicion_individual
-    _PULSO_POS_TS_V3: dict[str, float] = {}
-
-    async def _evaluar_posicion_individual_v3_shield(self, pos, ahora: float):
-        es_prod = __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') != '1'
-        if es_prod:
-            sig_close = cfg.ROOT_DIR / '.tribrain_force_close.signal'
-            if sig_close.exists():
-                try:
-                    sig_close.unlink()
-                except Exception:
-                    pass
-                pos.cosecha_50_ejecutada = False
-                pos.ts_apertura = ahora - (float(cfg.TIEMPO_MAX_HOLD_SEG) + 5.0)
-        tk = ESTADO_RAM.ticks_ram.get(pos.symbol)
-        forzar_scratch = False
-        orig_ofi5s = getattr(tk, 'ofi_5s', 0.0) if tk is not None else 0.0
-        if es_prod and tk is not None and tk.bid > 0.0 and tk.ask > 0.0 and pos.entry_price > 0.0:
-            precio_ref = tk.ask if pos.side == 'short' else tk.bid
-            pnl_now = (
-                (pos.entry_price - precio_ref) / pos.entry_price
-                if pos.side == 'short'
-                else (precio_ref - pos.entry_price) / pos.entry_price
-            )
-            if pnl_now > pos.max_pnl_pct_alcanzado:
-                pos.max_pnl_pct_alcanzado = pnl_now
-            edad_now = max(0.0, ahora - pos.ts_apertura)
-            if not pos.cosecha_50_ejecutada and edad_now >= 12.0:
-                if pos.max_pnl_pct_alcanzado >= 0.0020:
-                    if pos.side == 'short':
-                        sl_be = round(pos.entry_price * (1.0 - 0.0002), 8)
-                        if pos.sl_interno_price > sl_be:
-                            pos.sl_interno_price = sl_be
-                            log_sniper(
-                                f'\U0001f6e1\ufe0f [MICRO-BE +0.20%] {pos.symbol} [SHORT] SL interno asegurado en Break-Even @ {sl_be} (MaxPnL={pos.max_pnl_pct_alcanzado*100:+.2f}%)'
-                            )
-                    else:
-                        sl_be = round(pos.entry_price * (1.0 + 0.0002), 8)
-                        if pos.sl_interno_price < sl_be:
-                            pos.sl_interno_price = sl_be
-                            log_sniper(
-                                f'\U0001f6e1\ufe0f [MICRO-BE +0.20%] {pos.symbol} [LONG] SL interno asegurado en Break-Even @ {sl_be} (MaxPnL={pos.max_pnl_pct_alcanzado*100:+.2f}%)'
-                            )
-                elif pos.max_pnl_pct_alcanzado >= 0.0015:
-                    if pos.side == 'short':
-                        sl_tight = round(pos.entry_price * (1.0 + 0.0012), 8)
-                        if pos.sl_interno_price > sl_tight:
-                            pos.sl_interno_price = sl_tight
-                            log_sniper(
-                                f'\U0001f6e1\ufe0f [MICRO-SHIELD +0.15%] {pos.symbol} [SHORT] SL interno comprimido a -0.12% @ {sl_tight} (MaxPnL={pos.max_pnl_pct_alcanzado*100:+.2f}%)'
-                            )
-                    else:
-                        sl_tight = round(pos.entry_price * (1.0 - 0.0012), 8)
-                        if pos.sl_interno_price < sl_tight:
-                            pos.sl_interno_price = sl_tight
-                            log_sniper(
-                                f'\U0001f6e1\ufe0f [MICRO-SHIELD +0.15%] {pos.symbol} [LONG] SL interno comprimido a -0.12% @ {sl_tight} (MaxPnL={pos.max_pnl_pct_alcanzado*100:+.2f}%)'
-                            )
-            ult_p = _PULSO_POS_TS_V3.get(pos.symbol, pos.ts_apertura)
-            if ahora - ult_p >= 15.0:
-                _PULSO_POS_TS_V3[pos.symbol] = ahora
-                log_sniper(
-                    f'\u23f1\ufe0f [PULSO POSICI\u00d3N] {pos.symbol} [{pos.side.upper()}] Edad={edad_now:.0f}s | '
-                    f'PnL={pnl_now*100:+.2f}% (Max={pos.max_pnl_pct_alcanzado*100:+.2f}%) | '
-                    f'SL_Int={pos.sl_interno_price} | OFI_5s={tk.ofi_5s:+.2f} | H={tk.hurst:.2f}'
-                )
-            if (
-                not pos.cosecha_50_ejecutada
-                and not pos.scratch_18s_activo
-                and cfg.MAKER_SCRATCH_TIEMPO_SEG <= edad_now <= 75.0
-            ):
-                ticks_act = int(getattr(pos, 'ticks_activos_vida', 0) or 0)
-                if evaluar_reloj_actividad_maker_scratch(
-                    edad_now, pnl_now, tk.ofi_5s, pos.side, pos.max_pnl_pct_alcanzado, ticks_act
-                ):
-                    pos.scratch_18s_evaluado = False
-                    forzar_scratch = True
-                    tk.ofi_5s = 0.25 if pos.side == 'short' else -0.25
-        try:
-            res = await GestorPosiciones._orig_eval_pos_v3_shield(self, pos, ahora)
-        finally:
-            if forzar_scratch and tk is not None:
-                tk.ofi_5s = orig_ofi5s
-        if pos.cerrada:
-            _PULSO_POS_TS_V3.pop(pos.symbol, None)
-        elif (
-            es_prod
-            and not pos.cosecha_50_ejecutada
-            and not pos.scratch_18s_activo
-            and (ahora - pos.ts_apertura) < 75.0
-        ):
-            pos.scratch_18s_evaluado = False
-        return res
-
-    GestorPosiciones.evaluar_posicion_individual = _evaluar_posicion_individual_v3_shield
-# === FIN AJUSTES QUIRURGICOS V3.0 (SKILL HUNTER) ===

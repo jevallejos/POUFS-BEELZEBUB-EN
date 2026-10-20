@@ -3,7 +3,7 @@
 """
 ==============================================================================
 ARCHIVO #09: ejecutor_sniper.py
-SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V3.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V4.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Motor de Ejecucion Francotirador Zero-REST (Long & Short Simetrico):
   - Deduccion atomica de margen en RAM (Single-Slot Mutex) y 0 llamadas REST

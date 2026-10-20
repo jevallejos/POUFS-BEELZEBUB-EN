@@ -3,7 +3,7 @@
 """
 ==============================================================================
 ARCHIVO #05: telemetria_telegram.py
-SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V3.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V4.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Motor Transaccional de Telemetria a Telegram con Apareamiento Estricto 1:1.
 Garantiza el envio 100% confiable de:

@@ -3,7 +3,7 @@
 """
 ==============================================================================
 ARCHIVO #12: evaluador_cuantico_oos.py
-SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V3.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V4.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Motor de Calibracion Cuantitativa Fuera de Muestra (Walk-Forward OOS):
   - Ejecucion desacoplada en cortes de sesion (00:00, 08:00 y 16:00 UTC) con
