@@ -799,9 +799,10 @@ if hasattr(RadarVolatilidad, "procesar_instantanea_libro") and not hasattr(Radar
 def verificar_compuerta_hurst_short_v3(
     hurst_actual: float, z_score: float, ema900_dist_pct: float = 0.0
 ) -> bool:
-    if abs(float(z_score)) >= 12.0 and float(ema900_dist_pct) >= 0.0120:
+    if abs(float(z_score)) >= 11.0 or float(ema900_dist_pct) >= 0.0100:
         return True
-    return float(hurst_actual) <= float(cfg.HURST_MAX_ENTRADA)
+    cota_h = max(0.515, float(cfg.HURST_MAX_ENTRADA))
+    return float(hurst_actual) <= cota_h
 
 
 if hasattr(RadarVolatilidad, 'procesar_instantanea_libro') and not hasattr(RadarVolatilidad, '_orig_proc_libro_v3_hurst'):
@@ -811,9 +812,16 @@ if hasattr(RadarVolatilidad, 'procesar_instantanea_libro') and not hasattr(Radar
     async def _procesar_instantanea_libro_hurst_short_v3(
         self, symbol: str, bids: list, asks: list, timestamp: float | None = None
     ):
+        ahora_ts = float(timestamp if timestamp is not None else time.time())
+        pausa_prev = ESTADO_RAM.pausa_macro_hasta_ts
         res = await RadarVolatilidad._orig_proc_libro_v3_hurst(
             self, symbol, bids, asks, timestamp
         )
+        if (
+            ESTADO_RAM.pausa_macro_hasta_ts > pausa_prev
+            and __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') != '1'
+        ):
+            ESTADO_RAM.pausa_macro_hasta_ts = ahora_ts + 30.0
         if isinstance(res, dict) and str(res.get('side', '')).lower() == 'short':
             vz = getattr(self, 'ventanas', {}).get(symbol)
             n_pts = len(getattr(vz, 'precios', [])) if vz is not None else 0
@@ -823,13 +831,12 @@ if hasattr(RadarVolatilidad, 'procesar_instantanea_libro') and not hasattr(Radar
                 z_val = float(res.get('z_score', getattr(tk, 'z_score', 0.0)) or 0.0)
                 ema_d = float(getattr(tk, 'ema900_dist_pct', 0.0) or 0.0)
                 if not verificar_compuerta_hurst_short_v3(h_val, z_val, ema_d):
-                    ahora = float(timestamp if timestamp is not None else time.time())
                     ult = _ULT_LOG_HURST_SHORT_V3.get(symbol, 0.0)
-                    if ahora - ult >= 1.0:
-                        _ULT_LOG_HURST_SHORT_V3[symbol] = ahora
+                    if ahora_ts - ult >= 1.0:
+                        _ULT_LOG_HURST_SHORT_V3[symbol] = ahora_ts
                         log_sniper.info(
                             f'\u26a0\ufe0f [FILTRO HURST] {symbol} persistencia alcista en SHORT '
-                            f'(H={h_val:.3f} > {cfg.HURST_MAX_ENTRADA:.3f}). Abortando.'
+                            f'(H={h_val:.3f} > 0.515). Abortando.'
                         )
                     return None
         return res

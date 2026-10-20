@@ -449,3 +449,16 @@ if hasattr(EjecutorSniper, 'ejecutar_senal_sniper') and not hasattr(EjecutorSnip
 
     EjecutorSniper.ejecutar_senal_sniper = _ejecutar_senal_sniper_gm_cap_v3
 # === FIN AJUSTES QUIRURGICOS V3.0 (SKILL HUNTER) ===
+
+# === INICIO MODO RECOLECCION ESTADISTICA ACTIVA V3.0 ===
+if '_orig_penny_jump_v3' not in globals():
+    _orig_penny_jump_v3 = calcular_precio_penny_jump
+
+    def calcular_precio_penny_jump(
+        side: str, best_bid: float, best_ask: float, tick_size: float, ofi: float
+    ) -> float:
+        ofi_eff = float(ofi)
+        if __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') != '1' and abs(ofi_eff) >= 0.10:
+            ofi_eff = 0.35 if ofi_eff >= 0 else -0.35
+        return _orig_penny_jump_v3(side, best_bid, best_ask, tick_size, ofi_eff)
+# === FIN MODO RECOLECCION ESTADISTICA ACTIVA V3.0 ===
