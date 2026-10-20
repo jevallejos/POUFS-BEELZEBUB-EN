@@ -739,3 +739,58 @@ if hasattr(VentanaZ, "calcular_ml_ofi_y_hawkes") and not hasattr(VentanaZ, "_ori
         return ml_ofi_cks, ofi_5s, vpin
 
     VentanaZ.calcular_ml_ofi_y_hawkes = _wrapped_calcular_ml_ofi_y_hawkes_v3
+
+# === [PASO 4 SKILL HUNTER V3.0: PISO BIPOWER ENDOGENO] ===
+def calcular_piso_bipower_endogeno(spread_pct: float, es_tier1: bool = False) -> float:
+    """Calcula el piso endogeno de Variacion Bipower adaptativo al spread relativo y clase microestructural."""
+    piso_base = float(getattr(cfg, "VOLATILIDAD_PISO_BIPOWER", 0.00108))
+    sp = float(spread_pct)
+    if sp <= 0.0:
+        return piso_base
+    factor_min = 0.82 if es_tier1 else 0.95
+    cota_inf = piso_base * factor_min
+    cota_sup = piso_base * 1.35
+    return round(max(cota_inf, min(cota_sup, max(cota_inf, sp * 1.25))), 7)
+
+
+if hasattr(VentanaZ, "calcular_z") and not hasattr(VentanaZ, "_orig_p4_calcular_z"):
+    VentanaZ._orig_p4_calcular_z = VentanaZ.calcular_z
+
+    def _wrapped_calcular_z_v3(self, precio_actual=None):
+        z_score, cambio_ventana_pct, sigma_efectiva = self._orig_p4_calcular_z(precio_actual)
+        sp_local = float(getattr(self, "_spread_rel_v3", 0.0))
+        if sp_local <= 0.0 or abs(z_score) <= 1e-9 or sigma_efectiva <= 1e-9:
+            return z_score, cambio_ventana_pct, sigma_efectiva
+        es_t1 = bool(getattr(self, "_es_tier1_v3", False))
+        piso_ref = calcular_piso_bipower_endogeno(sp_local, es_t1)
+        piso_sigma = round(0.00045 * (piso_ref / 0.00108), 6)
+        if piso_sigma > sigma_efectiva:
+            z_adj = round(z_score * (sigma_efectiva / piso_sigma), 4)
+            return z_adj, cambio_ventana_pct, piso_sigma
+        if es_t1 and sigma_efectiva <= 0.00045 and piso_sigma < 0.00045:
+            z_adj = round(z_score * (sigma_efectiva / piso_sigma), 4)
+            return z_adj, cambio_ventana_pct, piso_sigma
+        return z_score, cambio_ventana_pct, sigma_efectiva
+
+    VentanaZ.calcular_z = _wrapped_calcular_z_v3
+
+
+if hasattr(RadarVolatilidad, "procesar_instantanea_libro") and not hasattr(RadarVolatilidad, "_orig_p4_procesar_libro"):
+    RadarVolatilidad._orig_p4_procesar_libro = RadarVolatilidad.procesar_instantanea_libro
+
+    async def _wrapped_procesar_instantanea_libro_p4(self, symbol: str, bids: list, asks: list, ahora=None):
+        try:
+            if bids and asks and len(bids[0]) >= 1 and len(asks[0]) >= 1:
+                bb = float(bids[0][0])
+                ba = float(asks[0][0])
+                if bb > 0.0 and ba >= bb:
+                    sp_rel = (ba - bb) / (0.5 * (ba + bb))
+                    vz = self.ventanas.get(symbol)
+                    if vz is not None:
+                        vz._spread_rel_v3 = sp_rel
+                        vz._es_tier1_v3 = symbol in getattr(cfg, "CLASE_TIER1_LIQUIDO", ())
+        except Exception:
+            pass
+        return await self._orig_p4_procesar_libro(symbol, bids, asks, ahora)
+
+    RadarVolatilidad.procesar_instantanea_libro = _wrapped_procesar_instantanea_libro_p4
