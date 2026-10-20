@@ -924,6 +924,7 @@ def evaluar_reloj_actividad_maker_scratch(
 
 if hasattr(GestorPosiciones, 'evaluar_posicion_individual') and not hasattr(GestorPosiciones, '_orig_eval_pos_v3_shield'):
     GestorPosiciones._orig_eval_pos_v3_shield = GestorPosiciones.evaluar_posicion_individual
+    _PULSO_POS_TS_V3: dict[str, float] = {}
 
     async def _evaluar_posicion_individual_v3_shield(self, pos, ahora: float):
         es_prod = __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') != '1'
@@ -940,25 +941,48 @@ if hasattr(GestorPosiciones, 'evaluar_posicion_individual') and not hasattr(Gest
             if pnl_now > pos.max_pnl_pct_alcanzado:
                 pos.max_pnl_pct_alcanzado = pnl_now
             edad_now = max(0.0, ahora - pos.ts_apertura)
+            # 1. Candado Micro-Break-Even con telemetria explicita
             if not pos.cosecha_50_ejecutada and edad_now >= 12.0:
                 if pos.max_pnl_pct_alcanzado >= 0.0020:
                     if pos.side == 'short':
                         sl_be = round(pos.entry_price * (1.0 - 0.0002), 8)
                         if pos.sl_interno_price > sl_be:
                             pos.sl_interno_price = sl_be
+                            log_sniper(
+                                f'\U0001f6e1\ufe0f [MICRO-BE +0.20%] {pos.symbol} [SHORT] SL interno asegurado en Break-Even @ {sl_be} (MaxPnL={pos.max_pnl_pct_alcanzado*100:+.2f}%)'
+                            )
                     else:
                         sl_be = round(pos.entry_price * (1.0 + 0.0002), 8)
                         if pos.sl_interno_price < sl_be:
                             pos.sl_interno_price = sl_be
+                            log_sniper(
+                                f'\U0001f6e1\ufe0f [MICRO-BE +0.20%] {pos.symbol} [LONG] SL interno asegurado en Break-Even @ {sl_be} (MaxPnL={pos.max_pnl_pct_alcanzado*100:+.2f}%)'
+                            )
                 elif pos.max_pnl_pct_alcanzado >= 0.0015:
                     if pos.side == 'short':
                         sl_tight = round(pos.entry_price * (1.0 + 0.0012), 8)
                         if pos.sl_interno_price > sl_tight:
                             pos.sl_interno_price = sl_tight
+                            log_sniper(
+                                f'\U0001f6e1\ufe0f [MICRO-SHIELD +0.15%] {pos.symbol} [SHORT] SL interno comprimido a -0.12% @ {sl_tight} (MaxPnL={pos.max_pnl_pct_alcanzado*100:+.2f}%)'
+                            )
                     else:
                         sl_tight = round(pos.entry_price * (1.0 - 0.0012), 8)
                         if pos.sl_interno_price < sl_tight:
                             pos.sl_interno_price = sl_tight
+                            log_sniper(
+                                f'\U0001f6e1\ufe0f [MICRO-SHIELD +0.15%] {pos.symbol} [LONG] SL interno comprimido a -0.12% @ {sl_tight} (MaxPnL={pos.max_pnl_pct_alcanzado*100:+.2f}%)'
+                            )
+            # 2. Pulso Forense cada 15s mientras la posicion esta abierta
+            ult_p = _PULSO_POS_TS_V3.get(pos.symbol, pos.ts_apertura)
+            if ahora - ult_p >= 15.0:
+                _PULSO_POS_TS_V3[pos.symbol] = ahora
+                log_sniper(
+                    f'\u23f1\ufe0f [PULSO POSICI\u00d3N] {pos.symbol} [{pos.side.upper()}] Edad={edad_now:.0f}s | '
+                    f'PnL={pnl_now*100:+.2f}% (Max={pos.max_pnl_pct_alcanzado*100:+.2f}%) | '
+                    f'SL_Int={pos.sl_interno_price} | OFI_5s={tk.ofi_5s:+.2f} | H={tk.hurst:.2f}'
+                )
+            # 3. Re-evaluacion continua de Maker-Scratch entre 18s y 75s
             if (
                 not pos.cosecha_50_ejecutada
                 and not pos.scratch_18s_activo
@@ -976,9 +1000,10 @@ if hasattr(GestorPosiciones, 'evaluar_posicion_individual') and not hasattr(Gest
         finally:
             if forzar_scratch and tk is not None:
                 tk.ofi_5s = orig_ofi5s
-        if (
+        if pos.cerrada:
+            _PULSO_POS_TS_V3.pop(pos.symbol, None)
+        elif (
             es_prod
-            and not pos.cerrada
             and not pos.cosecha_50_ejecutada
             and not pos.scratch_18s_activo
             and (ahora - pos.ts_apertura) < 75.0

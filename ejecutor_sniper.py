@@ -442,7 +442,7 @@ if hasattr(EjecutorSniper, 'ejecutar_senal_sniper') and not hasattr(EjecutorSnip
                         f'\u26a0\ufe0f [ESCUDO EJECUTOR] Orden SHORT abortada en {sym_s} por Hurst alto (H={h_now:.3f} > 0.495).'
                     )
                     return False
-                if sym_s in getattr(cfg, 'CLASE_HIGH_BETA', ()) and (ema_now < 0.0052 or z_now < 4.50):
+                if sym_s in getattr(cfg, 'CLASE_HIGH_BETA', ()) and (ema_now < 0.0040 or z_now < 4.20):
                     return False
         z_val = 0.0
         if isinstance(senal_d, dict):

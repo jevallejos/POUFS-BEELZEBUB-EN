@@ -803,7 +803,7 @@ def verificar_compuerta_hurst_short_v3(
     symbol: str = '',
 ) -> bool:
     if symbol in getattr(cfg, 'CLASE_HIGH_BETA', ()):
-        if float(ema900_dist_pct) < 0.0052 or float(z_score) < 4.50:
+        if float(ema900_dist_pct) < 0.0040 or float(z_score) < 4.20:
             return False
     if abs(float(z_score)) >= 11.5 and float(ema900_dist_pct) >= 0.0120:
         return True
@@ -817,26 +817,38 @@ if hasattr(RadarVolatilidad, '_evaluar_gatillo_short_chronos') and not hasattr(R
     async def _evaluar_gatillo_short_chronos_pre_v3(
         self, symbol: str, vz, tk, spread_ok: bool, ahora: float, *args, **kwargs
     ):
-        if __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') != '1':
-            n_pts = len(getattr(vz, 'precios', [])) if vz is not None else 0
-            if n_pts >= 40:
-                h_val = float(getattr(tk, 'hurst', 0.45) or 0.45)
-                z_val = float(getattr(tk, 'z_score', 0.0) or 0.0)
-                ema_d = float(getattr(tk, 'ema900_dist_pct', 0.0) or 0.0)
-                if not verificar_compuerta_hurst_short_v3(h_val, z_val, ema_d, symbol):
-                    ult = _ULT_LOG_HURST_SHORT_V3.get(symbol, 0.0)
-                    if ahora - ult >= 2.0:
-                        _ULT_LOG_HURST_SHORT_V3[symbol] = ahora
-                        log_sniper(
-                            f'\u26a0\ufe0f [FILTRO HURST SHORT] {symbol} bloqueado pre-orden '
-                            f'(H={h_val:.3f} > 0.495 | Z={z_val:+.2f} | EMA={ema_d*100:+.2f}%).'
-                        )
-                    return None
         res = RadarVolatilidad._orig_eval_short_pre_v3(
             self, symbol, vz, tk, spread_ok, ahora, *args, **kwargs
         )
         if hasattr(res, '__await__'):
             res = await res
+        if res is not None and __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') != '1':
+            n_pts = len(getattr(vz, 'precios', [])) if vz is not None else 0
+            if n_pts >= 40:
+                h_val = float(getattr(tk, 'hurst', 0.45) or 0.45)
+                z_val = float(getattr(tk, 'z_score', 0.0) or 0.0)
+                ema_d = float(getattr(tk, 'ema900_dist_pct', 0.0) or 0.0)
+                ofi_v = float(getattr(tk, 'ofi', 0.0) or 0.0)
+                lyap_v = float(getattr(tk, 'lyapunov_acel', 0.0) or 0.0)
+                if not verificar_compuerta_hurst_short_v3(h_val, z_val, ema_d, symbol):
+                    ult = _ULT_LOG_HURST_SHORT_V3.get(symbol, 0.0)
+                    if ahora - ult >= 15.0:
+                        _ULT_LOG_HURST_SHORT_V3[symbol] = ahora
+                        if h_val > 0.495:
+                            log_sniper(
+                                f'\u26a0\ufe0f [BLOQUEO HURST SHORT] {symbol} gatillo abortado por tendencia alcista '
+                                f'(H={h_val:.3f} > 0.495 | Z={z_val:+.2f} | EMA={ema_d*100:+.2f}% | OFI={ofi_v:+.2f}).'
+                            )
+                        else:
+                            log_sniper(
+                                f'\u26a0\ufe0f [BLOQUEO HIGH-BETA SHORT] {symbol} sobreextensi\u00f3n insuficiente '
+                                f'(Z={z_val:+.2f} | EMA={ema_d*100:+.2f}% | H={h_val:.3f}).'
+                            )
+                    return None
+                log_sniper(
+                    f'\U0001f3af [TELEMETR\u00cdA DISPARO SHORT] {symbol} | Z={z_val:+.2f} | '
+                    f'EMA900={ema_d*100:+.2f}% | OFI={ofi_v:+.2f} | H={h_val:.3f} (<=0.495 OK) | a_Lyap={lyap_v*100:+.4f}%'
+                )
         return res
 
     RadarVolatilidad._evaluar_gatillo_short_chronos = _evaluar_gatillo_short_chronos_pre_v3
