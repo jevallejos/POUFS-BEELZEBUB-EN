@@ -3,7 +3,7 @@
 """
 ==============================================================================
 ARCHIVO #03: config_parametros.py
-SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V3.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Fuente Unica de Verdad (Zero-Duplicate-AST).
 Codifica las 4 Leyes Matematicas de CHRONOS-TRIZ:
@@ -29,9 +29,9 @@ ROOT_DIR: pathlib.Path = pathlib.Path(__file__).resolve().parent
 load_dotenv(ROOT_DIR / ".env")
 
 VERSION_SISTEMA: str = "4.0.0"
-NOMBRE_ESTRATEGIA: str = "TRI-BRAIN-SNIPER (Skill Hunter) V4.0"
+NOMBRE_ESTRATEGIA: str = "TRI-BRAIN-PHANTOM (God's Accomplice) V1.0"
 ESTRATEGIA_MATEMATICA: str = "CHRONOS-TRIZ (Stochastic Time-Decay & 50/50 Ratchet)"
-TITULO_TELEGRAM_CANONICO: str = "Motor TRI-BRAIN-SNIPER (Skill Hunter) V3.0 [CHRONOS-TRIZ]"
+TITULO_TELEGRAM_CANONICO: str = "Motor TRI-BRAIN-PHANTOM (God's Accomplice) V1.0 [CHRONOS-TRIZ]"
 
 ARCHIVO_LOCK_PRODUCCION: str = ".tribrain.lock"
 ARCHIVO_LOCK_TEST: str = ".tribrain_test.lock"
@@ -356,24 +356,33 @@ aplicar_perfil_recoleccion_estadistica_v3()
 # === FIN MODO RECOLECCION ESTADISTICA ACTIVA V3.0 ===
 
 
-# === [V4.0 CONVEX EXIT & OOS SYNC] ===
-def _aplicar_overrides_v4_prod() -> None:
+# === [PHANTOM V1.0 MASTER LOCKS & P-08 OOS CLAMP] ===
+def _aplicar_candados_phantom_v1() -> None:
     _os = __import__("os")
     if _os.getenv("TRIBRAIN_TEST_MODE", "0") != "1":
-        globals()["VERSION_SISTEMA"] = "4.0.0"
-        globals()["NOMBRE_ESTRATEGIA"] = "TRI-BRAIN-SNIPER (Skill Hunter) V4.0"
+        globals()["NOMBRE_ESTRATEGIA"] = "TRI-BRAIN-PHANTOM (God's Accomplice) V1.0"
         globals()["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
-        globals()["OFI_MIN_ENTRADA"] = 0.10
+        globals()["OFI_MIN_ENTRADA"] = 0.12
         globals()["OFI_TICKS_CONFIRMACION"] = 2
         globals()["TTL_ORDEN_ENTRADA_SEG"] = 3.80
-        globals()["HURST_MAX_ENTRADA"] = 0.495
+        globals()["HURST_MAX_ENTRADA"] = 0.485
+        if float(globals().get("Z_SCORE_UMBRAL_HIGH_BETA", -3.20)) > -3.10:
+            globals()["Z_SCORE_UMBRAL_HIGH_BETA"] = -3.10
+        if float(globals().get("Z_SCORE_UMBRAL_TIER1", -2.85)) > -2.85:
+            globals()["Z_SCORE_UMBRAL_TIER1"] = -2.85
 
-_aplicar_overrides_v4_prod()
+_aplicar_candados_phantom_v1()
 
-if "_orig_recargar_v4" not in globals() and "recargar_calibracion_oos_si_cambio" in globals():
-    _orig_recargar_v4 = globals()["recargar_calibracion_oos_si_cambio"]
-    def _recargar_calibracion_oos_v4(*args, **kwargs):
-        res = _orig_recargar_v4(*args, **kwargs)
-        _aplicar_overrides_v4_prod()
+if "_orig_recargar_phantom" not in globals() and "recargar_calibracion_oos_si_cambio" in globals():
+    _orig_recargar_phantom = globals()["recargar_calibracion_oos_si_cambio"]
+    def _recargar_calibracion_oos_phantom(*args, **kwargs):
+        res = _orig_recargar_phantom(*args, **kwargs)
+        if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1":
+            _aplicar_candados_phantom_v1()
+            if isinstance(res, dict):
+                res["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
+                res["OFI_MIN_ENTRADA"] = 0.12
+                res["Z_SCORE_UMBRAL_HIGH_BETA"] = min(float(res.get("Z_SCORE_UMBRAL_HIGH_BETA", -3.10)), -3.10)
+                res["Z_SCORE_UMBRAL_TIER1"] = min(float(res.get("Z_SCORE_UMBRAL_TIER1", -2.85)), -2.85)
         return res
-    globals()["recargar_calibracion_oos_si_cambio"] = _recargar_calibracion_oos_v4
+    globals()["recargar_calibracion_oos_si_cambio"] = _recargar_calibracion_oos_phantom

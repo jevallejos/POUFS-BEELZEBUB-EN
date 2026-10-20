@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # ARCHIVO #13: instalar_infraestructura.sh
-# SISTEMA: TRI-BRAIN-SNIPER (Skill Hunter) V4.0 — ESTRATEGIA CHRONOS-TRIZ
+# SISTEMA: TRI-BRAIN-PHANTOM (God's Accomplice) V1.0 — ESTRATEGIA CHRONOS-TRIZ
 # ==============================================================================
 set -euo pipefail
 
@@ -13,7 +13,7 @@ TIMER_FILE="/etc/systemd/system/${SERVICE_NAME}.timer"
 USER_NAME="$(whoami)"
 
 echo "=================================================================="
-echo "⚙️  INSTALANDO INFRAESTRUCTURA TRI-BRAIN-SNIPER (Skill Hunter) V4.0"
+echo "⚙️  INSTALANDO INFRAESTRUCTURA TRI-BRAIN-PHANTOM (God's Accomplice) V1.0"
 echo "   Repositorio : ${REPO_DIR}"
 echo "   Python VENV : ${PY_BIN}"
 echo "=================================================================="
@@ -28,7 +28,7 @@ chmod +x "${REPO_DIR}/instalar_infraestructura.sh" "${REPO_DIR}/main.py" "${REPO
 
 sudo tee "${SERVICE_FILE}" >/dev/null <<EOF
 [Unit]
-Description=Evaluador Cuantico Walk-Forward OOS TRI-BRAIN-SNIPER (Skill Hunter) V4.0
+Description=Evaluador Cuantico Walk-Forward OOS TRI-BRAIN-PHANTOM (God's Accomplice) V1.0
 After=network-online.target
 Wants=network-online.target
 
@@ -47,7 +47,7 @@ EOF
 
 sudo tee "${TIMER_FILE}" >/dev/null <<EOF
 [Unit]
-Description=Timer Tri-Sesion (00:00, 08:00, 16:00 UTC) para TRI-BRAIN-SNIPER (Skill Hunter) V4.0
+Description=Timer Tri-Sesion (00:00, 08:00, 16:00 UTC) para TRI-BRAIN-PHANTOM (God's Accomplice) V1.0
 
 [Timer]
 OnCalendar=*-*-* 00,08,16:00:00 UTC
@@ -108,7 +108,7 @@ verbot() {
     local SUBMODO="${2:-status}"
 
     echo "=========================================================================================="
-    echo " 👁️  PANEL FORENSE EN TIEMPO REAL — TRI-BRAIN-SNIPER (Skill Hunter) V4.0"
+    echo " 👁️  PANEL FORENSE EN TIEMPO REAL — TRI-BRAIN-PHANTOM (God's Accomplice) V1.0"
     echo "=========================================================================================="
 
     if [ -f "${LOCK}" ]; then
@@ -181,5 +181,5 @@ print("✅ [VERBOT V4.0 OK] Comandos instalados en ~/.bashrc: verbot, verbot -s,
 PYEOF
 
 echo "=================================================================="
-echo "✅ INFRAESTRUCTURA TRI-BRAIN-SNIPER (Skill Hunter) V4.0 INSTALADA"
+echo "✅ INFRAESTRUCTURA TRI-BRAIN-PHANTOM (God's Accomplice) V1.0 INSTALADA"
 echo "=================================================================="

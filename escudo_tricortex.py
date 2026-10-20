@@ -3,7 +3,7 @@
 """
 ==============================================================================
 ARCHIVO #07: escudo_tricortex.py
-SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V4.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Reingenieria Funcional 10/10 del Enjambre Tri-Cortex (Fuera de Ruta Critica):
   1. Cortex 1 (Groq LPU): Matriz Direccional de Regimen (LONG_ONLY, SHORT_ONLY,
@@ -552,3 +552,29 @@ def calcular_factor_tope_glosten_milgrom(
     factor = math.exp(-float(kappa) * (z_abs - float(z_crit)))
     return float(max(0.55, min(1.0, factor)))
 # === FIN AJUSTES QUIRURGICOS V3.0 (SKILL HUNTER) ===
+
+
+
+# === [PHANTOM V1.0 SYMBOLIC HIGH-ENTROPY REGIME FILTER (P-07)] ===
+if "ESCUDO_TRICORTEX" in globals():
+    _ClsEscudoPhantom = type(ESCUDO_TRICORTEX)
+    for _m_groq_name in ("sincronizar_matriz_groq", "actualizar_matriz_direccional_groq", "consultar_matriz_groq"):
+        if hasattr(_ClsEscudoPhantom, _m_groq_name) and not hasattr(_ClsEscudoPhantom, "_orig_groq_phantom"):
+            _ClsEscudoPhantom._orig_groq_phantom = getattr(_ClsEscudoPhantom, _m_groq_name)
+            async def _sincronizar_matriz_groq_phantom(self, *args, **kwargs):
+                res = await _ClsEscudoPhantom._orig_groq_phantom(self, *args, **kwargs)
+                if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1":
+                    tick_btc = ESTADO_RAM.ticks_ram.get(cfg.SIMBOLO_CENTINELA_MACRO)
+                    ofi_btc = float(getattr(tick_btc, "ofi_l1", 0.0) or 0.0)
+                    for sym in cfg.WHITELIST_CAMPEONES_ALFA:
+                        t_s = ESTADO_RAM.ticks_ram.get(sym)
+                        p_s = ESTADO_RAM.permisos_ram.get(sym)
+                        if t_s is not None and p_s is not None and getattr(p_s, "regimen", "") != "VETO_TOXIC":
+                            ofi_s = float(getattr(t_s, "ofi_l1", 0.0) or 0.0)
+                            if ofi_btc < -0.28 and ofi_s < -0.25:
+                                p_s.regimen = "SHORT_ONLY"
+                                p_s.long_permitido = False
+                                p_s.short_permitido = True
+                return res
+            setattr(_ClsEscudoPhantom, _m_groq_name, _sincronizar_matriz_groq_phantom)
+            break

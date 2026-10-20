@@ -3,7 +3,7 @@
 """
 ==============================================================================
 ARCHIVO #12: evaluador_cuantico_oos.py
-SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V4.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Motor de Calibracion Cuantitativa Fuera de Muestra (Walk-Forward OOS):
   - Ejecucion desacoplada en cortes de sesion (00:00, 08:00 y 16:00 UTC) con
@@ -447,23 +447,22 @@ if __name__ == "__main__":
 
 
 
-# === [V4.0 OOS EXPORT SYNC] ===
-if hasattr(EvaluadorCuanticoOOS, "ejecutar_ciclo_evaluacion_completo") and not hasattr(EvaluadorCuanticoOOS, "_orig_ciclo_v4"):
-    EvaluadorCuanticoOOS._orig_ciclo_v4 = EvaluadorCuanticoOOS.ejecutar_ciclo_evaluacion_completo
-    async def _ejecutar_ciclo_evaluacion_completo_v4(self, *args, **kwargs):
-        res = await EvaluadorCuanticoOOS._orig_ciclo_v4(self, *args, **kwargs)
+# === [PHANTOM V1.0 COUNTERFACTUAL MINIMAX REGRET SHADOW GATE (P-08)] ===
+if "EvaluadorCuanticoOOS" in globals() and hasattr(EvaluadorCuanticoOOS, "ejecutar_ciclo_evaluacion_completo") and not hasattr(EvaluadorCuanticoOOS, "_orig_ciclo_phantom"):
+    EvaluadorCuanticoOOS._orig_ciclo_phantom = EvaluadorCuanticoOOS.ejecutar_ciclo_evaluacion_completo
+    async def _ejecutar_ciclo_evaluacion_completo_phantom(self, *args, **kwargs):
+        res = await EvaluadorCuanticoOOS._orig_ciclo_phantom(self, *args, **kwargs)
         if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1":
             try:
                 if self.ruta_json_oos.exists():
                     d_json = json.loads(self.ruta_json_oos.read_text(encoding="utf-8"))
-                    if "parametros" in d_json and isinstance(d_json["parametros"], dict):
-                        d_json["parametros"]["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
-                        d_json["parametros"]["OFI_MIN_ENTRADA"] = 0.10
-                    else:
-                        d_json["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
-                        d_json["OFI_MIN_ENTRADA"] = 0.10
+                    blanco = d_json["parametros"] if ("parametros" in d_json and isinstance(d_json["parametros"], dict)) else d_json
+                    blanco["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
+                    blanco["OFI_MIN_ENTRADA"] = 0.12
+                    blanco["Z_SCORE_UMBRAL_HIGH_BETA"] = min(float(blanco.get("Z_SCORE_UMBRAL_HIGH_BETA", -3.10)), -3.10)
+                    blanco["Z_SCORE_UMBRAL_TIER1"] = min(float(blanco.get("Z_SCORE_UMBRAL_TIER1", -2.85)), -2.85)
                     self.ruta_json_oos.write_bytes((json.dumps(d_json, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
             except Exception:
                 pass
         return res
-    EvaluadorCuanticoOOS.ejecutar_ciclo_evaluacion_completo = _ejecutar_ciclo_evaluacion_completo_v4
+    EvaluadorCuanticoOOS.ejecutar_ciclo_evaluacion_completo = _ejecutar_ciclo_evaluacion_completo_phantom

@@ -3,7 +3,7 @@
 """
 ==============================================================================
 ARCHIVO #08: radar_volatilidad.py
-SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V4.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Radar Microestructural de Alta Frecuencia (6.6 Hz / 150 ms) con:
   - Estimador VentanaZ Bipower (Barndorff-Nielsen & Shephard) y EMA900.
@@ -894,53 +894,86 @@ if hasattr(RadarVolatilidad, 'procesar_instantanea_libro') and not hasattr(Radar
 
 
 
-# === [V4.0 RADAR PRECISION & WS COOLDOWN] ===
-_TS_ULTIMO_TICK_POR_PAR_V4: dict[str, float] = {}
-_COOLDOWN_RECONEXION_HASTA_V4: dict[str, float] = {}
+# === [PHANTOM V1.0 LEAD-LAG BTC (P-01), PURE HURST (P-02), EMA900 GATE (P-03) & WS COOLDOWN (P-09)] ===
+_TS_ULTIMO_TICK_PHANTOM: dict[str, float] = {}
+_COOLDOWN_WS_PHANTOM: dict[str, float] = {}
 
-if hasattr(VentanaZ, "calcular_hurst_y_lyapunov") and not hasattr(VentanaZ, "_orig_hurst_lyap_v4"):
-    VentanaZ._orig_hurst_lyap_v4 = VentanaZ.calcular_hurst_y_lyapunov
-    def _calcular_hurst_y_lyapunov_v4(self, *args, **kwargs):
-        h_val, lyap_val = VentanaZ._orig_hurst_lyap_v4(self, *args, **kwargs)
-        if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1":
-            if h_val >= 0.78 and lyap_val >= -0.00005 and len(getattr(self, "precios", ())) >= 45:
-                h_val = 0.465
-        return h_val, lyap_val
-    VentanaZ.calcular_hurst_y_lyapunov = _calcular_hurst_y_lyapunov_v4
-
-if hasattr(RadarVolatilidad, "verificar_contagio_cross_asset") and not hasattr(RadarVolatilidad, "_orig_contagio_v4"):
-    RadarVolatilidad._orig_contagio_v4 = RadarVolatilidad.verificar_contagio_cross_asset
-    async def _verificar_contagio_cross_asset_v4(self, *args, **kwargs) -> bool:
+if "RadarVolatilidad" in globals() and hasattr(RadarVolatilidad, "verificar_contagio_cross_asset") and not hasattr(RadarVolatilidad, "_orig_contagio_phantom"):
+    RadarVolatilidad._orig_contagio_phantom = RadarVolatilidad.verificar_contagio_cross_asset
+    async def _verificar_contagio_cross_asset_phantom(self, *args, **kwargs) -> bool:
         if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") == "1":
-            return await RadarVolatilidad._orig_contagio_v4(self, *args, **kwargs)
+            return await RadarVolatilidad._orig_contagio_phantom(self, *args, **kwargs)
         sym = str(args[0]) if len(args) > 0 else str(kwargs.get("symbol", ""))
         t_eval = float(args[2]) if len(args) > 2 and args[2] is not None else float(kwargs.get("ahora_ts") or time.time())
-        if t_eval < _COOLDOWN_RECONEXION_HASTA_V4.get(sym, 0.0):
+        if t_eval < _COOLDOWN_WS_PHANTOM.get(sym, 0.0):
             return False
-        res = await RadarVolatilidad._orig_contagio_v4(self, *args, **kwargs)
+        res = await RadarVolatilidad._orig_contagio_phantom(self, *args, **kwargs)
         if res:
             ESTADO_RAM.pausa_macro_hasta_ts = t_eval + 30.0
         return res
-    RadarVolatilidad.verificar_contagio_cross_asset = _verificar_contagio_cross_asset_v4
+    RadarVolatilidad.verificar_contagio_cross_asset = _verificar_contagio_cross_asset_phantom
 
-if hasattr(RadarVolatilidad, "procesar_instantanea_libro") and not hasattr(RadarVolatilidad, "_orig_proc_libro_v4"):
-    RadarVolatilidad._orig_proc_libro_v4 = RadarVolatilidad.procesar_instantanea_libro
-    async def _procesar_instantanea_libro_v4(self, *args, **kwargs):
+if "RadarVolatilidad" in globals() and hasattr(RadarVolatilidad, "procesar_instantanea_libro") and not hasattr(RadarVolatilidad, "_orig_proc_libro_phantom"):
+    RadarVolatilidad._orig_proc_libro_phantom = RadarVolatilidad.procesar_instantanea_libro
+    async def _procesar_instantanea_libro_phantom(self, *args, **kwargs):
         if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") == "1":
-            return await RadarVolatilidad._orig_proc_libro_v4(self, *args, **kwargs)
+            return await RadarVolatilidad._orig_proc_libro_phantom(self, *args, **kwargs)
+
         sym = str(args[0]) if len(args) > 0 else str(kwargs.get("symbol", ""))
         ts_now = float(args[3]) if len(args) > 3 and args[3] is not None else float(kwargs.get("ahora") or time.time())
-        prev_ts = _TS_ULTIMO_TICK_POR_PAR_V4.get(sym, 0.0)
+        prev_ts = _TS_ULTIMO_TICK_PHANTOM.get(sym, 0.0)
         if prev_ts > 0.0 and (ts_now - prev_ts) > 2.20:
-            _COOLDOWN_RECONEXION_HASTA_V4[sym] = ts_now + 3.50
-        _TS_ULTIMO_TICK_POR_PAR_V4[sym] = ts_now
-        res = await RadarVolatilidad._orig_proc_libro_v4(self, *args, **kwargs)
-        if isinstance(res, dict) and str(res.get("side", "")).lower() == "short":
-            h_act = float(res.get("hurst", 0.45))
-            z_act = float(res.get("z_score", 0.0))
-            ema_d = float(res.get("ema900_dist_pct", 0.0))
-            h_max = float(getattr(cfg, "HURST_MAX_ENTRADA", 0.495))
-            if h_act > h_max and abs(z_act) < 11.0 and ema_d < 0.010:
+            _COOLDOWN_WS_PHANTOM[sym] = ts_now + 4.00
+        _TS_ULTIMO_TICK_PHANTOM[sym] = ts_now
+
+        res = await RadarVolatilidad._orig_proc_libro_phantom(self, *args, **kwargs)
+        if not isinstance(res, dict) or sym == cfg.SIMBOLO_CENTINELA_MACRO:
+            return res
+
+        # Extraer estado fisico real del activo y del lider BTC/USDT:USDT (P-01)
+        side_sig = str(res.get("side", "long")).lower()
+        h_real = float(res.get("hurst", 0.50))
+        z_real = float(res.get("z_score", 0.0))
+        ofi_real = float(res.get("ofi", 0.0))
+
+        ventana_sym = self.ventanas.get(sym) if hasattr(self, "ventanas") else None
+        tick_sym = ESTADO_RAM.ticks_ram.get(sym)
+        precio_sym = float(getattr(tick_sym, "last", 0.0) or getattr(tick_sym, "bid", 0.0) or 0.0)
+        ema900_sym = float(getattr(ventana_sym, "ema900", 0.0) or 0.0)
+        ema_rel = ((precio_sym - ema900_sym) / ema900_sym) if (precio_sym > 0.0 and ema900_sym > 0.0) else float(res.get("ema900_dist_pct", 0.0))
+
+        tick_btc = ESTADO_RAM.ticks_ram.get(cfg.SIMBOLO_CENTINELA_MACRO)
+        ventana_btc = self.ventanas.get(cfg.SIMBOLO_CENTINELA_MACRO) if hasattr(self, "ventanas") else None
+        ofi_btc = float(getattr(tick_btc, "ofi_l1", 0.0) or 0.0)
+        z_btc = float(getattr(ventana_btc, "ultimo_z", 0.0) or 0.0)
+
+        # P-01: Flujo Compuesto Phantom (75% Activo + 25% BTC)
+        ofi_phantom = 0.75 * ofi_real + 0.25 * ofi_btc
+        res["ofi_phantom"] = round(ofi_phantom, 4)
+
+        # P-02: Pureza Fractal de Hurst (Restriccion inquebrantable H <= 0.485 en ambos lados)
+        if h_real > 0.485:
+            return None
+
+        if side_sig == "long":
+            # P-01: Veto Lead-Lag si BTC esta drenando liquidez
+            if ofi_btc < -0.22 or z_btc < -1.80 or ofi_phantom < 0.10:
                 return None
+            # P-03: Compuerta de Descuento Estructural Asimetrico sobre EMA900
+            es_tier1 = sym in getattr(cfg, "CLASE_TIER1_LIQUIDO", ())
+            if es_tier1:
+                if ema_rel > -0.0055 or z_real > -3.40:
+                    return None
+            else:
+                if ema_rel > -0.0065 or z_real > -3.80:
+                    return None
+        elif side_sig == "short":
+            # P-01: Veto Lead-Lag si BTC esta siendo absorbido con fuerza al alza
+            if ofi_btc > 0.25 or z_btc > 2.00 or ofi_phantom > -0.25:
+                return None
+            # P-03: Sobreextension minima confirmada sobre EMA900
+            if ema_rel < 0.0038:
+                return None
+
         return res
-    RadarVolatilidad.procesar_instantanea_libro = _procesar_instantanea_libro_v4
+    RadarVolatilidad.procesar_instantanea_libro = _procesar_instantanea_libro_phantom

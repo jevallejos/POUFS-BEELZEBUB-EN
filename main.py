@@ -3,7 +3,7 @@
 """
 ==============================================================================
 ARCHIVO #11: main.py
-SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V4.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Cerebro Central Orquestador Asincrono (uvloop + Bybit UTA WebSocket L2):
   - Cerrojo fisico de instancia unica (.tribrain.lock / .tribrain_test.lock).
@@ -471,16 +471,38 @@ if __name__ == "__main__":
 
 
 
-# === [V4.0 BOOT RECONCILIATION FIX] ===
-if "reconciliar_posiciones_arranque" in globals() and "_orig_reconciliar_v4" not in globals():
-    _orig_reconciliar_v4 = reconciliar_posiciones_arranque
+# === [PHANTOM V1.0 BOOT RECONCILIATION & OOS JSON SANITIZER] ===
+def _sanear_json_oos_disco_phantom() -> None:
+    if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") == "1":
+        return
+    import json as _json
+    ruta_j = cfg.ROOT_DIR / cfg.ARCHIVO_CALIBRACION_OOS_JSON
+    if not ruta_j.exists():
+        return
+    try:
+        d = _json.loads(ruta_j.read_text(encoding="utf-8"))
+        blanco = d["parametros"] if ("parametros" in d and isinstance(d["parametros"], dict)) else d
+        blanco["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
+        blanco["OFI_MIN_ENTRADA"] = 0.12
+        blanco["Z_SCORE_UMBRAL_HIGH_BETA"] = min(float(blanco.get("Z_SCORE_UMBRAL_HIGH_BETA", -3.10)), -3.10)
+        blanco["Z_SCORE_UMBRAL_TIER1"] = min(float(blanco.get("Z_SCORE_UMBRAL_TIER1", -2.85)), -2.85)
+        ruta_j.write_bytes((_json.dumps(d, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
+    except Exception:
+        pass
+
+_sanear_json_oos_disco_phantom()
+
+if "reconciliar_posiciones_arranque" in globals() and "_orig_reconciliar_phantom" not in globals():
+    _orig_reconciliar_phantom = reconciliar_posiciones_arranque
     async def reconciliar_posiciones_arranque(*args, **kwargs) -> int:
-        procesadas = await _orig_reconciliar_v4(*args, **kwargs)
+        _sanear_json_oos_disco_phantom()
+        cfg._aplicar_candados_phantom_v1()
+        procesadas = await _orig_reconciliar_phantom(*args, **kwargs)
         if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1":
             ahora_r = time.time()
             for sym_k, pos_obj in list(ESTADO_RAM.posiciones_activas.items()):
                 edad_actual = ahora_r - float(getattr(pos_obj, "ts_apertura", ahora_r))
                 if edad_actual > 3600.0 or edad_actual < 0.0:
                     pos_obj.ts_apertura = ahora_r
-                    log_sniper(f"🛡️ [RECONCILIADOR V4.0] Edad de posicion adoptada en {sym_k} normalizada a 0s (updatedTime).")
+                    log_sniper(f"🛡️ [RECONCILIADOR PHANTOM V1.0] Edad de posicion adoptada en {sym_k} normalizada a 0s.")
         return procesadas

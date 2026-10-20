@@ -1,4 +1,4 @@
-# ⚡ TRI-BRAIN-SNIPER (Skill Hunter) V4.0
+# ⚡ TRI-BRAIN-PHANTOM (God's Accomplice) V1.0
 
 **Sistema Cuantitativo de Ejecución Microestructural HFT Maker-First (`VERSION_SISTEMA = "4.0.0"`)**
 Estrategia Base: **CHRONOS-TRIZ** + **Escalera Convexa de 3 Tiradas (50% / 25% / 25% — Chain-Jail Biclase V4.0)** + **Enjambre Cognitivo Asíncrono Tri-Córtex $\mathcal{O}(1)$**.

@@ -3,7 +3,7 @@
 """
 ==============================================================================
 ARCHIVO #06: stats_tracker.py
-SISTEMA: TRI-BRAIN-SNIPER (SKILL HUNTER) V4.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Motor Contable de Caja Negra (tribrain_stats_v1.jsonl), Paridad 1:1 Bybit UTA,
 Calculo de MAP, LVR (Milionis-Moallemi-Roughgarden), Velocidad Geometrica g*
@@ -340,7 +340,7 @@ class GestorCajaNegra:
         bal_real = ESTADO_RAM.patrimonio_total_usdt if ESTADO_RAM.patrimonio_total_usdt > 0 else bal_contable
         pnl_map_ratio = (self.pnl_total_usdt / self.map_promedio_usdt) if self.map_promedio_usdt > 0.0 else 0.0
 
-        l1 = "╔══════ [CAJA NEGRA] TRI-BRAIN-SNIPER V4.0 [SKILL HUNTER]   ═══════╗"
+        l1 = "╔══════ [CAJA NEGRA] TRI-BRAIN-PHANTOM V1.0 [GOD'S ACCOMPLICE]   ═══════╗"
         l2 = f"║ Trades: {self.trades_totales:<3d} (W {self.wins} / L {self.losses} / S {self.scratches_18s}) | Win Rate: {wr:5.1f} %".ljust(65) + "║"
         l3 = f"║ PnL total: {self.pnl_total_usdt:+.4f} USDT   mejor {self.mejor_trade_usdt:+.4f} / peor {self.peor_trade_usdt:+.4f}".ljust(65) + "║"
         l4 = f"║ MAP: {self.map_promedio_usdt:5.2f} USDT | PnL/MAP: {pnl_map_ratio:+.4f} | LVR: {self.lvr_acumulado_usdt:.4f}".ljust(65) + "║"
@@ -364,8 +364,8 @@ def calcular_lvr_horario_usdt(volatilidad_ventana_9s: float, map_usdt: float, ho
 
 
 
-# === [V4.0 SANITIZE HOLD_SEG] ===
-def _sanear_jsonl_hold_seg_v4() -> None:
+# === [PHANTOM V1.0 SANITIZE HOLD_SEG] ===
+def _sanear_jsonl_hold_seg_phantom() -> None:
     import json as _json
     ruta = cfg.ROOT_DIR / cfg.ARCHIVO_STATS_JSONL
     if not ruta.exists():
@@ -388,7 +388,7 @@ def _sanear_jsonl_hold_seg_v4() -> None:
         ruta.write_bytes(("\n".join(lineas_out) + "\n").encode("utf-8"))
 
 try:
-    _sanear_jsonl_hold_seg_v4()
+    _sanear_jsonl_hold_seg_phantom()
     if "CAJA_NEGRA" in globals() and hasattr(CAJA_NEGRA, "cargar_historial"):
         CAJA_NEGRA.cargar_historial()
 except Exception:
