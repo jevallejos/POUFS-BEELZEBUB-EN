@@ -670,15 +670,15 @@ def calcular_eslabon_chain_jail(pnl_max_pct: float, es_tier1: bool = False) -> t
     return 0, 0.0018, False
 
 
-if hasattr(GestorPosiciones, "evaluar_posicion_individual") and not hasattr(GestorPosiciones, "_orig_eval_pos_v4"):
-    GestorPosiciones._orig_eval_pos_v4 = GestorPosiciones.evaluar_posicion_individual
+_metodo_eval_nombre = "evaluar_posicion_activa" if hasattr(GestorPosiciones, "evaluar_posicion_activa") else "evaluar_posicion_individual"
+if hasattr(GestorPosiciones, _metodo_eval_nombre) and not hasattr(GestorPosiciones, "_orig_eval_pos_v4"):
+    GestorPosiciones._orig_eval_pos_v4 = getattr(GestorPosiciones, _metodo_eval_nombre)
 
-    async def _evaluar_posicion_individual_v4(self, pos, ahora: float | None = None) -> None:
+    async def _evaluar_posicion_activa_v4(self, pos, ahora: float | None = None, *args, **kwargs):
         es_prod = __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1"
         if es_prod and not getattr(pos, "cerrada", False):
-            ahora_ts = float(ahora if ahora is not None else time.time())
             tick = ESTADO_RAM.ticks_ram.get(pos.symbol)
-            precio_actual = float(getattr(tick, "last", 0.0) or pos.entry_price)
+            precio_actual = float(getattr(tick, "last", 0.0) or getattr(tick, "bid", 0.0) or pos.entry_price)
             if precio_actual > 0.0 and pos.entry_price > 0.0:
                 pnl_bruto = (
                     (precio_actual - pos.entry_price) / pos.entry_price
@@ -694,10 +694,10 @@ if hasattr(GestorPosiciones, "evaluar_posicion_individual") and not hasattr(Gest
                     and not getattr(pos, "cosecha_25_ejecutada", False)
                     and pnl_bruto >= 0.0048
                 ):
-                    reglas = self.ejecutor.obtener_reglas_simbolo(pos.symbol)
+                    reglas = self.ejecutor.obtener_reglas_simbolo(pos.symbol) if hasattr(self, "ejecutor") else {}
                     step_q = float(reglas.get("step_qty", 0.1) or 0.1)
                     min_q = float(reglas.get("min_qty", step_q) or step_q)
-                    ok_4x, qty_25, qty_rem = validar_cuantizacion_chain_jail_4x(
+                    ok_4x, qty_25, _ = validar_cuantizacion_chain_jail_4x(
                         pos.qty_actual, precio_actual, step_q, min_q, 2.50
                     )
                     if ok_4x and qty_25 >= min_q:
@@ -733,7 +733,7 @@ if hasattr(GestorPosiciones, "evaluar_posicion_individual") and not hasattr(Gest
                 # Actualizar Eslabon Chain-Jail V4.0 Biclase cuando ya supero la 1ra cosecha
                 if getattr(pos, "cosecha_50_ejecutada", False):
                     es_t1 = pos.symbol in getattr(cfg, "CLASE_TIER1_LIQUIDO", ())
-                    esl_id, piso_sl, cortar_techo = calcular_eslabon_chain_jail(
+                    esl_id, piso_sl, _ = calcular_eslabon_chain_jail(
                         pos.max_pnl_pct_alcanzado, es_tier1=es_t1
                     )
                     if esl_id > getattr(pos, "eslabon_chain_jail", 0):
@@ -747,20 +747,16 @@ if hasattr(GestorPosiciones, "evaluar_posicion_individual") and not hasattr(Gest
                             pos.side == "short" and nuevo_sl < pos.sl_interno_price
                         ):
                             pos.sl_interno_price = nuevo_sl
-                            await self._actualizar_sl_servidor_bybit(pos, nuevo_sl)
+                            if hasattr(self, "_actualizar_sl_servidor_bybit"):
+                                await self._actualizar_sl_servidor_bybit(pos, nuevo_sl)
                         log_sniper(
                             f"[CHAIN-JAIL V4.0] ⛓️ {pos.symbol} asciende a Eslabon {esl_id}/5 "
                             f"(Max PnL {pos.max_pnl_pct_alcanzado*100:+.2f}% -> Piso SL +{piso_sl*100:.2f}%)"
                         )
-                    if cortar_techo and pnl_bruto >= (0.0185 if es_t1 else 0.0550):
-                        await self._ejecutar_cierre_posicion(
-                            pos, precio_actual, "CHAIN_JAIL_TP_8PCT", es_maker=False
-                        )
-                        return
 
-        await self._orig_eval_pos_v4(pos, ahora)
+        res_eval = await self._orig_eval_pos_v4(pos, ahora=ahora, *args, **kwargs)
 
-        # Si la posicion se acaba de cerrar en produccion, verificar en Bybit que no queden contratos huerfanos
+        # Guardia Zero-Orphan en produccion al cerrarse una posicion
         if es_prod and getattr(pos, "cerrada", False) and hasattr(self.exchange, "fetch_positions"):
             try:
                 pos_bybit = await self.exchange.fetch_positions([pos.symbol])
@@ -779,7 +775,9 @@ if hasattr(GestorPosiciones, "evaluar_posicion_individual") and not hasattr(Gest
             except Exception:
                 pass
 
-    GestorPosiciones.evaluar_posicion_individual = _evaluar_posicion_individual_v4
+        return res_eval
+
+    setattr(GestorPosiciones, _metodo_eval_nombre, _evaluar_posicion_activa_v4)
 
 
 def imprimir_status_cli_verbot() -> None:
@@ -854,7 +852,7 @@ def imprimir_status_cli_verbot() -> None:
         for idx, op in enumerate(ops[-10:], start=idx_base):
             pnl_u = float(op.get("pnl_usdt", 0.0))
             mot = str(op.get("motivo", ""))
-            ic = "🟩" if pnl_u >= 0 else ("🟨" if "SCRATCH" in mot.upper() else "��")
+            ic = "🟩" if pnl_u >= 0 else ("🟨" if "SCRATCH" in mot.upper() else "🔴")
             ts_s = str(op.get("timestamp", ""))[:19]
             sym_s = str(op.get("symbol", "")).replace("/USDT:USDT", "").ljust(10)
             side_s = str(op.get("side", "long")).upper().ljust(5)
