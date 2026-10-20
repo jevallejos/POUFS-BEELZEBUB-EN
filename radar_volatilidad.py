@@ -709,3 +709,33 @@ def calcular_hurst_y_lyapunov(precios) -> tuple[float, float]:
                 return out
             return float(out), 0.0
     return _hurst_multiescala_ticks_activos_v3(precios), 0.0
+
+# === [PASO 3 SKILL HUNTER V3.0: TENSOR DIFERENCIAL CKS-OFI] ===
+def calcular_ofi_diferencial_cks(obi_actual: float, obi_previo: float | None, eta: float = 0.35) -> float:
+    """Tensor diferencial de Cont-Kukanov-Stoikov (2014): penaliza paredes pasivas en drenaje."""
+    val = float(obi_actual)
+    if obi_previo is None:
+        return val
+    delta_obi = val - float(obi_previo)
+    # Si la pared compradora (val > 0) o vendedora (val < 0) se drena mas de 0.05 en un tick, aplicar derivada CKS
+    if (val > 0.0 and delta_obi < -0.05) or (val > 0.0 and delta_obi < -0.05) or (val < 0.0 and delta_obi > 0.05):
+        val = max(-1.0, min(1.0, val + eta * delta_obi))
+    return round(val, 4)
+
+
+if hasattr(VentanaZ, "calcular_ml_ofi_y_hawkes") and not hasattr(VentanaZ, "_orig_cks_calcular_ml_ofi_y_hawkes"):
+    VentanaZ._orig_cks_calcular_ml_ofi_y_hawkes = VentanaZ.calcular_ml_ofi_y_hawkes
+
+    def _wrapped_calcular_ml_ofi_y_hawkes_v3(self, bids, asks, t_now, *args, **kwargs):
+        ml_ofi, ofi_5s, vpin = self._orig_cks_calcular_ml_ofi_y_hawkes(bids, asks, t_now, *args, **kwargs)
+        obi_prev = getattr(self, "_ultimo_obi_raw_cks", None)
+        self._ultimo_obi_raw_cks = float(ml_ofi)
+        ml_ofi_cks = calcular_ofi_diferencial_cks(float(ml_ofi), obi_prev)
+        if ml_ofi_cks != float(ml_ofi):
+            if ml_ofi_cks < cfg.OFI_MIN_ENTRADA and hasattr(self, "ticks_ofi_long"):
+                self.ticks_ofi_long = 0
+            if ml_ofi_cks > getattr(cfg, "SHORT_OFI_MAX_ENTRADA", -0.35) and hasattr(self, "ticks_ofi_short"):
+                self.ticks_ofi_short = 0
+        return ml_ofi_cks, ofi_5s, vpin
+
+    VentanaZ.calcular_ml_ofi_y_hawkes = _wrapped_calcular_ml_ofi_y_hawkes_v3
