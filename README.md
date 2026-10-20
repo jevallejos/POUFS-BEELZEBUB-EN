@@ -37,3 +37,13 @@ Motor autónomo de ejecución microestructural de alta frecuencia (**HFT Maker-F
 | `verbot -h trades` | Filtra el historial mostrando únicamente disparos, cosechas, trinquetes y cierres. |
 | `verbot -q` | Ejecuta el Evaluador Cuántico Walk-Forward OOS y muestra el reporte Markdown. |
 | `verbot -t` | Reenvía manualmente a Telegram el último cierre registrado en la Caja Negra. |
+
+## 🚀 Evolución Científica V3.0 (Skill Hunter) — Los 7 Motores Institucionales
+
+1. **Priors Bayesianos Alineados (`-2.85` High-Beta / `-2.55` Tier-1) y Silencio Duplicado OOS (`systemd`)**: Evita la regresión de umbrales en los cortes tri-sesión (`00:00`, `08:00`, `16:00 UTC`) y ortogonaliza descriptores de log.
+2. **Micro-Precio Continuo de Stoikov (2018) y Exponente de Hurst Multiescala ($\tau \in \{1, 2, 4\}$) sobre Ticks Activos ($\Delta P \neq 0$)**: Erradica el falso bloqueo `H=0.800` producido por ticks planos a `150 ms` y elimina el sesgo de Rebote Bid-Ask de Roll (1984).
+3. **Tensor Diferencial de Flujo de Órdenes (`CKS-OFI` de Cont, Kukanov & Stoikov, 2014)**: Penaliza paredes pasivas en drenaje ($\Delta\text{OBI}_t < -0.05$) antes de aprobar los 3 ticks de confirmación.
+4. **Piso Endógeno de Variación Bipower Adaptativo al Spread y Clase Microestructural**: Escala el piso difusivo entre `0.82x` (activos *Tier-1* con *spread* estrecho) y `1.35x` (cuando el *spread* se abre).
+5. **Dimensionamiento de Kelly No-Monótono bajo Selección Adversa Extrema (Glosten-Milgrom, 1985)**: Mantiene la rampa convexa en $|Z| \in [2.50, 8.50]$ y contrae exponencialmente la exposición cuando $|Z| > 8.50$.
+6. **Reloj Intrínseco de Actividad Microestructural (*Activity Clock* 38s / 35 Ticks Activos) en *Maker-Scratch***: Evacúa pasivamente en `Limit PostOnly` posiciones estancadas antes de llegar al `ESCAPE_TEMPORAL` Taker de `90s`.
+7. **Guardia de Cuantización `4x` en *Chain-Jail* (`50/25/25`), Blindaje Pre-Cosecha Break-Even y Escalado Horario LVR**: Asegura el piso BE desde el primer contacto con `+0.26%`, protege contra rechazos de lote mínimo en el tramo del `25%` y normaliza la varianza de ventana (`x400`) en la métrica `LVR` (Milionis-Moallemi-Roughgarden, 2022).

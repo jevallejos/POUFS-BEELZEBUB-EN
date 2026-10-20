@@ -508,9 +508,7 @@ class OrquestadorTriCortex:
 # Instancia Singleton global del Orquestador Tri-Cortex
 ESCUDO_TRICORTEX: OrquestadorTriCortex = OrquestadorTriCortex()
 
-# === [PASO 5 SKILL HUNTER V3.0: KELLY GLOSTEN-MILGROM] ===
-import inspect as _inspect_gm
-
+# === [PASO 5 SKILL HUNTER V3.0: KELLY GLOSTEN-MILGROM (O(1) PURO SIN INSPECT)] ===
 def calcular_atenuacion_glosten_milgrom(f_kelly: float, z_score: float, z_crit: float = 8.50, kappa: float = 0.025) -> float:
     """Contrae de forma no-monotona la fraccion de Kelly cuando |Z| supera el umbral de seleccion adversa z_crit."""
     f_val = float(f_kelly)
@@ -519,72 +517,27 @@ def calcular_atenuacion_glosten_milgrom(f_kelly: float, z_score: float, z_crit: 
         return f_val
     f_min = float(getattr(cfg, "KELLY_FRACCION_MIN", 0.42))
     f_max = float(getattr(cfg, "KELLY_FRACCION_MAX", 0.62))
-    factor_gm = math.exp(-kappa * (z_abs - z_crit))
-    return round(max(f_min, min(f_max, f_val * factor_gm)), 4)
-
-
-def _extraer_z_de_argumentos(sig, args, kwargs) -> float:
-    try:
-        bound = sig.bind_partial(*args, **kwargs)
-        for k, v in bound.arguments.items():
-            if "z" in k.lower() and isinstance(v, (int, float)):
-                return abs(float(v))
-    except Exception:
-        pass
-    for v in kwargs.values():
-        if isinstance(v, (int, float)) and abs(float(v)) >= 1.5:
-            return abs(float(v))
-    for v in args:
-        if isinstance(v, (int, float)) and abs(float(v)) >= 1.5:
-            return abs(float(v))
-    return 0.0
-
-
-def _aplicar_gm_a_resultado(res, z_abs: float):
-    if z_abs <= 8.50:
-        return res
-    if isinstance(res, (int, float)):
-        return calcular_atenuacion_glosten_milgrom(float(res), z_abs)
-    if isinstance(res, tuple) and len(res) >= 2 and isinstance(res[0], (int, float)):
-        f_orig = float(res[0])
-        if f_orig <= 1e-9:
-            return res
-        f_gm = calcular_atenuacion_glosten_milgrom(f_orig, z_abs)
-        ratio = f_gm / f_orig
-        lista = list(res)
-        lista[0] = f_gm
-        if isinstance(lista[1], (int, float)):
-            lista[1] = round(float(lista[1]) * ratio, 4)
-        return tuple(lista)
-    if isinstance(res, dict) and "fraccion_kelly" in res:
-        d = dict(res)
-        f_orig = float(d["fraccion_kelly"])
-        if f_orig > 1e-9:
-            f_gm = calcular_atenuacion_glosten_milgrom(f_orig, z_abs)
-            d["fraccion_kelly"] = f_gm
-            if "nocional_usdt" in d:
-                d["nocional_usdt"] = round(float(d["nocional_usdt"]) * (f_gm / f_orig), 4)
-        return d
-    return res
+    return round(max(f_min, min(f_max, f_val * math.exp(-kappa * (z_abs - z_crit)))), 4)
 
 
 if "calcular_fraccion_kelly_antifragil" in globals() and not hasattr(sys.modules[__name__], "_orig_p5_kelly_fn"):
     _orig_p5_kelly_fn = calcular_fraccion_kelly_antifragil
-    _sig_p5_fn = _inspect_gm.signature(_orig_p5_kelly_fn)
 
-    def calcular_fraccion_kelly_antifragil(*args, **kwargs):
-        res = _orig_p5_kelly_fn(*args, **kwargs)
-        z_abs = _extraer_z_de_argumentos(_sig_p5_fn, args, kwargs)
-        return _aplicar_gm_a_resultado(res, z_abs)
-
-
-if "EscudoTriCortex" in globals() and hasattr(EscudoTriCortex, "calcular_fraccion_kelly_antifragil") and not hasattr(EscudoTriCortex, "_orig_p5_kelly_method"):
-    EscudoTriCortex._orig_p5_kelly_method = EscudoTriCortex.calcular_fraccion_kelly_antifragil
-    _sig_p5_method = _inspect_gm.signature(EscudoTriCortex._orig_p5_kelly_method)
-
-    def _wrapped_kelly_method_p5(self, *args, **kwargs):
-        res = self._orig_p5_kelly_method(*args, **kwargs)
-        z_abs = _extraer_z_de_argumentos(_sig_p5_method, (self,) + args, kwargs)
-        return _aplicar_gm_a_resultado(res, z_abs)
-
-    EscudoTriCortex.calcular_fraccion_kelly_antifragil = _wrapped_kelly_method_p5
+    def calcular_fraccion_kelly_antifragil(z_score: float, ofi: float, *args, **kwargs):
+        res = _orig_p5_kelly_fn(z_score, ofi, *args, **kwargs)
+        z_abs = abs(float(z_score))
+        if z_abs <= 8.50:
+            return res
+        if isinstance(res, (int, float)):
+            return calcular_atenuacion_glosten_milgrom(float(res), z_abs)
+        if isinstance(res, tuple) and len(res) >= 2 and isinstance(res[0], (int, float)):
+            f_orig = float(res[0])
+            if f_orig <= 1e-9:
+                return res
+            f_gm = calcular_atenuacion_glosten_milgrom(f_orig, z_abs)
+            lista = list(res)
+            lista[0] = f_gm
+            if isinstance(lista[1], (int, float)):
+                lista[1] = round(float(lista[1]) * (f_gm / f_orig), 4)
+            return tuple(lista)
+        return res

@@ -718,7 +718,7 @@ def calcular_ofi_diferencial_cks(obi_actual: float, obi_previo: float | None, et
         return val
     delta_obi = val - float(obi_previo)
     # Si la pared compradora (val > 0) o vendedora (val < 0) se drena mas de 0.05 en un tick, aplicar derivada CKS
-    if (val > 0.0 and delta_obi < -0.05) or (val > 0.0 and delta_obi < -0.05) or (val < 0.0 and delta_obi > 0.05):
+    if (val > 0.0 and delta_obi < -0.05) or (val < 0.0 and delta_obi > 0.05):
         val = max(-1.0, min(1.0, val + eta * delta_obi))
     return round(val, 4)
 

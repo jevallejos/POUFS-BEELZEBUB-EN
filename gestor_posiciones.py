@@ -795,7 +795,7 @@ async def ejecutar_radar_xray_cli(accion: str = "status") -> None:
     finally:
         await ex.close()
 
-# === [PASO 6 SKILL HUNTER V3.0: ACTIVITY CLOCK MAKER-SCRATCH] ===
+# === [PASOS 6 & 7 SKILL HUNTER V3.0: ACTIVITY CLOCK 38S & GUARDIA CHAIN-JAIL 4X] ===
 def evaluar_reloj_actividad_maker_scratch(
     edad_seg: float,
     pnl_bruto_pct: float,
@@ -809,11 +809,9 @@ def evaluar_reloj_actividad_maker_scratch(
     if edad_seg < t_min or edad_seg > 65.0:
         return False
     es_long = str(side).lower() == "long"
-    # Condicion 1: Disparo rapido clasico a los 18s con flujo fuertemente adverso
     flujo_adverso_fuerte = (es_long and ofi_5s <= -0.15) or ((not es_long) and ofi_5s >= 0.15)
     if max_pnl_pct <= 0.0005 and flujo_adverso_fuerte and -0.0020 <= pnl_bruto_pct < 0.0:
         return True
-    # Condicion 2: Decaimiento de inventario por Reloj de Actividad (>=38s o >=35 ticks activos)
     madurez_actividad = (edad_seg >= 38.0) or (edad_seg >= t_min and int(ticks_activos) >= 35)
     flujo_estancado = (es_long and ofi_5s <= 0.02) or ((not es_long) and ofi_5s >= -0.02)
     if madurez_actividad and max_pnl_pct < 0.0018 and flujo_estancado and -0.0022 <= pnl_bruto_pct <= -0.0003:
@@ -821,10 +819,29 @@ def evaluar_reloj_actividad_maker_scratch(
     return False
 
 
-if hasattr(GestorPosiciones, "evaluar_posicion_individual") and not hasattr(GestorPosiciones, "_orig_p6_evaluar_pos"):
-    GestorPosiciones._orig_p6_evaluar_pos = GestorPosiciones.evaluar_posicion_individual
+def validar_cuantizacion_chain_jail_4x(
+    qty_restante: float,
+    precio: float,
+    step_qty: float,
+    min_qty: float,
+    min_notional: float = 2.50,
+) -> tuple[bool, float, float]:
+    """Verifica si el remanente post-1ra-tirada admite partirse en 25%/25% respetando min_qty y min_notional."""
+    q_res = float(qty_restante)
+    p_val = float(precio)
+    st = max(1e-9, float(step_qty))
+    mq = max(st, float(min_qty))
+    q_25 = round(math.floor(((q_res * 0.50) + 1e-12) / st) * st, 8)
+    q_final = round(q_res - q_25, 8)
+    if q_25 >= mq and q_final >= mq and (q_25 * p_val) >= min_notional and (q_final * p_val) >= min_notional:
+        return True, q_25, q_final
+    return False, 0.0, round(q_res, 8)
 
-    async def _wrapped_evaluar_posicion_individual_p6(self, pos, ahora=None):
+
+if hasattr(GestorPosiciones, "evaluar_posicion_individual") and not hasattr(GestorPosiciones, "_orig_v3_evaluar_pos"):
+    GestorPosiciones._orig_v3_evaluar_pos = GestorPosiciones.evaluar_posicion_individual
+
+    async def _wrapped_evaluar_posicion_individual_v3(self, pos, ahora=None):
         try:
             tk = ESTADO_RAM.ticks_ram.get(pos.symbol)
             if tk is not None and tk.last > 0.0:
@@ -846,8 +863,6 @@ if hasattr(GestorPosiciones, "evaluar_posicion_individual") and not hasattr(Gest
                     if evaluar_reloj_actividad_maker_scratch(
                         edad_s, pnl_b, pos.max_pnl_pct_alcanzado, tk.ofi_5s, pos.side, t_act
                     ):
-                        # Habilitar compuerta nativa de Maker-Scratch para que despache Limit PostOnly
-                        pos._max_pnl_backup_v3 = pos.max_pnl_pct_alcanzado
                         pos.max_pnl_pct_alcanzado = min(pos.max_pnl_pct_alcanzado, 0.0004)
                         if pos.side == "long" and tk.ofi_5s > -0.16:
                             tk.ofi_5s = -0.18
@@ -855,51 +870,24 @@ if hasattr(GestorPosiciones, "evaluar_posicion_individual") and not hasattr(Gest
                             tk.ofi_5s = 0.18
         except Exception:
             pass
-        return await self._orig_p6_evaluar_pos(self, pos, ahora)
 
-    GestorPosiciones.evaluar_posicion_individual = _wrapped_evaluar_posicion_individual_p6
+        res = await self._orig_v3_evaluar_pos(pos, ahora)
 
-# === [PASO 7 SKILL HUNTER V3.0: BLINDAJE CHAIN-JAIL & CUANTIZACION 4X] ===
-def validar_cuantizacion_chain_jail_4x(
-    qty_restante: float,
-    precio: float,
-    step_qty: float,
-    min_qty: float,
-    min_notional: float = 2.50,
-) -> tuple[bool, float, float]:
-    """Verifica si el remanente post-1ra-tirada admite partirse en 25%/25% respetando min_qty y min_notional."""
-    q_res = float(qty_restante)
-    p_val = float(precio)
-    st = max(1e-9, float(step_qty))
-    mq = max(st, float(min_qty))
-    q_25 = math.floor(((q_res * 0.50) + 1e-12) / st) * st
-    q_25 = round(q_25, 8)
-    q_final = round(q_res - q_25, 8)
-    if q_25 >= mq and q_final >= mq and (q_25 * p_val) >= min_notional and (q_final * p_val) >= min_notional:
-        return True, q_25, q_final
-    return False, 0.0, round(q_res, 8)
-
-
-if hasattr(GestorPosiciones, "evaluar_posicion_individual") and not hasattr(GestorPosiciones, "_orig_p7_evaluar_pos"):
-    GestorPosiciones._orig_p7_evaluar_pos = GestorPosiciones.evaluar_posicion_individual
-
-    async def _wrapped_evaluar_posicion_individual_p7(self, pos, ahora=None):
-        res = await self._orig_p7_evaluar_pos(self, pos, ahora)
         try:
-            # Blindaje Pre-Cosecha: si ya alcanzo el umbral +0.26%, asegurar trinquete BE en RAM aunque PostOnly reintente
             umbral_c1 = float(getattr(cfg, "COSECHA_TRIZ_ACTIVACION_PCT", 0.0026))
             if not pos.cerrada and pos.max_pnl_pct_alcanzado >= umbral_c1 and pos.entry_price > 0.0:
                 pos.trinquete_be_armado = True
+                offset_be = float(getattr(cfg, "TRINQUETE_BE_OFFSET_PCT", 0.0005))
                 if pos.side == "long":
-                    piso_be = round(pos.entry_price * (1.0 + float(getattr(cfg, "TRINQUETE_BE_OFFSET_PCT", 0.0005))), 8)
+                    piso_be = round(pos.entry_price * (1.0 + offset_be), 8)
                     if pos.sl_interno_price < piso_be:
                         pos.sl_interno_price = piso_be
                 else:
-                    piso_be = round(pos.entry_price * (1.0 - float(getattr(cfg, "TRINQUETE_BE_OFFSET_PCT", 0.0005))), 8)
+                    piso_be = round(pos.entry_price * (1.0 - offset_be), 8)
                     if pos.sl_interno_price > piso_be or pos.sl_interno_price <= 0.0:
                         pos.sl_interno_price = piso_be
         except Exception:
             pass
         return res
 
-    GestorPosiciones.evaluar_posicion_individual = _wrapped_evaluar_posicion_individual_p7
+    GestorPosiciones.evaluar_posicion_individual = _wrapped_evaluar_posicion_individual_v3
