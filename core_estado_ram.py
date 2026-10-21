@@ -403,4 +403,8 @@ if "_orig_log_sniper_cli_filter" not in globals():
             return None
         return _orig_log_sniper_cli_filter(mensaje, *args, **kwargs)
 
+    _log_sniper_filtrado_cli.info = _log_sniper_filtrado_cli
+    _log_sniper_filtrado_cli.warning = _log_sniper_filtrado_cli
+    _log_sniper_filtrado_cli.error = _log_sniper_filtrado_cli
+    _log_sniper_filtrado_cli.debug = _log_sniper_filtrado_cli
     log_sniper = _log_sniper_filtrado_cli
