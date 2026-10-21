@@ -312,7 +312,7 @@ class MotorTriBrainSniper:
     async def _vigilar_stream_simbolo(self, symbol: str) -> None:
         while self._running and self.exchange is not None:
             try:
-                ob = await self.exchange.watch_order_book(symbol, limit=25)
+                ob = await self.exchange.watch_order_book(symbol, limit=50)
                 bids = (ob or {}).get("bids") or []
                 asks = (ob or {}).get("asks") or []
                 if bids and asks:
