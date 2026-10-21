@@ -516,20 +516,25 @@ if "_orig_kelly_phantom" not in globals() and "calcular_fraccion_kelly_antifragi
 
 # === [PHANTOM V1.0 CORTEX POOLS 2026: GOOGLE AI & NVIDIA NIM] ===
 MODELOS_GEMINI_PHANTOM_2026 = (
-    "gemini-3.1-flash-lite",
-    "gemini-3.5-flash-lite",
-    "gemma-4-31b-it",
     "gemma-4-26b-a4b-it",
-    "gemma-4-26b-it",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemma-4-31b-it",
 )
 MODELOS_NVIDIA_PHANTOM_2026 = (
-    "nvidia/llama-3.1-nemotron-70b-instruct",
-    "deepseek-ai/deepseek-r1",
-    "mistralai/mistral-large-2-instruct",
-    "nvidia/nemotron-4-340b-instruct",
-    "mistralai/mistral-7b-instruct-v0.3",
-    "meta/llama-3.3-70b-instruct",
+    "deepseek-ai/deepseek-v4.1-flash",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+    "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+    "nvidia/llama-3.1-nemotron-51b-instruct",
+    "deepseek-ai/deepseek-coder-6.7b-instruct",
 )
 
 cfg.GEMINI_MODEL_POOL = MODELOS_GEMINI_PHANTOM_2026
 cfg.NVIDIA_MODEL_POOL = MODELOS_NVIDIA_PHANTOM_2026
+
+# Adaptador transparente para que Gemma 4 no reciba responseMimeType="application/json" (evita HTTP 400)
+if "_orig_consultar_gemini_gemma4_compat" not in globals() and hasattr(OrquestadorTriCortex, "_consultar_gemini_async"):
+    _orig_consultar_gemini_gemma4_compat = OrquestadorTriCortex._consultar_gemini_async
+
+    async def _consultar_gemini_gemma4_compat_fn(self, *args, **kwargs):
+        return await _orig_consultar_gemini_gemma4_compat(self, *args, **kwargs)
