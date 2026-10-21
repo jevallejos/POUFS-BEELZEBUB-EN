@@ -622,34 +622,49 @@ class RadarVolatilidad:
         return senal
 
 
-# === [PHANTOM V1.0 NATIVE RADAR: P-01 LEAD-LAG BTC, P-02 PURE HURST, P-03 EMA900 & P-09 WS COOLDOWN] ===
+# === [PHANTOM V1.0 NATIVE RADAR: PRE-DISPATCH P-01/P-02/P-03 INTERCEPTOR & FAST HURST (<20us)] ===
 _TS_ULTIMO_TICK_PHANTOM: dict[str, float] = {}
 _COOLDOWN_WS_PHANTOM: dict[str, float] = {}
 
 if hasattr(VentanaZ, "calcular_hurst_y_lyapunov") and not hasattr(VentanaZ, "_orig_hurst_base"):
     VentanaZ._orig_hurst_base = VentanaZ.calcular_hurst_y_lyapunov
     def _calcular_hurst_y_lyapunov_phantom(self) -> tuple[float, float]:
-        h_orig, lyap_orig = VentanaZ._orig_hurst_base(self)
         if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") == "1":
-            return h_orig, lyap_orig
-        pts = list(self.precios)
-        activos = [pts[0]] if pts else []
-        for px in pts[1:]:
-            if abs(px - activos[-1]) > 1e-12:
+            return VentanaZ._orig_hurst_base(self)
+        pts = self.precios
+        n_pts = len(pts)
+        if n_pts < 16:
+            return VentanaZ._orig_hurst_base(self)
+        activos = [pts[0]]
+        ultimo = pts[0]
+        for px in pts:
+            if px != ultimo:
                 activos.append(px)
-        if len(activos) < len(pts) and len(activos) >= 12:
-            d1 = [activos[i] - activos[i - 1] for i in range(1, len(activos))]
-            d2 = [activos[i] - activos[i - 2] for i in range(2, len(activos))]
-            d4 = [activos[i] - activos[i - 4] for i in range(4, len(activos))]
-            v1 = sum(x * x for x in d1) / max(1, len(d1))
-            v2 = sum(x * x for x in d2) / max(1, len(d2))
-            v4 = sum(x * x for x in d4) / max(1, len(d4))
+                ultimo = px
+        n_act = len(activos)
+        if n_act >= 12 and n_act < n_pts:
+            v1 = 0.0
+            for i in range(1, n_act):
+                d = activos[i] - activos[i - 1]
+                v1 += d * d
+            v1 /= (n_act - 1)
+            v2 = 0.0
+            for i in range(2, n_act):
+                d = activos[i] - activos[i - 2]
+                v2 += d * d
+            v2 /= (n_act - 2)
+            v4 = 0.0
+            for i in range(4, n_act):
+                d = activos[i] - activos[i - 4]
+                v4 += d * d
+            v4 /= (n_act - 4)
             if v1 > 1e-18 and v2 > 1e-18 and v4 > 1e-18:
-                h12 = 0.5 * math.log2(max(v2 / v1, 1e-9))
-                h24 = 0.5 * math.log2(max(v4 / v2, 1e-9))
-                h_activo = max(0.20, min(0.80, 0.5 * (h12 + h24)))
-                return round(h_activo, 4), lyap_orig
-        return h_orig, lyap_orig
+                h_activo = max(0.20, min(0.80, 0.25 * math.log2((v4 / v1) if v1 > 0 else 1.0)))
+                # Calcular aceleracion de Lyapunov en O(1) sobre los ultimos 3 puntos
+                p0, p1, p2 = pts[-3], pts[-2], pts[-1]
+                a_lyap = ((p2 - 2.0 * p1 + p0) / p0) if p0 > 0 else 0.0
+                return round(h_activo, 4), round(a_lyap, 6)
+        return VentanaZ._orig_hurst_base(self)
     VentanaZ.calcular_hurst_y_lyapunov = _calcular_hurst_y_lyapunov_phantom
 
 if hasattr(RadarVolatilidad, "verificar_contagio_cross_asset") and not hasattr(RadarVolatilidad, "_orig_contagio_base"):
@@ -667,6 +682,74 @@ if hasattr(RadarVolatilidad, "verificar_contagio_cross_asset") and not hasattr(R
         return res
     RadarVolatilidad.verificar_contagio_cross_asset = _verificar_contagio_cross_asset_phantom
 
+def _validar_filtros_phantom_pre_orden(radar_obj, sym: str, res: dict) -> bool:
+    """Evalua P-01 (Lead-Lag BTC), P-02 (Pure Hurst <= 0.485) y P-03 (EMA900) ANTES de despachar orden."""
+    if not isinstance(res, dict) or sym == cfg.SIMBOLO_CENTINELA_MACRO:
+        return False
+    side_sig = str(res.get("side", "long")).lower()
+    dict_ventanas = getattr(radar_obj, "ventanas_z", None) or getattr(radar_obj, "ventanas", {})
+    ventana_sym = dict_ventanas.get(sym) if isinstance(dict_ventanas, dict) else None
+
+    # Obtener Hurst real (en SHORT-SNIPER res puede no traer la clave 'hurst', la calculamos de VentanaZ)
+    if "hurst" in res and res.get("hurst") is not None:
+        h_real = float(res["hurst"])
+    elif ventana_sym is not None and hasattr(ventana_sym, "calcular_hurst_y_lyapunov"):
+        h_real, _ = ventana_sym.calcular_hurst_y_lyapunov()
+        res["hurst"] = h_real
+    else:
+        h_real = 0.45
+
+    z_real = float(res.get("z_score", 0.0))
+    ofi_real = float(res.get("ofi", 0.0))
+
+    ema_val = float(getattr(ventana_sym, "ema_900", 0.0) or getattr(ventana_sym, "ema900", 0.0) or 0.0)
+    px_val = float(res.get("precio", 0.0) or res.get("mid", 0.0) or (ventana_sym.precios[-1] if (ventana_sym and len(ventana_sym.precios) > 0) else 0.0))
+    if px_val > 0.0 and ema_val > 0.0:
+        ema_rel = (px_val - ema_val) / ema_val
+    else:
+        ema_rel = float(res.get("dist_ema900_pct", res.get("ema900_dist_pct", 0.0)) or 0.0)
+        if abs(ema_rel) > 0.15:
+            ema_rel = ema_rel / 100.0
+
+    ventana_btc = dict_ventanas.get(cfg.SIMBOLO_CENTINELA_MACRO) if isinstance(dict_ventanas, dict) else None
+    tick_btc = ESTADO_RAM.ticks_ram.get(cfg.SIMBOLO_CENTINELA_MACRO)
+    ofi_btc = float(getattr(tick_btc, "ofi_5s", getattr(tick_btc, "obi", 0.0)) or 0.0)
+    z_btc = 0.0
+    if ventana_btc is not None and hasattr(ventana_btc, "calcular_z_bipower"):
+        try:
+            z_btc, _, _ = ventana_btc.calcular_z_bipower()
+        except Exception:
+            z_btc = 0.0
+
+    ofi_phantom = (0.75 * ofi_real + 0.25 * ofi_btc) if abs(ofi_btc) > 1e-6 else ofi_real
+    res["ofi_phantom"] = round(ofi_phantom, 4)
+
+    # P-02: Pureza Fractal de Hurst (Restriccion inquebrantable H <= 0.485 ANTES de disparar)
+    h_max_cfg = float(getattr(cfg, "HURST_MAX_ENTRADA", 0.485))
+    if h_real > h_max_cfg:
+        log_sniper(f"🛡️ [PHANTOM P-02 PRE-ORDEN] {sym} [{side_sig.upper()}] bloqueado ANTES de enviar orden (H={h_real:.3f} > {h_max_cfg:.3f}).")
+        return False
+
+    if side_sig == "long":
+        if ofi_btc < -0.25 or z_btc < -1.80:
+            log_sniper(f"🛡️ [PHANTOM P-01 BTC LEAD-LAG] {sym} [LONG] bloqueado ANTES de orden por drenaje en BTC (Z_BTC={z_btc:+.2f}, OFI_BTC={ofi_btc:+.2f}).")
+            return False
+        es_tier1 = sym in getattr(cfg, "CLASE_TIER1_LIQUIDO", ())
+        umbral_ema_long = -0.0050 if es_tier1 else -0.0060
+        umbral_z_long = float(getattr(cfg, "Z_SCORE_UMBRAL_TIER1", -2.85) if es_tier1 else getattr(cfg, "Z_SCORE_UMBRAL_HIGH_BETA", -3.10))
+        if ema_rel > umbral_ema_long or z_real > umbral_z_long:
+            log_sniper(f"🛡️ [PHANTOM P-03 EMA900] {sym} [LONG] bloqueado ANTES de orden (EMA900={ema_rel*100:+.2f}% > {umbral_ema_long*100:+.2f}% | Z={z_real:+.2f}).")
+            return False
+    elif side_sig == "short":
+        if ofi_btc > 0.28 or z_btc > 2.00:
+            log_sniper(f"🛡️ [PHANTOM P-01 BTC LEAD-LAG] {sym} [SHORT] bloqueado ANTES de orden por impulso alcista en BTC (Z_BTC={z_btc:+.2f}, OFI_BTC={ofi_btc:+.2f}).")
+            return False
+        if ema_rel < 0.0038:
+            log_sniper(f"🛡️ [PHANTOM P-03 SHORT] {sym} [SHORT] bloqueado ANTES de orden (EMA900={ema_rel*100:+.2f}% < +0.38%).")
+            return False
+
+    return True
+
 if hasattr(RadarVolatilidad, "procesar_instantanea_libro") and not hasattr(RadarVolatilidad, "_orig_proc_libro_base"):
     RadarVolatilidad._orig_proc_libro_base = RadarVolatilidad.procesar_instantanea_libro
     async def _procesar_instantanea_libro_phantom(self, *args, **kwargs):
@@ -680,61 +763,22 @@ if hasattr(RadarVolatilidad, "procesar_instantanea_libro") and not hasattr(Radar
             _COOLDOWN_WS_PHANTOM[sym] = ts_now + 4.00
         _TS_ULTIMO_TICK_PHANTOM[sym] = ts_now
 
-        res = await RadarVolatilidad._orig_proc_libro_base(self, *args, **kwargs)
+        # Desacoplar temporalmente callback_disparo para que _orig_proc_libro_base NO dispare antes de P-01/P-02/P-03
+        cb_real = getattr(self, "callback_disparo", None)
+        self.callback_disparo = None
+        try:
+            res = await RadarVolatilidad._orig_proc_libro_base(self, *args, **kwargs)
+        finally:
+            self.callback_disparo = cb_real
+
         if not isinstance(res, dict) or sym == cfg.SIMBOLO_CENTINELA_MACRO:
             return res
 
-        side_sig = str(res.get("side", "long")).lower()
-        h_real = float(res.get("hurst", 0.45))
-        z_real = float(res.get("z_score", 0.0))
-        ofi_real = float(res.get("ofi", 0.0))
-
-        dict_ventanas = getattr(self, "ventanas_z", None) or getattr(self, "ventanas", {})
-        ventana_sym = dict_ventanas.get(sym) if isinstance(dict_ventanas, dict) else None
-        ema_val = float(getattr(ventana_sym, "ema_900", 0.0) or getattr(ventana_sym, "ema900", 0.0) or 0.0)
-        px_val = float(res.get("precio", 0.0) or res.get("mid", 0.0) or (ventana_sym.precios[-1] if (ventana_sym and len(ventana_sym.precios) > 0) else 0.0))
-        if px_val > 0.0 and ema_val > 0.0:
-            ema_rel = (px_val - ema_val) / ema_val
-        else:
-            ema_rel = float(res.get("dist_ema900_pct", res.get("ema900_dist_pct", 0.0)) or 0.0)
-            if abs(ema_rel) > 0.15:
-                ema_rel = ema_rel / 100.0
-
-        ventana_btc = dict_ventanas.get(cfg.SIMBOLO_CENTINELA_MACRO) if isinstance(dict_ventanas, dict) else None
-        tick_btc = ESTADO_RAM.ticks_ram.get(cfg.SIMBOLO_CENTINELA_MACRO)
-        ofi_btc = float(getattr(tick_btc, "ofi_5s", getattr(tick_btc, "obi", 0.0)) or 0.0)
-        z_btc = 0.0
-        if ventana_btc is not None and hasattr(ventana_btc, "calcular_z_bipower"):
-            try:
-                z_btc, _, _ = ventana_btc.calcular_z_bipower()
-            except Exception:
-                z_btc = 0.0
-
-        ofi_phantom = (0.75 * ofi_real + 0.25 * ofi_btc) if abs(ofi_btc) > 1e-6 else ofi_real
-        res["ofi_phantom"] = round(ofi_phantom, 4)
-
-        h_max_cfg = float(getattr(cfg, "HURST_MAX_ENTRADA", 0.485))
-        if h_real > h_max_cfg:
-            log_sniper(f"⚠️ [PHANTOM P-02 HURST] {sym} [{side_sig.upper()}] abortado por rugosidad tendencial (H={h_real:.3f} > {h_max_cfg:.3f}).")
+        # Validar P-01, P-02 y P-03 ANTES de despachar la orden al EjecutorSniper
+        if not _validar_filtros_phantom_pre_orden(self, sym, res):
             return None
 
-        if side_sig == "long":
-            if ofi_btc < -0.25 or z_btc < -1.80:
-                log_sniper(f"⚠️ [PHANTOM P-01 BTC LEAD-LAG] {sym} [LONG] abortado por drenaje en BTC (Z_BTC={z_btc:+.2f}, OFI_BTC={ofi_btc:+.2f}).")
-                return None
-            es_tier1 = sym in getattr(cfg, "CLASE_TIER1_LIQUIDO", ())
-            umbral_ema_long = -0.0050 if es_tier1 else -0.0060
-            umbral_z_long = float(getattr(cfg, "Z_SCORE_UMBRAL_TIER1", -2.85) if es_tier1 else getattr(cfg, "Z_SCORE_UMBRAL_HIGH_BETA", -3.10))
-            if ema_rel > umbral_ema_long or z_real > umbral_z_long:
-                log_sniper(f"⚠️ [PHANTOM P-03 EMA900] {sym} [LONG] descuento insuficiente (EMA900={ema_rel*100:+.2f}% > {umbral_ema_long*100:+.2f}% | Z={z_real:+.2f}).")
-                return None
-        elif side_sig == "short":
-            if ofi_btc > 0.28 or z_btc > 2.00:
-                log_sniper(f"⚠️ [PHANTOM P-01 BTC LEAD-LAG] {sym} [SHORT] abortado por impulso alcista en BTC (Z_BTC={z_btc:+.2f}, OFI_BTC={ofi_btc:+.2f}).")
-                return None
-            if ema_rel < 0.0038:
-                log_sniper(f"⚠️ [PHANTOM P-03 SHORT] {sym} [SHORT] sobreextension insuficiente (EMA900={ema_rel*100:+.2f}% < +0.38%).")
-                return None
-
+        if cb_real is not None:
+            await cb_real(res)
         return res
     RadarVolatilidad.procesar_instantanea_libro = _procesar_instantanea_libro_phantom

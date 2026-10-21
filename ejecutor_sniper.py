@@ -400,3 +400,17 @@ class EjecutorSniper:
             await self.callback_posicion_abierta(pos)
 
         return pos
+
+
+# === [PHANTOM V1.0 SECOND PRE-ORDER LOCK IN EJECUTOR SNIPER] ===
+if hasattr(EjecutorSniper, "ejecutar_senal_sniper") and not hasattr(EjecutorSniper, "_orig_ejecutar_base"):
+    EjecutorSniper._orig_ejecutar_base = EjecutorSniper.ejecutar_senal_sniper
+    async def _ejecutar_senal_sniper_phantom(self, senal: dict, *args, **kwargs):
+        if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1" and isinstance(senal, dict):
+            h_s = float(senal.get("hurst", 0.45) or 0.45)
+            h_max = float(getattr(cfg, "HURST_MAX_ENTRADA", 0.485))
+            if h_s > h_max:
+                log_sniper(f"🛡️ [EJECUTOR P-02 VETO] {senal.get('symbol')} abortado en puerta de orden (H={h_s:.3f} > {h_max:.3f}).")
+                return False
+        return await EjecutorSniper._orig_ejecutar_base(self, senal, *args, **kwargs)
+    EjecutorSniper.ejecutar_senal_sniper = _ejecutar_senal_sniper_phantom

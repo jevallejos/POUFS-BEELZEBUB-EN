@@ -698,7 +698,7 @@ if "GestorPosiciones" in globals():
 
             if pos is not None and getattr(pos, "cerrada", False) and hasattr(self.exchange, "fetch_positions"):
                 try:
-                    await asyncio.sleep(1.80)
+                    await asyncio.sleep(4.20)
                     pos_bybit = await self.exchange.fetch_positions([pos.symbol])
                     for pb in (pos_bybit or []):
                         if str(pb.get("symbol") or "") == pos.symbol:
@@ -716,7 +716,7 @@ if "GestorPosiciones" in globals():
                                 )
                                 log_sniper(
                                     f"🛡️ [GUARDIA ZERO-ORPHAN PHANTOM] Remanente de {rem_c} contratos en {pos.symbol} "
-                                    f"liquidado tras 1.8s con reduceOnly=True (0 contratos huerfanos)."
+                                    f"liquidado tras 4.2s con reduceOnly=True (0 contratos huerfanos)."
                                 )
                 except Exception:
                     pass
