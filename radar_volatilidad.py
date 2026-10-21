@@ -834,25 +834,26 @@ VentanaZ.calcular_hurst_y_lyapunov = _calcular_hurst_y_lyapunov_fast_v1
 
 _orig_proc_phantom_v1 = RadarVolatilidad.procesar_instantanea_libro
 
-async def _procesar_instantanea_libro_fast_v1(self, symbol: str, bids_or_book, *args, **kwargs):
-    if (
-        _ENV_PHANTOM_RADAR.get("TRIBRAIN_TEST_MODE", "0") != "1"
-        and isinstance(bids_or_book, dict)
-        and not args
-    ):
-        b_list = bids_or_book.get("bids")
-        a_list = bids_or_book.get("asks")
-        if b_list and a_list:
-            sig = (b_list[0][0], b_list[0][1], a_list[0][0], a_list[0][1])
-            cache = getattr(self, "_cache_l1_sig_phantom", None)
-            if cache is None:
-                cache = {}
-                self._cache_l1_sig_phantom = cache
-            if cache.get(symbol) == sig:
-                tk = ESTADO_RAM.ticks_ram.get(symbol)
-                if tk is not None and abs(tk.z_score) < 1.80 and abs(tk.ema900_dist_pct) < 0.0025:
-                    return None
-            cache[symbol] = sig
-    return await _orig_proc_phantom_v1(self, symbol, bids_or_book, *args, **kwargs)
+async def _procesar_instantanea_libro_fast_v1(self, symbol: str, bids_or_book, asks=None, ahora=None, *args, **kwargs):
+    if isinstance(bids_or_book, dict):
+        ahora = asks if asks is not None else kwargs.pop("ahora", None)
+        asks = bids_or_book.get("asks") or []
+        bids = bids_or_book.get("bids") or []
+    else:
+        bids = bids_or_book
+
+    if _ENV_PHANTOM_RADAR.get("TRIBRAIN_TEST_MODE", "0") != "1" and bids and asks:
+        sig = (bids[0][0], bids[0][1], asks[0][0], asks[0][1])
+        cache = getattr(self, "_cache_l1_sig_phantom", None)
+        if cache is None:
+            cache = {}
+            self._cache_l1_sig_phantom = cache
+        if cache.get(symbol) == sig:
+            tk = ESTADO_RAM.ticks_ram.get(symbol)
+            if tk is not None and abs(tk.z_score) < 1.80 and abs(tk.ema900_dist_pct) < 0.0025:
+                return None
+        cache[symbol] = sig
+
+    return await _orig_proc_phantom_v1(self, symbol, bids, asks, ahora, *args, **kwargs)
 
 RadarVolatilidad.procesar_instantanea_libro = _procesar_instantanea_libro_fast_v1

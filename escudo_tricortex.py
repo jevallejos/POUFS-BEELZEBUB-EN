@@ -522,19 +522,9 @@ MODELOS_GEMINI_PHANTOM_2026 = (
     "gemma-4-31b-it",
 )
 MODELOS_NVIDIA_PHANTOM_2026 = (
-    "deepseek-ai/deepseek-v4.1-flash",
+    "meta/llama-3.2-11b-vision-instruct",
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
-    "nvidia/llama-3.1-nemotron-ultra-253b-v1",
-    "nvidia/llama-3.1-nemotron-51b-instruct",
-    "deepseek-ai/deepseek-coder-6.7b-instruct",
 )
 
 cfg.GEMINI_MODEL_POOL = MODELOS_GEMINI_PHANTOM_2026
 cfg.NVIDIA_MODEL_POOL = MODELOS_NVIDIA_PHANTOM_2026
-
-# Adaptador transparente para que Gemma 4 no reciba responseMimeType="application/json" (evita HTTP 400)
-if "_orig_consultar_gemini_gemma4_compat" not in globals() and hasattr(OrquestadorTriCortex, "_consultar_gemini_async"):
-    _orig_consultar_gemini_gemma4_compat = OrquestadorTriCortex._consultar_gemini_async
-
-    async def _consultar_gemini_gemma4_compat_fn(self, *args, **kwargs):
-        return await _orig_consultar_gemini_gemma4_compat(self, *args, **kwargs)
