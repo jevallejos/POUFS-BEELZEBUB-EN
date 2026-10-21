@@ -254,7 +254,7 @@ class GestorPosiciones:
         pnl_actual_pct = pos.calcular_pnl_bruto_pct(best_bid if pos.side == "long" else best_ask)
 
         log_sniper(
-            f"[FRANCOTIRADOR] ðŸ›¡ï¸ {pos.symbol} Trinquete Break-Even armado: "
+            f"[FRANCOTIRADOR] 🛡️ {pos.symbol} Trinquete Break-Even armado: "
             f"SL {sl_int_be} (PnL {pnl_actual_pct*100:+.2f}%)"
         )
         await self._ajustar_sl_servidor_bybit(pos, sl_byb_be)
@@ -375,7 +375,7 @@ class GestorPosiciones:
         if pnl_bruto_pct >= cfg.TRAILING_ACTIVACION_PCT and not pos.trailing_activo:
             pos.trailing_activo = True
             log_sniper(
-                f"[FRANCOTIRADOR] ðŸ§² {pos.symbol} Trailing Stop activado (PnL {pnl_bruto_pct*100:+.2f}%)"
+                f"[FRANCOTIRADOR] 🧲 {pos.symbol} Trailing Stop activado (PnL {pnl_bruto_pct*100:+.2f}%)"
             )
 
         # Si el Trailing Stop o el Trinquete Ratchet (+0.38%+) estan activos,
@@ -423,7 +423,7 @@ class GestorPosiciones:
                     pos.side, pos.entry_price, best_bid, best_ask, tick_size, permitir_scratch=True
                 )
                 log_sniper(
-                    f"âœ‚ï¸ [MAKER-SCRATCH 18s] {pos.symbol} sin rebote tras {edad_seg:.1f}s "
+                    f"✂️ [MAKER-SCRATCH 18s] {pos.symbol} sin rebote tras {edad_seg:.1f}s "
                     f"(PnL {pnl_bruto_pct*100:+.2f}%, OFI5s {tk.ofi_5s:+.2f}): evacuando en Limit PostOnly @ {precio_scratch}."
                 )
                 await self._ejecutar_cierre_definitivo(
