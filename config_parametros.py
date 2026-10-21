@@ -7,7 +7,7 @@ SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 -- ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Fuente Unica de Verdad (Zero-Duplicate-AST / Single-Layer Native).
 Codifica las 4 Leyes Matematicas de CHRONOS-TRIZ y las 9 Ecuaciones P-01..P-09:
-  1. Invariante Biescala de Entrada (Tunel Biclase + ML-OFI + Hurst <= 0.485).
+  1. Invariante Biescala de Entrada (Tunel Biclase + ML-OFI + Absorcion Post-Impulso).
   2. Precio de Reserva con Decaimiento Temporal a los 18s (Continuous Wald Scratch).
   3. Escalera Convexa Biclase 50/25/25 (+0.24% / +0.48% / Ghost-Runner) + Trinquete.
   4. Bimodalidad Simetrica Long/Short gobernada por el Enjambre Tri-Cortex.
@@ -279,16 +279,16 @@ def _aplicar_parametros_produccion_phantom() -> None:
     g["KELLY_FRACCION_MIN"] = 0.46
     g["Z_SCORE_UMBRAL_HIGH_BETA"] = max(-3.60, min(float(g.get("Z_SCORE_UMBRAL_HIGH_BETA", -2.85)), -2.80))
     g["Z_SCORE_UMBRAL_TIER1"] = max(-3.30, min(float(g.get("Z_SCORE_UMBRAL_TIER1", -2.55)), -2.45))
-    g["CAIDA_MIN_HIGH_BETA_PCT"] = -0.0042
-    g["CAIDA_MIN_TIER1_PCT"] = -0.0026
-    g["EMA900_DIST_MIN_HIGH_BETA_PCT"] = -0.0035
-    g["EMA900_DIST_MIN_TIER1_PCT"] = -0.0024
+    g["CAIDA_MIN_HIGH_BETA_PCT"] = -0.0028
+    g["CAIDA_MIN_TIER1_PCT"] = -0.0020
+    g["EMA900_DIST_MIN_HIGH_BETA_PCT"] = -0.0028
+    g["EMA900_DIST_MIN_TIER1_PCT"] = -0.0020
     g["OFI_MIN_ENTRADA"] = 0.12
     g["OFI_TICKS_CONFIRMACION"] = 2
     g["HURST_MAX_ENTRADA"] = 0.485
     g["LYAPUNOV_ACEL_MIN_PCT"] = -0.00022
-    g["HAWKES_ABSORCION_MIN_SEG"] = 0.40
-    g["HAWKES_INTENSIDAD_MIN"] = 0.12
+    g["HAWKES_ABSORCION_MIN_SEG"] = 0.35
+    g["HAWKES_INTENSIDAD_MIN"] = 0.05
     g["SHORT_PUMP_SOBREEXTENSION_PCT"] = 0.0042
     g["SHORT_REBOTE_DEBIL_MIN_EMA_PCT"] = 0.0032
     g["SHORT_OFI_AGOTAMIENTO_MAX"] = -0.35

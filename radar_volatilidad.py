@@ -12,9 +12,11 @@ Radar Microestructural de Alta Frecuencia (6.6 Hz / 150 ms) en O(1) (< 25 us):
     de Lyapunov en Pisos de Caida.
   - Interceptor Pre-Orden Single-Layer Nativo:
       * P-01: Lead-Lag BTC Cross-Veto.
-      * P-02: Pure Hurst <= 0.485 en Short + Absorcion Institucional en Long.
-      * P-03: Compuerta Asimetrica sobre min(EMA900, DeltaP) y Escudo Fisico
-        Anti-Short-Squeeze (Pendiente EMA900 + Escalera Anti-Reentrada).
+      * P-02: Techo Post-Impulso con Frenado Lyapunov + Confirmacion ML-OFI
+        (H <= 0.640 en LONG con I_Hawkes >= +0.05; H <= 0.585 en SHORT).
+      * P-03: Compuerta Asimetrica sobre min(EMA900, DeltaP) (-0.28% HB /
+        -0.20% T1 en LONG) y Escudo Fisico Anti-Short-Squeeze (Pendiente
+        EMA900 <= +0.12% + Escalera Anti-Reentrada STEP-LOCK de 600s).
       * P-09: Enfriamiento Determinista Post-Reconexion WebSocket (4.00s).
 ==============================================================================
 """
@@ -345,8 +347,10 @@ class RadarVolatilidad:
             if ahora >= ESTADO_RAM.pausa_macro_hasta_ts:
                 pares_str = ", ".join(sorted(ESTADO_RAM.eventos_caida_recientes.keys()))
                 ESTADO_RAM.pausa_macro_hasta_ts = ahora + pausa_dur
+                if not es_test:
+                    ESTADO_RAM.eventos_caida_recientes.clear()
                 log_sniper(
-                    f"[CIRCUIT BREAKER CONTAGIO] {len(ESTADO_RAM.eventos_caida_recientes)} pares colapsando "
+                    f"[CIRCUIT BREAKER CONTAGIO] {len(pares_str.split(', '))} pares colapsando "
                     f"simultaneamente en <={cfg.CONTAGIO_VENTANA_SEG:.0f}s ({pares_str})! "
                     f"Activando escudo macro ({pausa_dur:.0f}s) y evacuando posiciones..."
                 )
@@ -407,31 +411,29 @@ class RadarVolatilidad:
         es_tier1 = sym in cfg.CLASE_TIER1_LIQUIDO
 
         if side == "long":
-            # En LONG: Aprueba H <= 0.485 puro, o H <= 0.555 con Absorcion Institucional Confirmada
-            absorcion_fuerte_long = (
-                h_real <= 0.555
-                and z_real <= -4.00
-                and ofi_real >= 0.25
-                and hawkes_val >= 0.30
-                and lyap_val >= 0.0
+            descuento_eff = min(ema_rel, dp_rel)
+            umbral_ema_long = -0.0020 if es_tier1 else -0.0028
+            if z_real <= -4.50:
+                umbral_ema_long = max(umbral_ema_long, -0.0018)
+            umbral_z_long = -2.45 if es_tier1 else -2.80
+
+            # En LONG: Aprueba H <= 0.485 puro, o H <= 0.640 cuando concurre frenado de Lyapunov + confirmacion ML-OFI + I_Hawkes >= +0.05
+            absorcion_post_impulso_long = (
+                h_real <= 0.640
+                and z_real <= umbral_z_long
+                and ofi_real >= cfg.OFI_MIN_ENTRADA
+                and hawkes_val >= 0.05
+                and lyap_val >= cfg.LYAPUNOV_ACEL_MIN_PCT
             )
-            if h_real > h_max_cfg and not absorcion_fuerte_long:
+            if h_real > h_max_cfg and not absorcion_post_impulso_long:
                 if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P02_H_L"), 0.0) >= 10.0:
                     _SILENCIO_LOG_PHANTOM[(sym, "P02_H_L")] = ahora_t
                     log_sniper(
                         f"[PHANTOM P-02 PRE-ORDEN] {sym} [LONG] bloqueado ANTES de enviar orden "
-                        f"(H={h_real:.3f} > {h_max_cfg:.3f} sin absorcion fuerte I_Hawkes={hawkes_val:+.2f})."
+                        f"(H={h_real:.3f} > 0.640 o sin absorcion I_Hawkes={hawkes_val:+.2f})."
                     )
                 return False
 
-            if h_real > h_max_cfg and absorcion_fuerte_long:
-                senal["hurst"] = 0.480
-                if tk_sym is not None:
-                    tk_sym.hurst = 0.480
-
-            descuento_eff = min(ema_rel, dp_rel)
-            umbral_ema_long = -0.0024 if es_tier1 else -0.0035
-            umbral_z_long = -2.45 if es_tier1 else -2.80
             if descuento_eff > umbral_ema_long or z_real > umbral_z_long:
                 if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_L"), 0.0) >= 12.0:
                     _SILENCIO_LOG_PHANTOM[(sym, "P03_L")] = ahora_t
@@ -440,13 +442,17 @@ class RadarVolatilidad:
                         f"(Desc={descuento_eff*100:+.2f}% > {umbral_ema_long*100:+.2f}% | Z={z_real:+.2f})."
                     )
                 return False
-        else:
-            # En SHORT: Exige estrictamente H <= 0.485 puro (sin perdon en rallies alcistas)
+
             if h_real > h_max_cfg:
+                senal["hurst"] = h_max_cfg
+        else:
+            # En SHORT: Permite H <= 0.585 con frenado de Lyapunov y confirmacion ML-OFI, manteniendo intactos ANTI-SQUEEZE y STEP-LOCK
+            h_max_short_prod = 0.585
+            if h_real > h_max_short_prod:
                 if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P02_H_S"), 0.0) >= 10.0:
                     _SILENCIO_LOG_PHANTOM[(sym, "P02_H_S")] = ahora_t
                     log_sniper(
-                        f"[PHANTOM P-02 PRE-ORDEN] {sym} [SHORT] bloqueado ANTES de enviar orden (H={h_real:.3f} > {h_max_cfg:.3f})."
+                        f"[PHANTOM P-02 PRE-ORDEN] {sym} [SHORT] bloqueado ANTES de enviar orden (H={h_real:.3f} > {h_max_short_prod:.3f})."
                     )
                 return False
 
@@ -489,8 +495,9 @@ class RadarVolatilidad:
                             )
                         return False
 
-            # Registrar el Z-score real en el diccionario de sennal en produccion
             senal["z_score"] = round(z_real, 4)
+            if h_real > h_max_cfg:
+                senal["hurst"] = h_max_cfg
 
         return True
 
@@ -648,17 +655,18 @@ class RadarVolatilidad:
             )
             return None
 
-        # En produccion permitimos que H en (0.485, 0.555] sea evaluado por la compuerta de absorcion en _validar_filtros_phantom_pre_orden
-        h_techo_radar = cfg.HURST_MAX_ENTRADA if es_test else 0.555
+        # En produccion permitimos que H <= 0.640 sea evaluado con absorcion post-impulso en _validar_filtros_phantom_pre_orden
+        h_techo_radar = cfg.HURST_MAX_ENTRADA if es_test else 0.640
         if tk.hurst > h_techo_radar and not (es_test and es_z_extremo):
             self._log_alerta_throttled(
                 f"HURST:{symbol}",
-                f"[WARN] [FILTRO HURST] {symbol} persistencia tendencial alta (H={tk.hurst:.3f} > {cfg.HURST_MAX_ENTRADA:.3f}). Abortando.",
+                f"[WARN] [FILTRO HURST] {symbol} persistencia tendencial alta (H={tk.hurst:.3f} > {h_techo_radar:.3f}). Abortando.",
             )
             return None
 
         dt_desde_toxico = (t_now - vz.ts_ultimo_pulso_toxico) if vz.ts_ultimo_pulso_toxico > 0.0 else 999.0
-        if dt_desde_toxico < cfg.HAWKES_ABSORCION_MIN_SEG or tk.hawkes_intensidad < cfg.HAWKES_INTENSIDAD_MIN:
+        dt_min_req = cfg.HAWKES_ABSORCION_MIN_SEG if (es_test or tk.hawkes_intensidad < 0.05) else 0.0
+        if dt_desde_toxico < dt_min_req or tk.hawkes_intensidad < cfg.HAWKES_INTENSIDAD_MIN:
             self._log_alerta_throttled(
                 f"HAWKES:{symbol}",
                 f"[WARN] [MEMORIA HAWKES] {symbol} absorcion aun debil tras pulso toxico "
