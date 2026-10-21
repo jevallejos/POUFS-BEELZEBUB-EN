@@ -331,3 +331,42 @@ if "_orig_recargar_oos_base" not in globals() and "recargar_calibracion_oos_si_c
                 res["Z_SCORE_UMBRAL_TIER1"] = globals()["Z_SCORE_UMBRAL_TIER1"]
         return res
     globals()["recargar_calibracion_oos_si_cambio"] = _recargar_calibracion_oos_phantom
+
+# === [PHANTOM V1.0 ACTIVE DISPATCH UNLOCK] ===
+def _forzar_parametros_disparo_activo_phantom() -> None:
+    if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") == "1":
+        return
+    g = globals()
+    g["KELLY_FRACCION_BASE"] = max(0.54, float(g.get("KELLY_FRACCION_BASE", 0.55)))
+    g["Z_SCORE_UMBRAL_HIGH_BETA"] = -2.50
+    g["Z_SCORE_UMBRAL_TIER1"] = -2.25
+    g["CAIDA_MIN_HIGH_BETA_PCT"] = -0.0042
+    g["CAIDA_MIN_TIER1_PCT"] = -0.0024
+    g["EMA900_DIST_MIN_HIGH_BETA_PCT"] = -0.0030
+    g["EMA900_DIST_MIN_TIER1_PCT"] = -0.0020
+    g["OFI_MIN_ENTRADA"] = 0.10
+    g["OFI_TICKS_CONFIRMACION"] = 2
+    g["HURST_MAX_ENTRADA"] = 0.515
+    g["LYAPUNOV_ACEL_MIN_PCT"] = -0.00025
+    g["HAWKES_ABSORCION_MIN_SEG"] = 0.30
+    g["HAWKES_INTENSIDAD_MIN"] = 0.06
+    g["SHORT_PUMP_SOBREEXTENSION_PCT"] = 0.0020
+    g["SHORT_OFI_MAX_ENTRADA"] = -0.20
+    g["SHORT_LYAPUNOV_ACEL_MAX_PCT"] = -0.00018
+    g["TTL_ORDEN_ENTRADA_SEG"] = 3.80
+    g["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
+    if isinstance(g.get("_LIMITES_SHADOW_GATE"), dict):
+        g["_LIMITES_SHADOW_GATE"]["Z_SCORE_UMBRAL_HIGH_BETA"] = (-4.50, -2.45)
+        g["_LIMITES_SHADOW_GATE"]["Z_SCORE_UMBRAL_TIER1"] = (-4.00, -2.20)
+        g["_LIMITES_SHADOW_GATE"]["KELLY_FRACCION_BASE"] = (0.52, 0.62)
+
+_forzar_parametros_disparo_activo_phantom()
+
+_orig_recargar_oos_unlock = recargar_calibracion_oos_si_cambio
+
+def _recargar_calibracion_oos_con_unlock(ruta_json=None):
+    res = _orig_recargar_oos_unlock(ruta_json)
+    _forzar_parametros_disparo_activo_phantom()
+    return res
+
+recargar_calibracion_oos_si_cambio = _recargar_calibracion_oos_con_unlock

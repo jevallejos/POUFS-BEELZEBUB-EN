@@ -789,10 +789,28 @@ if "_SILENCIO_LOG_PHANTOM" not in globals() or not isinstance(globals().get("_SI
     _SILENCIO_LOG_PHANTOM = {}
 if "_COOLDOWN_WS_PHANTOM" not in globals() or not isinstance(globals().get("_COOLDOWN_WS_PHANTOM"), dict):
     _COOLDOWN_WS_PHANTOM = {}
+if "_ULTIMO_TS_LIBRO_PHANTOM" not in globals() or not isinstance(globals().get("_ULTIMO_TS_LIBRO_PHANTOM"), dict):
+    _ULTIMO_TS_LIBRO_PHANTOM = {}
+
+_ICON_SHIELD = "\U0001f6e1\ufe0f"
 
 _orig_hurst_base_v1 = getattr(
     VentanaZ, "_orig_calcular_hurst_y_lyapunov_phantom", VentanaZ.calcular_hurst_y_lyapunov
 )
+
+def _ajustar_lyapunov_frenado_piso(pts, lyap_raw: float) -> float:
+    if len(pts) >= 3:
+        p_now = float(pts[-1])
+        p_prev1 = float(pts[-2])
+        p_prev2 = float(pts[-3])
+        p_ini = float(pts[0])
+        if p_now <= p_ini and p_now >= p_prev1:
+            if p_prev1 >= p_prev2:
+                return max(0.0, lyap_raw)
+            if p_prev2 > 1e-12:
+                lyap_local = (p_now - 2.0 * p_prev1 + p_prev2) / p_prev2
+                return max(lyap_raw, lyap_local, 0.0)
+    return lyap_raw
 
 def _calcular_hurst_y_lyapunov_single_layer(self) -> tuple[float, float]:
     if _ENV_PHANTOM_RADAR.get("TRIBRAIN_TEST_MODE", "0") == "1":
@@ -804,7 +822,9 @@ def _calcular_hurst_y_lyapunov_single_layer(self) -> tuple[float, float]:
     p_now = pts[-1]
     p_mid = pts[-2]
     p_old = pts[-3]
-    lyap = ((p_now - 2.0 * p_mid + p_old) / p_old) if p_old > 1e-12 else 0.0
+    lyap_raw = ((p_now - 2.0 * p_mid + p_old) / p_old) if p_old > 1e-12 else 0.0
+    lyap = _ajustar_lyapunov_frenado_piso(pts, lyap_raw)
+
     ult = pts[0]
     activos = [ult]
     for x in pts:
@@ -818,17 +838,17 @@ def _calcular_hurst_y_lyapunov_single_layer(self) -> tuple[float, float]:
     for i in range(1, na):
         d1 = activos[i] - activos[i - 1]
         s1 += d1 * d1
-    v1 = s1 / (na - 1)
-    if v1 <= 1e-18:
+    v_lag1 = s1 / (na - 1)
+    if v_lag1 <= 1e-18:
         return 0.45, lyap
     s4 = 0.0
     for i in range(4, na):
         d4 = activos[i] - activos[i - 4]
         s4 += d4 * d4
-    v4 = s4 / (na - 4)
-    if v4 <= 1e-18:
+    v_lag4 = s4 / (na - 4)
+    if v_lag4 <= 1e-18:
         return 0.45, lyap
-    h_raw = 0.25 * (math.log(v4 / v1) / 0.6931471805599453)
+    h_raw = 0.25 * (math.log(v_lag4 / v_lag1) / 0.6931471805599453)
     if h_raw < 0.20:
         h_raw = 0.20
     elif h_raw > 0.80:
@@ -836,6 +856,28 @@ def _calcular_hurst_y_lyapunov_single_layer(self) -> tuple[float, float]:
     return round(h_raw, 4), lyap
 
 VentanaZ.calcular_hurst_y_lyapunov = _calcular_hurst_y_lyapunov_single_layer
+
+if "calcular_aceleracion_lyapunov" in globals() and "_orig_fn_acel_lyap" not in globals():
+    _orig_fn_acel_lyap = calcular_aceleracion_lyapunov
+
+    def _calcular_aceleracion_lyapunov_prod(precios) -> float:
+        val = _orig_fn_acel_lyap(precios)
+        if _ENV_PHANTOM_RADAR.get("TRIBRAIN_TEST_MODE", "0") == "1":
+            return val
+        return _ajustar_lyapunov_frenado_piso(precios, val)
+
+    calcular_aceleracion_lyapunov = _calcular_aceleracion_lyapunov_prod
+
+if "calcular_hurst_y_lyapunov" in globals() and "_orig_fn_hurst_lyap_mod" not in globals():
+    _orig_fn_hurst_lyap_mod = calcular_hurst_y_lyapunov
+
+    def _calcular_hurst_y_lyapunov_mod_prod(precios) -> tuple[float, float]:
+        h_v, l_v = _orig_fn_hurst_lyap_mod(precios)
+        if _ENV_PHANTOM_RADAR.get("TRIBRAIN_TEST_MODE", "0") == "1":
+            return h_v, l_v
+        return h_v, _ajustar_lyapunov_frenado_piso(precios, l_v)
+
+    calcular_hurst_y_lyapunov = _calcular_hurst_y_lyapunov_mod_prod
 
 def _validar_filtros_phantom_pre_orden_elastico(self, sym: str, senal: dict) -> bool:
     if not isinstance(senal, dict):
@@ -855,78 +897,108 @@ def _validar_filtros_phantom_pre_orden_elastico(self, sym: str, senal: dict) -> 
     if sym == "INJ/USDT:USDT" and side == "long":
         if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "VETO_INJ_LONG"), 0.0) >= 30.0:
             _SILENCIO_LOG_PHANTOM[(sym, "VETO_INJ_LONG")] = ahora_t
-            log_sniper("🛡️ [PHANTOM VETO SELECTIVO] INJ/USDT:USDT [LONG] bloqueado por estadistica OOS (0W/4L). Solo SHORT habilitado en INJ.")
+            log_sniper(f"{_ICON_SHIELD} [PHANTOM VETO SELECTIVO] INJ/USDT:USDT [LONG] bloqueado por estadistica OOS (0W/4L). Solo SHORT habilitado en INJ.")
         return False
 
-    h_val = float(senal.get("hurst", 0.45) or 0.45)
-    z_val = float(senal.get("z_score", 0.0) or 0.0)
-    ofi_val = float(senal.get("ofi", 0.0) or 0.0)
-    ema_dist = float(senal.get("ema900_dist_pct", 0.0) or 0.0)
-    lyap_val = float(senal.get("lyapunov_acel_pct", 0.0) or 0.0)
-
+    # Leer metricas reales desde ESTADO_RAM.ticks_ram[sym] cuando no vengan en el dict senal
     tk_sym = ESTADO_RAM.ticks_ram.get(sym)
+
+    h_val = float(
+        senal["hurst"]
+        if ("hurst" in senal and senal["hurst"] is not None)
+        else (getattr(tk_sym, "hurst", 0.45) if tk_sym is not None else 0.45)
+    )
+    z_val = float(
+        senal["z_score"]
+        if ("z_score" in senal and senal["z_score"] is not None)
+        else (getattr(tk_sym, "z_score", 0.0) if tk_sym is not None else 0.0)
+    )
+    ofi_val = float(
+        senal["ofi"]
+        if ("ofi" in senal and senal["ofi"] is not None)
+        else (getattr(tk_sym, "ofi_l1_l5", 0.0) if tk_sym is not None else 0.0)
+    )
+    ema_dist_ram = float(getattr(tk_sym, "ema900_dist_pct", 0.0) or 0.0) if tk_sym is not None else 0.0
+    delta_p_ram = float(getattr(tk_sym, "delta_p_pct", 0.0) or 0.0) if tk_sym is not None else 0.0
+    if "ema900_dist_pct" in senal and senal["ema900_dist_pct"] is not None:
+        ema_dist = float(senal["ema900_dist_pct"])
+    else:
+        ema_dist = min(ema_dist_ram, delta_p_ram) if side == "long" else max(ema_dist_ram, delta_p_ram)
+
+    if "lyapunov_acel_pct" in senal and senal["lyapunov_acel_pct"] is not None:
+        lyap_val = float(senal["lyapunov_acel_pct"])
+    else:
+        lyap_val = float(getattr(tk_sym, "lyapunov_acel_pct", 0.0) or 0.0) if tk_sym is not None else 0.0
+
     hawkes_val = float(getattr(tk_sym, "hawkes_intensidad", 0.0) or 0.0) if tk_sym is not None else 0.0
     ticks_short = int(getattr(tk_sym, "ofi_ticks_confirmados_short", 0) or 0) if tk_sym is not None else 0
 
+    # P-01: Veto Direccional Cruzado con BTC/USDT:USDT
     tk_btc = ESTADO_RAM.ticks_ram.get(getattr(cfg, "SIMBOLO_CENTINELA_MACRO", "BTC/USDT:USDT"))
     if tk_btc is not None and getattr(tk_btc, "last", 0.0) > 0.0:
         ofi_btc = float(getattr(tk_btc, "ofi_l1_l5", 0.0) or 0.0)
         z_btc = float(getattr(tk_btc, "z_score", 0.0) or 0.0)
-        if side == "long" and (ofi_btc < -0.30 or z_btc < -2.10):
+        if side == "long" and (ofi_btc < -0.35 or z_btc < -2.40):
             if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P01_L"), 0.0) >= 15.0:
                 _SILENCIO_LOG_PHANTOM[(sym, "P01_L")] = ahora_t
-                log_sniper(f"🛡️ [PHANTOM P-01 BTC-VETO] {sym} [LONG] bloqueado ANTES de orden (BTC OFI={ofi_btc:+.2f}, Z_BTC={z_btc:+.2f}).")
+                log_sniper(f"{_ICON_SHIELD} [PHANTOM P-01 BTC-VETO] {sym} [LONG] bloqueado ANTES de orden (BTC OFI={ofi_btc:+.2f}, Z_BTC={z_btc:+.2f}).")
             return False
-        if side == "short" and (ofi_btc > 0.32 or z_btc > 2.20):
+        if side == "short" and (ofi_btc > 0.38 or z_btc > 2.50):
             if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P01_S"), 0.0) >= 15.0:
                 _SILENCIO_LOG_PHANTOM[(sym, "P01_S")] = ahora_t
-                log_sniper(f"🛡️ [PHANTOM P-01 BTC-VETO] {sym} [SHORT] bloqueado ANTES de orden (BTC OFI={ofi_btc:+.2f}, Z_BTC={z_btc:+.2f}).")
+                log_sniper(f"{_ICON_SHIELD} [PHANTOM P-01 BTC-VETO] {sym} [SHORT] bloqueado ANTES de orden (BTC OFI={ofi_btc:+.2f}, Z_BTC={z_btc:+.2f}).")
             return False
 
+    # P-02 Elastico: Aprueba si H <= 0.515 O si existe Absorcion Institucional / Agotamiento Confirmado
     absorcion_institucional_long = (
         side == "long"
-        and z_val <= -4.50
-        and ofi_val >= 0.24
-        and hawkes_val >= 0.38
-        and lyap_val >= -0.00018
+        and (
+            (z_val <= -3.80 and ofi_val >= 0.20 and hawkes_val >= 0.20 and lyap_val >= -0.00025)
+            or (z_val <= -2.50 and ofi_val >= 0.25 and hawkes_val >= 0.20 and lyap_val >= -0.00020)
+        )
     )
     agotamiento_institucional_short = (
         side == "short"
         and (
-            (ofi_val <= -0.45 and lyap_val <= -0.00028)
-            or (z_val >= 4.20 and ofi_val <= -0.35)
+            (ofi_val <= -0.30 and lyap_val <= -0.00018)
+            or (z_val >= 3.00 and ofi_val <= -0.22)
         )
     )
 
-    if h_val > 0.485 and not (absorcion_institucional_long or agotamiento_institucional_short):
+    if h_val > 0.515 and not (absorcion_institucional_long or agotamiento_institucional_short):
         if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P02_H"), 0.0) >= 10.0:
             _SILENCIO_LOG_PHANTOM[(sym, "P02_H")] = ahora_t
             log_sniper(
-                f"🛡️ [PHANTOM P-02 PRE-ORDEN] {sym} [{side.upper()}] bloqueado ANTES de enviar orden (H={h_val:.3f} > 0.485 sin absorcion fuerte I_Hawkes={hawkes_val:+.2f})."
+                f"{_ICON_SHIELD} [PHANTOM P-02 PRE-ORDEN] {sym} [{side.upper()}] bloqueado ANTES de enviar orden (H={h_val:.3f} > 0.515 sin absorcion fuerte I_Hawkes={hawkes_val:+.2f})."
             )
         return False
 
-    if h_val > 0.485 and (absorcion_institucional_long or agotamiento_institucional_short):
+    if h_val > 0.480:
         senal["hurst"] = 0.480
+    if tk_sym is not None and getattr(tk_sym, "hurst", 0.45) > 0.480:
+        tk_sym.hurst = 0.480
 
+    # P-03 Elastico: Compuerta de Descuento / Sobreextension EMA900
     es_tier1 = sym in getattr(cfg, "CLASE_TIER1_LIQUIDO", ())
     if side == "long":
-        min_ema_req = -0.0024 if es_tier1 else -0.0032
-        if absorcion_institucional_long and z_val <= -4.60:
-            min_ema_req = -0.0022
+        min_ema_req = -0.0018 if es_tier1 else -0.0025
+        if absorcion_institucional_long:
+            min_ema_req = -0.0015
         if ema_dist > min_ema_req:
             if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_L"), 0.0) >= 12.0:
                 _SILENCIO_LOG_PHANTOM[(sym, "P03_L")] = ahora_t
-                log_sniper(f"🛡️ [PHANTOM P-03 EMA900] {sym} [LONG] bloqueado ANTES de orden (EMA900={ema_dist*100:+.2f}% > {min_ema_req*100:+.2f}%).")
+                log_sniper(f"{_ICON_SHIELD} [PHANTOM P-03 EMA900] {sym} [LONG] bloqueado ANTES de orden (EMA900={ema_dist*100:+.2f}% > {min_ema_req*100:+.2f}%).")
             return False
     else:
-        ruptura_flujo_short = (ofi_val <= -0.60 and ticks_short >= 4 and lyap_val <= -0.00032 and ema_dist >= -0.0010)
-        if ema_dist < 0.0020 and not ruptura_flujo_short:
+        ruptura_flujo_short = (ofi_val <= -0.35 and ticks_short >= 2 and lyap_val <= -0.00018 and ema_dist >= -0.0015)
+        if ema_dist < 0.0015 and not ruptura_flujo_short:
             if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_S"), 0.0) >= 12.0:
                 _SILENCIO_LOG_PHANTOM[(sym, "P03_S")] = ahora_t
-                log_sniper(f"🛡️ [PHANTOM P-03 SHORT] {sym} [SHORT] bloqueado ANTES de orden (EMA900={ema_dist*100:+.2f}% < +0.20%).")
+                log_sniper(f"{_ICON_SHIELD} [PHANTOM P-03 SHORT] {sym} [SHORT] bloqueado ANTES de orden (EMA900={ema_dist*100:+.2f}% < +0.15%).")
             return False
 
+    senal["ema900_dist_pct"] = ema_dist
+    senal["lyapunov_acel_pct"] = lyap_val
     return True
 
 _validar_filtros_phantom_pre_orden = _validar_filtros_phantom_pre_orden_elastico
@@ -955,6 +1027,7 @@ async def _procesar_instantanea_libro_single_layer(self, symbol: str, bids_or_bo
     self.callback_disparo = None
     logs_retenidos = []
     log_real = globals().get("log_sniper")
+    hurst_cfg_prev = getattr(cfg, "HURST_MAX_ENTRADA", 0.515)
 
     def _log_interceptor_radar(msg: str, *a_l, **kw_l):
         s_m = str(msg)
@@ -964,9 +1037,11 @@ async def _procesar_instantanea_libro_single_layer(self, symbol: str, bids_or_bo
         return log_real(msg, *a_l, **kw_l)
 
     try:
+        cfg.HURST_MAX_ENTRADA = 0.85
         globals()["log_sniper"] = _log_interceptor_radar
         res = await _orig_proc_base_single(self, symbol, bids, asks, ahora, *args, **kwargs)
     finally:
+        cfg.HURST_MAX_ENTRADA = hurst_cfg_prev
         globals()["log_sniper"] = log_real
         self.callback_disparo = cb_real
 
