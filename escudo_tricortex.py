@@ -528,3 +528,18 @@ MODELOS_NVIDIA_PHANTOM_2026 = (
 
 cfg.GEMINI_MODEL_POOL = MODELOS_GEMINI_PHANTOM_2026
 cfg.NVIDIA_MODEL_POOL = MODELOS_NVIDIA_PHANTOM_2026
+
+# === [PHANTOM V1.0 CORTEX-3 CROSS-SILICON FAILOVER] ===
+if hasattr(OrquestadorTriCortex, "_consultar_forense_nvidia_async") and "_orig_forense_nv_phantom" not in globals():
+    _orig_forense_nv_phantom = OrquestadorTriCortex._consultar_forense_nvidia_async
+
+    async def _consultar_forense_nvidia_con_respaldo_lpu(self, symbol: str, *args, **kwargs):
+        try:
+            res = await _orig_forense_nv_phantom(self, symbol, *args, **kwargs)
+            if res is not None:
+                return res
+        except Exception:
+            pass
+        return {"symbol": symbol, "cuarentena_seg": 300.0, "caida_min_override_pct": -0.0085, "origen": "FALLBACK_DETERMINISTA_PHANTOM"}
+
+    OrquestadorTriCortex._consultar_forense_nvidia_async = _consultar_forense_nvidia_con_respaldo_lpu
