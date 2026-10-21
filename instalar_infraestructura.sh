@@ -177,7 +177,7 @@ verbot() {
 
 bloque_verbot = plantilla_raw.replace("__REPO_DIR__", repo_dir)
 rc_path.write_text(txt.rstrip() + "\n\n" + bloque_verbot, encoding="utf-8")
-print("✅ [VERBOT V4.0 OK] Comandos instalados en ~/.bashrc: verbot, verbot -s, verbot -x, verbot -x cerrar, verbot -h trades, verbot -q, verbot -t")
+print("✅ [VERBOT PHANTOM V1.0 OK] Comandos instalados en ~/.bashrc: verbot, verbot -s, verbot -x, verbot -x cerrar, verbot -h trades, verbot -q, verbot -t")
 PYEOF
 
 echo "=================================================================="

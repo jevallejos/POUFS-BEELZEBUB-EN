@@ -340,7 +340,7 @@ class GestorCajaNegra:
         bal_real = ESTADO_RAM.patrimonio_total_usdt if ESTADO_RAM.patrimonio_total_usdt > 0 else bal_contable
         pnl_map_ratio = (self.pnl_total_usdt / self.map_promedio_usdt) if self.map_promedio_usdt > 0.0 else 0.0
 
-        l1 = "╔══════ [CAJA NEGRA] TRI-BRAIN-PHANTOM V1.0 [GOD'S ACCOMPLICE]   ═══════╗"
+        l1 = "╔══════ [CAJA NEGRA] TRI-BRAIN-PHANTOM V1.0 [GOD'S ACCOMPLICE] ═══════╗"
         l2 = f"║ Trades: {self.trades_totales:<3d} (W {self.wins} / L {self.losses} / S {self.scratches_18s}) | Win Rate: {wr:5.1f} %".ljust(65) + "║"
         l3 = f"║ PnL total: {self.pnl_total_usdt:+.4f} USDT   mejor {self.mejor_trade_usdt:+.4f} / peor {self.peor_trade_usdt:+.4f}".ljust(65) + "║"
         l4 = f"║ MAP: {self.map_promedio_usdt:5.2f} USDT | PnL/MAP: {pnl_map_ratio:+.4f} | LVR: {self.lvr_acumulado_usdt:.4f}".ljust(65) + "║"
@@ -353,15 +353,6 @@ class GestorCajaNegra:
 
 # Instancia Singleton global de la Caja Negra
 CAJA_NEGRA: GestorCajaNegra = GestorCajaNegra()
-
-# === [PASO 7 SKILL HUNTER V3.0: ESCALADO HORARIO LVR] ===
-def calcular_lvr_horario_usdt(volatilidad_ventana_9s: float, map_usdt: float, hold_seg: float) -> float:
-    """Calcula LVR (Milionis-Moallemi-Roughgarden 2022) escalando la varianza de ventana (9s) a varianza horaria (x400)."""
-    sigma_v = max(0.00045, float(volatilidad_ventana_9s))
-    var_horaria = (sigma_v ** 2) * 400.0
-    lvr_val = (var_horaria / 8.0) * max(0.0, float(map_usdt)) * (max(0.0, float(hold_seg)) / 3600.0)
-    return round(lvr_val, 6)
-
 
 
 # === [PHANTOM V1.0 SANITIZE HOLD_SEG] ===
@@ -377,8 +368,7 @@ def _sanear_jsonl_hold_seg_phantom() -> None:
             continue
         try:
             d = _json.loads(linea)
-            h_seg = float(d.get("hold_seg") or 0.0)
-            if h_seg > 86400.0:
+            if float(d.get("hold_seg") or 0.0) > 86400.0:
                 d["hold_seg"] = 28.0
                 modificado = True
             lineas_out.append(_json.dumps(d, ensure_ascii=False))

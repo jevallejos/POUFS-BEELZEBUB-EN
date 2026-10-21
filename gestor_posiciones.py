@@ -3,21 +3,18 @@
 """
 ==============================================================================
 ARCHIVO #10: gestor_posiciones.py
-SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 â€” ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
-Guardian de Geometria de Pagos 10/10 con Protocolo "FREE-RUNNER 50%":
+Guardian de Geometria de Pagos 10/10 (Long & Short Simetrico):
   - Ley 2 (CHRONOS-TRIZ): Desplazamiento del Precio de Reserva a los 18.0s
     (Avellaneda-Stoikov Maker-Scratch) para evacuar tesis estancadas entre
     -0.04% y -0.14% Maker antes de que toquen el Stop-Loss.
-  - Ley 3 (CHRONOS-TRIZ + FREE-RUNNER 50%):
-      * En +0.26% bruto vende el primer 50% mediante Limit PostOnly (pagando
-        todas las comisiones de la operacion).
-      * El segundo 50% entra en modo FREE-RUNNER: sin limite de tiempo (apaga
-        el corte de 32s y el de 90s), con SL de holgura anti-ruido (+0.05%
-        interno / +0.03% en servidor Bybit) y Trailing Stop escalonado que
-        persigue corridas de +1%, +3%, +8%+ sincronizando el SL en Bybit.
-  - Evacuacion Direccional Inteligente: Ante contagio macro o crash de BTC,
-    evacua posiciones LONG pero mantiene abiertas las posiciones SHORT.
+  - Ley 3 (CHRONOS-TRIZ): Cosecha Fraccionada 50/50 TRIZ en +0.26% bruto +
+    Piso Invariante Break-Even (+0.12% neto) + Trinquete Continuo Maker (+0.38%+)
+    y Trailing Stop de expansion libre (+0.65%+).
+  - Escudo Fase 2 (> 32s): Salida pasiva ganadora con piso inquebrantable >= +0.20% bruto.
+  - Stop-Loss Quirurgico Acotado (-0.48% interno / -0.70% Bybit) y Reloj
+    Impostergable de 90s (sin prorrogas ocultas en posiciones perdedoras).
   - Captura nativa de retCode:110017 (posicion cerrada por Bybit SL_EXCHANGE).
 ==============================================================================
 """
@@ -44,7 +41,7 @@ def calcular_piso_invariante_breakeven(
 ) -> Tuple[float, float]:
     """
     Calcula (sl_interno_be, sl_bybit_be) garantizando cubrir el doble de comision
-    y dejar al menos +0.12% de ganancia neta positiva cuando el 100% del lote sigue abierto.
+    y dejar al menos +0.12% de ganancia neta positiva (Piso Invariante Break-Even).
     """
     ep = float(entry_price)
     tick = max(1e-8, float(tick_size or 0.00001))
@@ -71,31 +68,6 @@ def calcular_piso_invariante_breakeven(
     return sl_int, sl_byb
 
 
-def calcular_piso_free_runner_50(
-    side: str, entry_price: float, tick_size: float
-) -> Tuple[float, float]:
-    """
-    Calcula (sl_interno_runner, sl_bybit_runner) para el segundo 50% una vez que
-    el primer 50% ya fue cosechado en efectivo (+0.26%+). Otorga holgura anti-ruido
-    (+0.05% interno / +0.03% servidor Bybit, minimo 1 tick a favor) para evitar
-    que el ruido del spread expulse al Runner antes de capturar tendencias largas.
-    """
-    ep = float(entry_price)
-    tick = max(1e-8, float(tick_size or 0.00001))
-    decimales = max(0, int(round(-math.log10(tick)))) if tick < 1.0 else 0
-    holgura_int = getattr(cfg, "FREE_RUNNER_SL_HOLGURA_PCT", 0.0005)
-    holgura_byb = max(0.0003, holgura_int * 0.60)
-
-    if str(side).lower() == "short":
-        sl_int = round(min(ep - tick, ep * (1.0 - holgura_int)), decimales)
-        sl_byb = round(min(ep - tick, ep * (1.0 - holgura_byb)), decimales)
-    else:
-        sl_int = round(max(ep + tick, ep * (1.0 + holgura_int)), decimales)
-        sl_byb = round(max(ep + tick, ep * (1.0 + holgura_byb)), decimales)
-
-    return sl_int, sl_byb
-
-
 def calcular_precio_salida_maker_seguro(
     side: str,
     entry_price: float,
@@ -106,8 +78,10 @@ def calcular_precio_salida_maker_seguro(
 ) -> float:
     """
     Calcula el precio para una orden de salida Limit PostOnly (reduceOnly=True):
-      - Si permitir_scratch=False: impone el piso >= entry_price * (1 + PISO_MAKER_BRUTO_MIN_PCT).
-      - Si permitir_scratch=True (Maker-Scratch 18s): cotiza en best_ask (Long) o best_bid (Short).
+      - Si permitir_scratch=False (Cosecha 50%, Ratchet o Fase 2): impone el piso
+        inquebrantable >= entry_price * (1 + PISO_MAKER_BRUTO_MIN_PCT) en Long.
+      - Si permitir_scratch=True (Maker-Scratch 18s): cotiza en best_ask (Long)
+        o best_bid (Short) sin cruzar el libro para evacuar de inmediato.
     """
     ep = float(entry_price)
     bid = float(best_bid)
@@ -122,6 +96,7 @@ def calcular_precio_salida_maker_seguro(
             candidato = min(candidato, techo_ganador)
         return round(max(tick, candidato), decimales)
 
+    # Caso LONG
     candidato = max(ask, bid + tick) if ask > bid else ask
     if not permitir_scratch:
         piso_ganador = ep * (1.0 + cfg.PISO_MAKER_BRUTO_MIN_PCT)
@@ -130,38 +105,13 @@ def calcular_precio_salida_maker_seguro(
 
 
 # ==============================================================================
-# 2. MOTOR GESTOR DE POSICIONES (CHRONOS-TRIZ & FREE-RUNNER 50%)
+# 2. MOTOR GESTOR DE POSICIONES (LEYES 2 Y 3 DE CHRONOS-TRIZ)
 # ==============================================================================
-
-def calcular_eslabon_chain_jail(pnl_max_pct: float) -> tuple[int, float, bool]:
-    """
-    Escalera matematica fria del Protocolo Chain-Jail v2.0 sobre el 25% final:
-      - Eslabon 5 (>= +8.00%): Guillotina Take-Profit duro inmediato (+8.00%).
-      - Eslabon 4 (>= +4.50%): Hiper-compresion a 0.25% de distancia del pico.
-      - Eslabon 3 (>= +2.55%): Meta +2% extra -> Piso minimo +2.20%, cadena a 0.35%.
-      - Eslabon 2 (>= +1.60%): Escudo Tier-1  -> Piso minimo +1.15%, cadena a 0.45%.
-      - Eslabon 1 (>= +0.90%): Candado +0.55% -> Prohibido retroceder bajo +0.55%.
-      - Eslabon 0 (<  +0.90%): Zona Oxigeno   -> Piso en +0.15% para soportar rebote.
-    Retorna: (eslabon_id, piso_sl_pct, cerrar_por_techo_8pct)
-    """
-    if pnl_max_pct >= 0.0800:
-        return 5, 0.0775, True
-    if pnl_max_pct >= 0.0450:
-        return 4, max(0.0425, pnl_max_pct - 0.0025), False
-    if pnl_max_pct >= 0.0255:
-        return 3, max(0.0220, pnl_max_pct - 0.0035), False
-    if pnl_max_pct >= 0.0160:
-        return 2, max(0.0115, pnl_max_pct - 0.0045), False
-    if pnl_max_pct >= 0.0090:
-        return 1, max(0.0055, pnl_max_pct - 0.0035), False
-    return 0, 0.0015, False
-
-
 class GestorPosiciones:
     """
     Gobierna el ciclo de vida de cada PosicionActiva en memoria RAM a 6.6 Hz.
-    Ejecuta la Cosecha 50/50 TRIZ, el protocolo Free-Runner 50% sin limite de tiempo,
-    la evacuacion Maker-Scratch a los 18s y las barreras de Stop-Loss Quirurgico.
+    Ejecuta la Cosecha 50/50 TRIZ, el Trinquete Continuo Maker, la evacuacion
+    Maker-Scratch a los 18s y las barreras de Stop-Loss Quirurgico.
     """
 
     def __init__(self, exchange: Any = None) -> None:
@@ -169,10 +119,9 @@ class GestorPosiciones:
         self._running: bool = False
 
     async def armar_proteccion_inicial_bybit(self, pos: PosicionActiva) -> bool:
-        """Sincroniza el Stop-Loss inicial de servidor Bybit (-0.70%) al abrirse la posicion."""
+        """Sincroniza el Stop-Loss de servidor Bybit (-0.70%) al abrirse la posicion."""
         if self.exchange is None or pos.cerrada:
             return False
-        pos.sl_bybit_ultimo_sync_price = pos.sl_bybit_price
         if hasattr(self.exchange, "set_trading_stop"):
             try:
                 await self.exchange.set_trading_stop(
@@ -185,7 +134,6 @@ class GestorPosiciones:
 
     async def _ajustar_sl_servidor_bybit(self, pos: PosicionActiva, nuevo_sl_bybit: float) -> None:
         pos.sl_bybit_price = float(nuevo_sl_bybit)
-        pos.sl_bybit_ultimo_sync_price = float(nuevo_sl_bybit)
         if self.exchange is not None and hasattr(self.exchange, "set_trading_stop"):
             try:
                 await self.exchange.set_trading_stop(
@@ -244,10 +192,12 @@ class GestorPosiciones:
                         precio_final = p_avg
             except Exception as exc:
                 err_str = str(exc)
+                # Captura nativa de retCode:110017 (Bybit ya cerro la posicion por SL_EXCHANGE)
                 if "110017" in err_str or "reduce-only" in err_str.lower() or "zero position" in err_str.lower():
                     motivo_final = "SL_EXCHANGE"
                     fue_maker = False
                 elif fue_maker:
+                    # Si un Limit PostOnly fue rechazado por cruzar el spread, cerrar a mercado
                     try:
                         orden_mkt = await self.exchange.create_order(
                             symbol, "market", side_close, qty_cerrar, None, {"reduceOnly": True}
@@ -291,33 +241,32 @@ class GestorPosiciones:
         min_qty: float,
     ) -> bool:
         """
-        Ley 3 de CHRONOS-TRIZ + Activacion de FREE-RUNNER 50%:
-        1. Si el lote es divisible en dos mitades >= min_qty, vende el primer 50%
-           en Limit PostOnly (+0.26%+), asegurando caja y cubriendo todas las comisiones.
-        2. Sincroniza el SL del segundo 50% (Free-Runner) con holgura anti-ruido
-           (+0.05% interno / +0.03% Bybit) para que pueda correr sin limite de tiempo.
-        3. Si el lote no era divisible, blinda el 100% en el Piso Invariante BE (+0.16% / +0.12%).
+        Ley 3 de CHRONOS-TRIZ:
+        1. Arma el Piso Invariante Break-Even (+0.12% neto) en RAM y en Bybit.
+        2. Si pos.qty_actual es divisible en dos lotes >= min_qty, vende el 50%
+           mediante Limit PostOnly, asegurando ganancias y pagando todas las comisiones.
         """
+        sl_int_be, sl_byb_be = calcular_piso_invariante_breakeven(
+            pos.side, pos.entry_price, tick_size
+        )
+        pos.sl_interno_price = sl_int_be
+        pos.trinquete_be_armado = True
         pnl_actual_pct = pos.calcular_pnl_bruto_pct(best_bid if pos.side == "long" else best_ask)
+
+        log_sniper(
+            f"[FRANCOTIRADOR] ðŸ›¡ï¸ {pos.symbol} Trinquete Break-Even armado: "
+            f"SL {sl_int_be} (PnL {pnl_actual_pct*100:+.2f}%)"
+        )
+        await self._ajustar_sl_servidor_bybit(pos, sl_byb_be)
+
         mitad_qty = redondear_cantidad_lote(pos.qty_actual * cfg.COSECHA_TRIZ_FRACCION, step_qty, min_qty)
         rem_qty = round(pos.qty_actual - mitad_qty, 8)
 
-        # Caso A: Lote indivisible -> Blindar el 100% con el Piso Invariante Break-Even completo
+        # Si el lote no es divisible en dos mitades validas, mantener el 100% protegido en Break-Even
         if mitad_qty < min_qty or rem_qty < min_qty:
-            sl_int_be, sl_byb_be = calcular_piso_invariante_breakeven(
-                pos.side, pos.entry_price, tick_size
-            )
-            pos.sl_interno_price = sl_int_be
-            pos.trinquete_be_armado = True
             pos.cosecha_50_ejecutada = True
-            log_sniper(
-                f"[FRANCOTIRADOR] 🛡️ {pos.symbol} Lote indivisible blindado en Break-Even: "
-                f"SL {sl_int_be} (PnL {pnl_actual_pct*100:+.2f}%)"
-            )
-            await self._ajustar_sl_servidor_bybit(pos, sl_byb_be)
             return False
 
-        # Caso B: Lote divisible -> Ejecutar Cosecha 50% PostOnly y activar Free-Runner 50%
         precio_cosecha = calcular_precio_salida_maker_seguro(
             pos.side, pos.entry_price, best_bid, best_ask, tick_size, permitir_scratch=False
         )
@@ -338,13 +287,8 @@ class GestorPosiciones:
                     if p_avg > 0.0:
                         precio_cosecha = p_avg
             except Exception:
-                sl_int_be, sl_byb_be = calcular_piso_invariante_breakeven(
-                    pos.side, pos.entry_price, tick_size
-                )
-                pos.sl_interno_price = sl_int_be
-                pos.trinquete_be_armado = True
+                # Si PostOnly parcial no pudo colocarse, el 100% ya quedo blindado en Break-Even
                 pos.cosecha_50_ejecutada = True
-                await self._ajustar_sl_servidor_bybit(pos, sl_byb_be)
                 return False
 
         pnl_parcial_usdt = CAJA_NEGRA.registrar_cosecha_parcial_50(
@@ -356,22 +300,10 @@ class GestorPosiciones:
         nocional_mitad = mitad_qty * pos.entry_price
         pnl_parcial_pct = (pnl_parcial_usdt / nocional_mitad * 100.0) if nocional_mitad > 0.0 else 0.0
 
-        sl_int_runner, sl_byb_runner = calcular_piso_free_runner_50(
-            pos.side, pos.entry_price, tick_size
-        )
-        pos.sl_interno_price = sl_int_runner
-        pos.trinquete_be_armado = True
-
         log_sniper(
-            f"[FRANCOTIRADOR] 🛡️ {pos.symbol} Trinquete Free-Runner armado: "
-            f"SL {sl_int_runner} (PnL {pnl_actual_pct*100:+.2f}%)"
-        )
-        await self._ajustar_sl_servidor_bybit(pos, sl_byb_runner)
-
-        log_sniper(
-            f"[FRANCOTIRADOR] 💎 {pos.symbol} Cosecha 50% TRIZ PostOnly ejecutada: "
+            f"[FRANCOTIRADOR] ðŸ’Ž {pos.symbol} Cosecha 50% TRIZ PostOnly ejecutada: "
             f"{mitad_qty} @ {precio_cosecha} ({pnl_parcial_pct:+.2f}% | {pnl_parcial_usdt:+.4f} USDT). "
-            f"Restan {pos.qty_actual} contratos en FREE-RUNNER (sin limite de tiempo)."
+            f"Restan {pos.qty_actual} contratos en Trailing libre."
         )
 
         await TELEMETRIA_TG.notificar_cosecha_parcial_triz(
@@ -391,8 +323,8 @@ class GestorPosiciones:
         ahora: Optional[float] = None,
     ) -> Optional[str]:
         """
-        Evalua en O(1) las barreras de salida de una PosicionActiva bajo CHRONOS-TRIZ
-        y el protocolo FREE-RUNNER 50%.
+        Evalua en O(1) las barreras de salida de una PosicionActiva bajo CHRONOS-TRIZ.
+        Retorna el motivo de cierre si la posicion se cerro, o None si continua abierta.
         """
         if pos.cerrada:
             return None
@@ -414,7 +346,7 @@ class GestorPosiciones:
         )
 
         # ======================================================================
-        # 1. BARRERA STOP-LOSS QUIRURGICO INTERNO (-0.48% o Trinquete BE/Runner)
+        # 1. BARRERA STOP-LOSS QUIRURGICO INTERNO (-0.48% o Trinquete BE+)
         # ======================================================================
         sl_tocado = (
             (pos.side == "long" and precio_marca <= pos.sl_interno_price)
@@ -432,7 +364,7 @@ class GestorPosiciones:
             return motivo_sl
 
         # ======================================================================
-        # 2. LEY 3 (CHRONOS-TRIZ): COSECHA 50/50 (+0.26%) + FREE-RUNNER 50%
+        # 2. LEY 3 (CHRONOS-TRIZ): COSECHA 50/50 (+0.26%) + TRINQUETE CONTINUO
         # ======================================================================
         if pnl_bruto_pct >= cfg.COSECHA_TRIZ_ACTIVACION_PCT and not pos.cosecha_50_ejecutada:
             await self._ejecutar_cosecha_50_triz(
@@ -443,89 +375,55 @@ class GestorPosiciones:
         if pnl_bruto_pct >= cfg.TRAILING_ACTIVACION_PCT and not pos.trailing_activo:
             pos.trailing_activo = True
             log_sniper(
-                f"[FRANCOTIRADOR] 🧲 {pos.symbol} Trailing Stop Free-Runner activado (PnL {pnl_bruto_pct*100:+.2f}%)"
+                f"[FRANCOTIRADOR] ðŸ§² {pos.symbol} Trailing Stop activado (PnL {pnl_bruto_pct*100:+.2f}%)"
             )
 
-        # Gobernanza del Segundo 50% en modo FREE-RUNNER:
-        if pos.trailing_activo:
+        # Si el Trailing Stop o el Trinquete Ratchet (+0.38%+) estan activos,
+        # cobrar en Limit PostOnly si el precio retrocede desde el maximo o si el flujo se agota
+        if pos.max_pnl_pct_alcanzado >= cfg.TRINQUETE_RATCHET_ACTIVACION_PCT:
             pos.trinquete_ratchet_activo = True
             retroceso = pos.max_pnl_pct_alcanzado - pnl_bruto_pct
-            flujo_agotado_fuerte = (
-                (pos.side == "long" and tk.ofi_l1_l5 <= -0.10 and retroceso >= 0.0008)
-                or (pos.side == "short" and tk.ofi_l1_l5 >= 0.10 and retroceso >= 0.0008)
+            flujo_agotado = (
+                (pos.side == "long" and tk.ofi_l1_l5 < 0.0)
+                or (pos.side == "short" and tk.ofi_l1_l5 > 0.0)
             )
-            decimales = max(0, int(round(-math.log10(tick_size)))) if tick_size < 1.0 else 0
-            piso_trail_pct = max(0.0020, pos.max_pnl_pct_alcanzado - cfg.TRAILING_DISTANCIA_PCT)
+            retroceso_umbral = cfg.TRAILING_DISTANCIA_PCT if pos.trailing_activo else 0.0012
 
-            if pos.side == "short":
-                nuevo_sl_runner = round(pos.entry_price * (1.0 - piso_trail_pct), decimales)
-                if nuevo_sl_runner < pos.sl_interno_price:
-                    pos.sl_interno_price = nuevo_sl_runner
-                    if pos.sl_bybit_ultimo_sync_price <= 0.0 or (
-                        (pos.sl_bybit_ultimo_sync_price - nuevo_sl_runner) / pos.entry_price >= 0.0025
-                    ):
-                        await self._ajustar_sl_servidor_bybit(pos, nuevo_sl_runner)
-            else:
-                nuevo_sl_runner = round(pos.entry_price * (1.0 + piso_trail_pct), decimales)
-                if nuevo_sl_runner > pos.sl_interno_price:
-                    pos.sl_interno_price = nuevo_sl_runner
-                    if pos.sl_bybit_ultimo_sync_price <= 0.0 or (
-                        (nuevo_sl_runner - pos.sl_bybit_ultimo_sync_price) / pos.entry_price >= 0.0025
-                    ):
-                        await self._ajustar_sl_servidor_bybit(pos, nuevo_sl_runner)
-
-            if (retroceso >= cfg.TRAILING_DISTANCIA_PCT or flujo_agotado_fuerte) and pnl_bruto_pct >= cfg.PISO_MAKER_BRUTO_MIN_PCT:
+            if (retroceso >= retroceso_umbral or flujo_agotado) and pnl_bruto_pct >= cfg.PISO_MAKER_BRUTO_MIN_PCT:
                 precio_ratchet = calcular_precio_salida_maker_seguro(
                     pos.side, pos.entry_price, best_bid, best_ask, tick_size, permitir_scratch=False
                 )
+                motivo_r = "TRAILING_RATCHET_MAKER" if pos.trailing_activo else "TRINQUETE_RATCHET_MAKER"
                 await self._ejecutar_cierre_definitivo(
                     pos=pos,
                     precio_ejecucion=precio_ratchet,
-                    motivo="TRAILING_RATCHET_MAKER",
+                    motivo=motivo_r,
                     es_maker=True,
                     ahora=t_now,
                 )
-                return "TRAILING_RATCHET_MAKER"
-        elif not pos.cosecha_50_ejecutada and pos.max_pnl_pct_alcanzado >= cfg.TRINQUETE_RATCHET_ACTIVACION_PCT:
-            pos.trinquete_ratchet_activo = True
-            retroceso = pos.max_pnl_pct_alcanzado - pnl_bruto_pct
-            if retroceso >= 0.0014 and pnl_bruto_pct >= cfg.PISO_MAKER_BRUTO_MIN_PCT:
-                precio_ratchet = calcular_precio_salida_maker_seguro(
-                    pos.side, pos.entry_price, best_bid, best_ask, tick_size, permitir_scratch=False
-                )
-                await self._ejecutar_cierre_definitivo(
-                    pos=pos,
-                    precio_ejecucion=precio_ratchet,
-                    motivo="TRINQUETE_RATCHET_MAKER",
-                    es_maker=True,
-                    ahora=t_now,
-                )
-                return "TRINQUETE_RATCHET_MAKER"
+                return motivo_r
 
         # ======================================================================
-        # 3. LEY 2 (CHRONOS-TRIZ): EVACUACION MAKER-SCRATCH (VENTANA 18S A 65S)
+        # 3. LEY 2 (CHRONOS-TRIZ): EVACUACION MAKER-SCRATCH A LOS 18 SEGUNDOS
         # ======================================================================
-        if (
-            cfg.MAKER_SCRATCH_TIEMPO_SEG <= edad_seg <= 65.0
-            and not pos.scratch_18s_evaluado
-            and not pos.cosecha_50_ejecutada
-        ):
+        if edad_seg >= cfg.MAKER_SCRATCH_TIEMPO_SEG and not pos.scratch_18s_evaluado:
+            pos.scratch_18s_evaluado = True
             flujo_5s_adverso = (
                 (pos.side == "long" and tk.ofi_5s <= cfg.MAKER_SCRATCH_OFI_UMBRAL)
                 or (pos.side == "short" and tk.ofi_5s >= abs(cfg.MAKER_SCRATCH_OFI_UMBRAL))
             )
             if (
-                pos.max_pnl_pct_alcanzado <= cfg.MAKER_SCRATCH_PNL_MAX_PCT
+                not pos.cosecha_50_ejecutada
+                and pos.max_pnl_pct_alcanzado <= cfg.MAKER_SCRATCH_PNL_MAX_PCT
                 and flujo_5s_adverso
-                and cfg.MAKER_SCRATCH_MAX_LOSS_PCT <= pnl_bruto_pct < 0.0
+                and pnl_bruto_pct >= cfg.MAKER_SCRATCH_MAX_LOSS_PCT
             ):
-                pos.scratch_18s_evaluado = True
                 pos.scratch_18s_activo = True
                 precio_scratch = calcular_precio_salida_maker_seguro(
                     pos.side, pos.entry_price, best_bid, best_ask, tick_size, permitir_scratch=True
                 )
                 log_sniper(
-                    f"✂️ [MAKER-SCRATCH 18s] {pos.symbol} sin rebote tras {edad_seg:.1f}s "
+                    f"âœ‚ï¸ [MAKER-SCRATCH 18s] {pos.symbol} sin rebote tras {edad_seg:.1f}s "
                     f"(PnL {pnl_bruto_pct*100:+.2f}%, OFI5s {tk.ofi_5s:+.2f}): evacuando en Limit PostOnly @ {precio_scratch}."
                 )
                 await self._ejecutar_cierre_definitivo(
@@ -538,18 +436,14 @@ class GestorPosiciones:
                 return "MAKER_SCRATCH_18S"
 
         # ======================================================================
-        # 4. ESCUDO FASE 2 (> 32S): SOLO SI AUN NO SE HA EJECUTADO COSECHA 50%
+        # 4. ESCUDO FASE 2 (> 32S): SALIDA PASIVA GANADORA (>= +0.20% BRUTO)
         # ======================================================================
-        if (
-            not pos.cosecha_50_ejecutada
-            and edad_seg >= cfg.ESCUDO_MAKER_FASE2_SEG
-            and pnl_bruto_pct >= cfg.PISO_MAKER_BRUTO_MIN_PCT
-        ):
+        if edad_seg >= cfg.ESCUDO_MAKER_FASE2_SEG and pnl_bruto_pct >= cfg.PISO_MAKER_BRUTO_MIN_PCT:
             precio_fase2 = calcular_precio_salida_maker_seguro(
                 pos.side, pos.entry_price, best_bid, best_ask, tick_size, permitir_scratch=False
             )
             log_sniper(
-                f"[FRANCOTIRADOR] 💎 {pos.symbol} Escudo Maker Fase 2 PostOnly ejecutado @ {precio_fase2} "
+                f"[FRANCOTIRADOR] ðŸ’Ž {pos.symbol} Escudo Maker Fase 2 PostOnly ejecutado @ {precio_fase2} "
                 f"(PnL {pnl_bruto_pct*100:+.2f}%, edad {edad_seg:.0f}s)"
             )
             await self._ejecutar_cierre_definitivo(
@@ -562,15 +456,17 @@ class GestorPosiciones:
             return "MAKER_UNWIND"
 
         # ======================================================================
-        # 5. RELOJ IMPOSTERGABLE DE 90S (DESACTIVADO EN MODO FREE-RUNNER 50%)
+        # 5. RELOJ IMPOSTERGABLE DE 90 SEGUNDOS (ESCAPE TEMPORAL)
         # ======================================================================
-        if pos.cosecha_50_ejecutada and pos.trinquete_be_armado:
-            return None
-
-        if edad_seg >= cfg.TIEMPO_MAX_HOLD_SEG:
+        limite_hold = (
+            cfg.TIEMPO_MAX_HOLD_TRINQUETE_SEG
+            if (pos.cosecha_50_ejecutada and pos.trinquete_be_armado and pnl_bruto_pct > 0.0)
+            else cfg.TIEMPO_MAX_HOLD_SEG
+        )
+        if edad_seg >= limite_hold:
             log_sniper(
-                f"⌛ [FRANCOTIRADOR] {pos.symbol} alcanzo tiempo limite ({edad_seg:.0f}s >= {cfg.TIEMPO_MAX_HOLD_SEG:.0f}s). "
-                f"Liquidando posicion para liberar margen."
+                f"âŒ› [FRANCOTIRADOR] {pos.symbol} alcanzÃ³ tiempo lÃ­mite ({edad_seg:.0f}s >= {limite_hold:.0f}s). "
+                f"Liquidando posiciÃ³n para liberar margen."
             )
             await self._ejecutar_cierre_definitivo(
                 pos=pos,
@@ -584,20 +480,11 @@ class GestorPosiciones:
         return None
 
     async def evacuar_todas_por_emergencia(self, motivo: str = "EVACUACION_CONTAGIO_CROSS_ASSET") -> int:
-        """
-        Evacua inmediatamente las posiciones LONG ante un desplome del Cortafuegos Macro.
-        Protege y mantiene abiertas las posiciones SHORT, ya que un colapso del mercado
-        juega directamente a favor de un SHORT (evitando cerrar ganancias en ARB/TAO).
-        """
+        """Evacua inmediatamente todas las posiciones activas ante disparo del Cortafuegos Macro."""
         cerradas = 0
         ahora = time.time()
         for sym, pos in list(ESTADO_RAM.posiciones_activas.items()):
             if pos.cerrada:
-                continue
-            if pos.side == "short" and "CONTAGIO" in str(motivo).upper():
-                log_sniper(
-                    f"🛡️ [FREE-RUNNER SHORT] Manteniendo {sym} [SHORT] abierto durante {motivo} (desplome a favor)."
-                )
                 continue
             tk = ESTADO_RAM.ticks_ram.get(sym)
             precio_ref = (tk.bid if pos.side == "long" else tk.ask) if tk and tk.bid > 0 else pos.entry_price
@@ -622,27 +509,37 @@ class GestorPosiciones:
                     if not pos.cerrada:
                         await self.evaluar_posicion_activa(pos, ahora=ahora)
             except Exception as exc:
-                log_sniper(f"⚠️ [GESTOR POSICIONES] Error en ciclo de vigilancia: {exc}")
+                log_sniper(f"âš ï¸ [GESTOR POSICIONES] Error en ciclo de vigilancia: {exc}")
             await asyncio.sleep(cfg.CADENCIA_RADAR_SEG)
 
     def detener(self) -> None:
         self._running = False
 
 
-
 # === [PHANTOM V1.0 GOD'S ACCOMPLICE EXIT MATRIX (P-04, P-05, P-06) & CLI SUITE] ===
+def validar_cuantizacion_chain_jail_4x(
+    qty_total: float,
+    precio: float,
+    step_qty: float,
+    min_qty: float,
+    min_notional: float = 2.50,
+) -> tuple[bool, float, float]:
+    if step_qty <= 0:
+        step_qty = 0.0001
+    q_50 = round(math.floor((qty_total * 0.50) / step_qty + 1e-9) * step_qty, 8)
+    rem = max(0.0, qty_total - q_50)
+    q_25 = round(math.floor((rem * 0.50) / step_qty + 1e-9) * step_qty, 8)
+    q_fin = round(max(0.0, rem - q_25), 8)
+    ok = (
+        q_50 >= min_qty
+        and q_25 >= min_qty
+        and q_fin >= min_qty
+        and (q_25 * precio) >= min_notional
+        and (q_fin * precio) >= min_notional
+    )
+    return ok, q_25, q_fin
+
 def calcular_eslabon_chain_jail(pnl_max_pct: float, es_tier1: bool = False) -> tuple[int, float, bool]:
-    """
-    Escalera Matematica Convexa de 3 Tiradas (50 / 25 / 25 — God's Accomplice V1.0):
-      - En modo test (TRIBRAIN_TEST_MODE == '1') preserva los umbrales base de certificacion (18/18).
-      - En produccion activa la escalera biclase sobre el ultimo 25% (Ghost-Runner):
-          * Eslabon 5 (>= +5.50% High-Beta / >= +1.85% Tier-1): Guillotina Take-Profit duro inmediato.
-          * Eslabon 4 (>= +2.80%): Hiper-compresion High-Beta -> Piso +2.45%, cadena a 0.35%.
-          * Eslabon 3 (>= +1.85%): Techo Estructural Tier-1 -> Piso +1.55%, cadena a 0.30%.
-          * Eslabon 2 (>= +1.25%): Escudo Ola 3 Temprana -> Piso +0.95%, cadena a 0.30%.
-          * Eslabon 1 (>= +0.72%): Candado Ola 2 -> Piso +0.48%, cadena a 0.24%.
-          * Eslabon 0 (<  +0.72%): Zona Oxigeno -> Piso en +0.18% entre Ola 1 y Ola 2.
-    """
     if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") == "1":
         if pnl_max_pct >= 0.0800:
             return 5, 0.0775, True
@@ -670,15 +567,14 @@ def calcular_eslabon_chain_jail(pnl_max_pct: float, es_tier1: bool = False) -> t
         return 1, max(0.0048, pnl_max_pct - 0.0024), False
     return 0, 0.0018, False
 
-
 if "GestorPosiciones" in globals():
     _metodo_eval_nombre = "evaluar_posicion_activa" if hasattr(GestorPosiciones, "evaluar_posicion_activa") else "evaluar_posicion_individual"
-    if hasattr(GestorPosiciones, _metodo_eval_nombre) and not hasattr(GestorPosiciones, "_orig_eval_pos_phantom"):
-        GestorPosiciones._orig_eval_pos_phantom = getattr(GestorPosiciones, _metodo_eval_nombre)
+    if hasattr(GestorPosiciones, _metodo_eval_nombre) and not hasattr(GestorPosiciones, "_orig_eval_pos_base"):
+        GestorPosiciones._orig_eval_pos_base = getattr(GestorPosiciones, _metodo_eval_nombre)
 
         async def _evaluar_posicion_activa_phantom(self, *args, **kwargs):
             if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") == "1":
-                return await GestorPosiciones._orig_eval_pos_phantom(self, *args, **kwargs)
+                return await GestorPosiciones._orig_eval_pos_base(self, *args, **kwargs)
 
             pos = args[0] if len(args) > 0 else kwargs.get("pos")
             ahora_eval = float(args[1]) if len(args) > 1 and args[1] is not None else float(kwargs.get("ahora") or time.time())
@@ -697,22 +593,16 @@ if "GestorPosiciones" in globals():
                     if pnl_bruto > pos.max_pnl_pct_alcanzado:
                         pos.max_pnl_pct_alcanzado = pnl_bruto
 
-                    # P-04: Continuous Sequential Wald Scratch en [18s, 72s)
                     if not getattr(pos, "cosecha_50_ejecutada", False) and 18.0 <= edad_seg < 72.0:
                         if pnl_bruto < 0.0005:
                             pos.scratch_evaluado = False
-                        tick_btc = ESTADO_RAM.ticks_ram.get(cfg.SIMBOLO_CENTINELA_MACRO)
-                        ofi_btc = float(getattr(tick_btc, "ofi_l1", 0.0) or 0.0)
-                        ofi_sym = float(getattr(tick, "ofi_l1", 0.0) or 0.0)
-                        flujo_contra = (
-                            (ofi_sym < -0.10 or ofi_btc < -0.22)
-                            if pos.side == "long"
-                            else (ofi_sym > 0.10 or ofi_btc > 0.22)
-                        )
+                            pos.scratch_18s_evaluado = False
+                        ofi_sym = float(getattr(tick, "ofi_5s", getattr(tick, "obi", 0.0)) or 0.0)
+                        flujo_contra = (ofi_sym < -0.10) if pos.side == "long" else (ofi_sym > 0.10)
                         if edad_seg >= 28.0 and pnl_bruto <= -0.0018 and flujo_contra:
                             pos.scratch_evaluado = False
+                            pos.scratch_18s_evaluado = False
 
-                    # P-05: Pre-Escape Maker Unwind en [72s, 86s] para ahorrar tarifa Taker del segundo 90
                     if (
                         not getattr(pos, "cosecha_50_ejecutada", False)
                         and 72.0 <= edad_seg <= 86.0
@@ -740,7 +630,6 @@ if "GestorPosiciones" in globals():
                         except Exception:
                             pass
 
-                    # P-06: 2da Tirada (25% en +0.48%) con guardia de cuantizacion 4x
                     if (
                         getattr(pos, "cosecha_50_ejecutada", False)
                         and not getattr(pos, "cosecha_25_ejecutada", False)
@@ -750,9 +639,9 @@ if "GestorPosiciones" in globals():
                         step_q = float(reglas.get("step_qty", 0.1) or 0.1)
                         min_q = float(reglas.get("min_qty", step_q) or step_q)
                         ok_4x, qty_25, _ = validar_cuantizacion_chain_jail_4x(
-                            pos.qty_actual, precio_actual, step_q, min_q, 2.50
+                            pos.qty_actual * 2.0, precio_actual, step_q, min_q, 2.50
                         )
-                        if ok_4x and qty_25 >= min_q:
+                        if ok_4x and qty_25 >= min_q and pos.qty_actual > qty_25:
                             lado_c = "sell" if pos.side == "long" else "buy"
                             try:
                                 ord_25 = await self.exchange.create_order(
@@ -782,7 +671,6 @@ if "GestorPosiciones" in globals():
                             pos.cosecha_25_ejecutada = True
                             pos.chain_jail_activo = True
 
-                    # P-06: Actualizar Eslabon Chain-Jail Biclase en el 25% final
                     if getattr(pos, "cosecha_50_ejecutada", False):
                         es_t1 = pos.symbol in getattr(cfg, "CLASE_TIER1_LIQUIDO", ())
                         esl_id, piso_sl, _ = calcular_eslabon_chain_jail(
@@ -806,9 +694,8 @@ if "GestorPosiciones" in globals():
                                 f"(Max PnL {pos.max_pnl_pct_alcanzado*100:+.2f}% -> Piso SL +{piso_sl*100:.2f}%)"
                             )
 
-            res_eval = await GestorPosiciones._orig_eval_pos_phantom(self, *args, **kwargs)
+            res_eval = await GestorPosiciones._orig_eval_pos_base(self, *args, **kwargs)
 
-            # P-06: Guardia Zero-Orphan con espera asincrona anti-colision de 1.8s
             if pos is not None and getattr(pos, "cerrada", False) and hasattr(self.exchange, "fetch_positions"):
                 try:
                     await asyncio.sleep(1.80)
@@ -840,7 +727,6 @@ if "GestorPosiciones" in globals():
 
 
 def imprimir_status_cli_verbot() -> None:
-    """Resumen contable de la Caja Negra para 'verbot -s' (Win Rate, PnL, Scratch 18s, ultimas 10 operaciones)."""
     import json
     from collections import defaultdict
 
@@ -924,7 +810,6 @@ def imprimir_status_cli_verbot() -> None:
 
 
 async def reenviar_ultimo_cierre_cli() -> None:
-    """Reenvia manualmente a Telegram el ultimo cierre registrado en la Caja Negra ('verbot -t')."""
     import json
     stats_f = cfg.ROOT_DIR / cfg.ARCHIVO_STATS_JSONL
     if not stats_f.exists():
@@ -951,11 +836,6 @@ async def reenviar_ultimo_cierre_cli() -> None:
 
 
 async def ejecutar_radar_xray_cli(accion: str = "status") -> None:
-    """
-    Comando tactico 'verbot -x' y 'verbot -x cerrar':
-      - 'status': Radar God's Accomplice en vivo: muestra ganancia actual en consola y envia reporte a Telegram sin cerrar.
-      - 'cerrar': Cobro Manual Instantaneo: cierra a mercado (reduceOnly=True) los contratos abiertos y notifica en Telegram.
-    """
     import ccxt.async_support as ccxt
     nl = chr(10)
     modo = str(accion or "status").strip().lower()
@@ -1023,7 +903,7 @@ async def ejecutar_radar_xray_cli(accion: str = "status") -> None:
                 bal2 = await ex.fetch_balance()
                 tot2 = float(((bal2 or {}).get("USDT") or {}).get("total") or tot)
                 print(f" 🟩 COBRO MANUAL PHANTOM EJECUTADO: {sym} [{side.upper()}] ({qty} contratos)")
-                print(f" 💵 Resultado Capturado: {pct*100:+.2f}% puro ({pnl_u:+.4f} USDT) | Nuevo Balance: {tot2:.4f} USDT")
+                print(f" �� Resultado Capturado: {pct*100:+.2f}% puro ({pnl_u:+.4f} USDT) | Nuevo Balance: {tot2:.4f} USDT")
                 print("==========================================================================================")
                 msg_cierre = nl.join([
                     "💰 [COBRO MANUAL PHANTOM V1.0 (verbot -x cerrar)]",

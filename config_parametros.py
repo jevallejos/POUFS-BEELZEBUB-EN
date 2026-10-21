@@ -28,7 +28,7 @@ from dotenv import load_dotenv
 ROOT_DIR: pathlib.Path = pathlib.Path(__file__).resolve().parent
 load_dotenv(ROOT_DIR / ".env")
 
-VERSION_SISTEMA: str = "4.0.0"
+VERSION_SISTEMA: str = "1.0.0"
 NOMBRE_ESTRATEGIA: str = "TRI-BRAIN-PHANTOM (God's Accomplice) V1.0"
 ESTRATEGIA_MATEMATICA: str = "CHRONOS-TRIZ (Stochastic Time-Decay & 50/50 Ratchet)"
 TITULO_TELEGRAM_CANONICO: str = "Motor TRI-BRAIN-PHANTOM (God's Accomplice) V1.0 [CHRONOS-TRIZ]"
@@ -54,7 +54,7 @@ GEMINI_API_KEY: str = (
     or os.environ.get("GOOGLE_API_KEY")
     or ""
 ).strip()
-NVIDIA_API_KEY: str = (os.getenv("NVIDIA_API_KEY") or os.getenv("NVIDIA_NIM_API_KEY") or "").strip()
+NVIDIA_API_KEY: str = os.environ.get("NVIDIA_API_KEY", "").strip()
 
 TELEGRAM_BOT_TOKEN: str = (
     os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -70,7 +70,7 @@ TELEGRAM_CHAT_ID: str = (
 # ==============================================================================
 # 3. CAPITAL BASE, APALANCAMIENTO Y DIMENSIONAMIENTO DE KELLY CONVEXO
 # ==============================================================================
-CAPITAL_BASE_USDT: float = float(os.getenv("CAPITAL_BASE_USDT", "9.8662"))
+CAPITAL_BASE_USDT: float = 9.8662          # Patrimonio certificado en Estado Cero (Paso 0.2)
 APALANCAMIENTO_BASE: int = 3               # Apalancamiento cruzado UTA (3x)
 MAX_POSICIONES_SIMULTANEAS: int = 1        # Single-Slot Mutex (100% foco y cero colision de margen)
 
@@ -135,14 +135,14 @@ VENTANA_Z_TICKS: int = 60                  # Ventana rodante para Z-Score Bipowe
 VENTANA_EMA_MACRO_TICKS: int = 900         # EMA900 de referencia estructural
 
 # 5.1 Tunel Biclase para Clase High-Beta (ZEREBRO, WAL) -> Evita entradas superficiales
-Z_SCORE_UMBRAL_HIGH_BETA: float = -2.85
-CAIDA_MIN_HIGH_BETA_PCT: float = -0.0075  # Exige al menos -0.85% de dislocacion local
-EMA900_DIST_MIN_HIGH_BETA_PCT: float = -0.0102  # Exige -1.15% bajo EMA900 (salvo Z <= -4.50)
+Z_SCORE_UMBRAL_HIGH_BETA: float = -3.20
+CAIDA_MIN_HIGH_BETA_PCT: float = -0.0085   # Exige al menos -0.85% de dislocacion local
+EMA900_DIST_MIN_HIGH_BETA_PCT: float = -0.0115  # Exige -1.15% bajo EMA900 (salvo Z <= -4.50)
 
 # 5.2 Tunel Biclase para Clase Tier-1 (INJ, XRP, AVAX, TAO, ARB)
-Z_SCORE_UMBRAL_TIER1: float = -2.55
-CAIDA_MIN_TIER1_PCT: float = -0.004  # Exige al menos -0.45% de dislocacion local
-EMA900_DIST_MIN_TIER1_PCT: float = -0.0049  # Exige -0.55% bajo EMA900
+Z_SCORE_UMBRAL_TIER1: float = -2.85
+CAIDA_MIN_TIER1_PCT: float = -0.0045       # Exige al menos -0.45% de dislocacion local
+EMA900_DIST_MIN_TIER1_PCT: float = -0.0055 # Exige -0.55% bajo EMA900
 
 # 5.3 Escudos Fisicos Secuenciales (Spread, Hurst, Lyapunov, Hawkes y 3 Ticks ML-OFI)
 SPREAD_MAX_PCT: float = 0.00180            # 0.180% spread relativo maximo permitido
@@ -198,7 +198,7 @@ PERSISTENCIA_ORDEN_MAKER_SEG: float = 12.0 # Persistencia PFQI de ordenes Limit 
 SL_INTERNO_PCT: float = 0.0048             # -0.48% Stop-Loss interno (erradica perdidas de -1.41%)
 SL_BYBIT_SERVIDOR_PCT: float = 0.0070      # -0.70% Stop-Loss fisico en servidor Bybit UTA
 TIEMPO_MAX_HOLD_SEG: float = 90.0          # 90s tiempo maximo absoluto sin trinquete activo
-FREE_RUNNER_SL_HOLGURA_PCT: float = 0.0005 # Hasta 180s solo si ya cobro Cosecha 50% y esta en BE+
+TIEMPO_MAX_HOLD_TRINQUETE_SEG: float = 180.0 # Hasta 180s solo si ya cobro Cosecha 50% y esta en BE+
 COOLDOWN_POST_CIERRE_WIN_SEG: float = 90.0  # 90s de enfriamiento tras victoria
 COOLDOWN_POST_CIERRE_LOSS_SEG: float = 300.0 # 300s de cuarentena tras cierre negativo
 
@@ -247,8 +247,8 @@ _ULTIMO_MTIME_OOS: float = 0.0
 # Limites fisicos inquebrantables (Shadow Gate): ninguna calibracion OOS puede salir de estos rangos
 _LIMITES_SHADOW_GATE: Dict[str, Tuple[float, float]] = {
     "KELLY_FRACCION_BASE": (0.35, 0.62),
-    "Z_SCORE_UMBRAL_HIGH_BETA": (-4.50, -2.85),
-    "Z_SCORE_UMBRAL_TIER1": (-4.00, -2.55),
+    "Z_SCORE_UMBRAL_HIGH_BETA": (-4.50, -2.90),
+    "Z_SCORE_UMBRAL_TIER1": (-4.00, -2.60),
     "OFI_MIN_ENTRADA": (0.08, 0.45),
     "MAKER_SCRATCH_TIEMPO_SEG": (12.0, 25.0),
     "COSECHA_TRIZ_ACTIVACION_PCT": (0.0022, 0.0045),
@@ -306,83 +306,40 @@ def recargar_calibracion_oos_si_cambio(ruta_json: pathlib.Path | None = None) ->
     except Exception as exc:
         return {"recargado": False, "motivo": f"ERROR: {exc}"}
 
-# === INICIO MODO RECOLECCION ESTADISTICA ACTIVA V3.0 ===
-_LIMITES_SHADOW_GATE['Z_SCORE_UMBRAL_HIGH_BETA'] = (-4.50, -2.40)
-_LIMITES_SHADOW_GATE['Z_SCORE_UMBRAL_TIER1'] = (-4.00, -2.15)
-_LIMITES_SHADOW_GATE['COSECHA_TRIZ_ACTIVACION_PCT'] = (0.0020, 0.0045)
 
-def aplicar_perfil_recoleccion_estadistica_v3() -> None:
-    if __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') == '1':
-        return
-    g = globals()
-    g['Z_SCORE_UMBRAL_HIGH_BETA'] = -2.50
-    g['CAIDA_MIN_HIGH_BETA_PCT'] = -0.0022
-    g['EMA900_DIST_MIN_HIGH_BETA_PCT'] = -0.0012
-    g['Z_SCORE_UMBRAL_TIER1'] = -2.25
-    g['CAIDA_MIN_TIER1_PCT'] = -0.0020
-    g['EMA900_DIST_MIN_TIER1_PCT'] = -0.0015
-    g['OFI_MIN_ENTRADA'] = 0.10
-    g['OFI_TICKS_CONFIRMACION'] = 2
-    g['HURST_MAX_ENTRADA'] = 0.495
-    g['HAWKES_ABSORCION_MIN_SEG'] = 0.25
-    g['HAWKES_INTENSIDAD_MIN'] = 0.05
-    g['SHORT_PUMP_SOBREEXTENSION_PCT'] = 0.0040
-    g['SHORT_OFI_MAX_ENTRADA'] = -0.22
-    g['SHORT_LYAPUNOV_ACEL_MAX_PCT'] = -0.00018
-    g['TTL_ORDEN_ENTRADA_SEG'] = 3.80
-    g['COSECHA_TRIZ_ACTIVACION_PCT'] = 0.0022
-    g['CONTAGIO_MIN_PARES_COLAPSO'] = 4
-    g['CONTAGIO_CAIDA_10S_PCT'] = -0.0060
-
-if '_orig_recargar_oos_freq_v3' not in globals():
-    _orig_recargar_oos_freq_v3 = recargar_calibracion_oos_si_cambio
-
-    def _recargar_calibracion_oos_freq_v3(ruta_json=None):
-        res = _orig_recargar_oos_freq_v3(ruta_json)
-        if __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') != '1' and ruta_json is None:
-            aplicar_perfil_recoleccion_estadistica_v3()
-            if isinstance(res, dict) and res.get('recargado'):
-                p = res.get('parametros')
-                if isinstance(p, dict):
-                    p['Z_SCORE_UMBRAL_HIGH_BETA'] = -2.50
-                    p['Z_SCORE_UMBRAL_TIER1'] = -2.25
-                    p['OFI_MIN_ENTRADA'] = 0.10
-                    p['COSECHA_TRIZ_ACTIVACION_PCT'] = 0.0022
-        return res
-
-    recargar_calibracion_oos_si_cambio = _recargar_calibracion_oos_freq_v3
-
-aplicar_perfil_recoleccion_estadistica_v3()
-# === FIN MODO RECOLECCION ESTADISTICA ACTIVA V3.0 ===
-
-
-# === [PHANTOM V1.0 MASTER LOCKS & P-08 OOS CLAMP] ===
-def _aplicar_candados_phantom_v1() -> None:
-    _os = __import__("os")
-    if _os.getenv("TRIBRAIN_TEST_MODE", "0") != "1":
+# === [PHANTOM V1.0 UNIFIED PRODUCTION PARAMETERS & P-08 OOS CLAMP] ===
+def _aplicar_parametros_produccion_phantom() -> None:
+    if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1":
         globals()["NOMBRE_ESTRATEGIA"] = "TRI-BRAIN-PHANTOM (God's Accomplice) V1.0"
-        globals()["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
+        globals()["Z_SCORE_UMBRAL_HIGH_BETA"] = -3.10
+        globals()["Z_SCORE_UMBRAL_TIER1"] = -2.85
         globals()["OFI_MIN_ENTRADA"] = 0.12
         globals()["OFI_TICKS_CONFIRMACION"] = 2
         globals()["TTL_ORDEN_ENTRADA_SEG"] = 3.80
         globals()["HURST_MAX_ENTRADA"] = 0.485
-        if float(globals().get("Z_SCORE_UMBRAL_HIGH_BETA", -3.20)) > -3.10:
-            globals()["Z_SCORE_UMBRAL_HIGH_BETA"] = -3.10
-        if float(globals().get("Z_SCORE_UMBRAL_TIER1", -2.85)) > -2.85:
-            globals()["Z_SCORE_UMBRAL_TIER1"] = -2.85
+        globals()["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
+        globals()["MAKER_SCRATCH_TIEMPO_SEG"] = 18.0
+        globals()["SL_INTERNO_PCT"] = 0.0048
+        globals()["TIEMPO_MAX_HOLD_SEG"] = 90.0
 
-_aplicar_candados_phantom_v1()
+_aplicar_parametros_produccion_phantom()
 
-if "_orig_recargar_phantom" not in globals() and "recargar_calibracion_oos_si_cambio" in globals():
-    _orig_recargar_phantom = globals()["recargar_calibracion_oos_si_cambio"]
+if "_orig_recargar_oos_base" not in globals() and "recargar_calibracion_oos_si_cambio" in globals():
+    _orig_recargar_oos_base = globals()["recargar_calibracion_oos_si_cambio"]
     def _recargar_calibracion_oos_phantom(*args, **kwargs):
-        res = _orig_recargar_phantom(*args, **kwargs)
+        res = _orig_recargar_oos_base(*args, **kwargs)
         if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1":
-            _aplicar_candados_phantom_v1()
+            globals()["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
+            globals()["OFI_MIN_ENTRADA"] = 0.12
+            globals()["OFI_TICKS_CONFIRMACION"] = 2
+            globals()["TTL_ORDEN_ENTRADA_SEG"] = 3.80
+            globals()["HURST_MAX_ENTRADA"] = 0.485
+            globals()["Z_SCORE_UMBRAL_HIGH_BETA"] = max(-3.60, min(float(globals().get("Z_SCORE_UMBRAL_HIGH_BETA", -3.10)), -3.00))
+            globals()["Z_SCORE_UMBRAL_TIER1"] = max(-3.30, min(float(globals().get("Z_SCORE_UMBRAL_TIER1", -2.85)), -2.75))
             if isinstance(res, dict):
                 res["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
                 res["OFI_MIN_ENTRADA"] = 0.12
-                res["Z_SCORE_UMBRAL_HIGH_BETA"] = min(float(res.get("Z_SCORE_UMBRAL_HIGH_BETA", -3.10)), -3.10)
-                res["Z_SCORE_UMBRAL_TIER1"] = min(float(res.get("Z_SCORE_UMBRAL_TIER1", -2.85)), -2.85)
+                res["Z_SCORE_UMBRAL_HIGH_BETA"] = globals()["Z_SCORE_UMBRAL_HIGH_BETA"]
+                res["Z_SCORE_UMBRAL_TIER1"] = globals()["Z_SCORE_UMBRAL_TIER1"]
         return res
     globals()["recargar_calibracion_oos_si_cambio"] = _recargar_calibracion_oos_phantom

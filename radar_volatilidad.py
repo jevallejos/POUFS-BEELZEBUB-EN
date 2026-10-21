@@ -28,6 +28,7 @@ from escudo_tricortex import ESCUDO_TRICORTEX
 
 # Pesos exponenciales pre-calculados para los primeros 5 niveles del libro L2
 _PESOS_ML_OFI: Tuple[float, ...] = tuple(math.exp(-0.35 * i) for i in range(5))
+_SUMA_PESOS_ML_OFI: float = sum(_PESOS_ML_OFI)
 
 
 # ==============================================================================
@@ -228,19 +229,10 @@ class VentanaZ:
         else:
             acel_pct = acel_bruta
 
-        # Filtrar ticks planos consecutivos (150ms sin cambio en mid_price) para medir la rugosidad real
-        pts_activos = [pts[0]]
-        for p_val in pts[1:]:
-            if abs(p_val - pts_activos[-1]) > 1e-12:
-                pts_activos.append(p_val)
-        if len(pts_activos) < 8:
-            pts_activos = pts
-
-        na = len(pts_activos)
-        diffs_1 = [abs(math.log(pts_activos[i] / pts_activos[i - 1])) for i in range(1, na) if pts_activos[i - 1] > 0]
-        diffs_4 = [abs(math.log(pts_activos[i] / pts_activos[i - 4])) for i in range(4, na) if pts_activos[i - 4] > 0]
+        diffs_1 = [abs(math.log(pts[i] / pts[i - 1])) for i in range(1, n) if pts[i - 1] > 0]
+        diffs_4 = [abs(math.log(pts[i] / pts[i - 4])) for i in range(4, n) if pts[i - 4] > 0]
         m1 = (sum(diffs_1) / len(diffs_1)) if diffs_1 else 1e-6
-        m4 = (sum(diffs_4) / len(diffs_4)) if diffs_4 else (m1 * 1.35)
+        m4 = (sum(diffs_4) / len(diffs_4)) if diffs_4 else (m1 * 1.9)
 
         if m1 <= 1e-9 or m4 <= 1e-9:
             hurst = 0.45
@@ -303,6 +295,7 @@ class RadarVolatilidad:
     ) -> None:
         self.callback_disparo = callback_disparo
         self.callback_evacuacion_macro = callback_evacuacion_macro
+        self._running: bool = False
         todos = tuple(cfg.PARES_CAMPEONES_ALFA) + (cfg.SIMBOLO_CENTINELA_MACRO,)
         self.ventanas: Dict[str, VentanaZ] = {sym: VentanaZ() for sym in todos}
         self._ultimo_log_alerta_ts: Dict[str, float] = {}
@@ -475,10 +468,10 @@ class RadarVolatilidad:
         )
         ema_dist_req = float(params_clase["ema900_dist_min_pct"])
 
-        # Tunel Biclase inquebrantable: prohibido comprar sobre EMA900 o en micro-caidas superficiales
-        if tk.delta_p_pct > caida_min_req:
+        es_z_extremo = tk.z_score <= -4.50
+        if tk.delta_p_pct > caida_min_req and not es_z_extremo:
             return None
-        if tk.ema900_dist_pct > ema_dist_req:
+        if tk.ema900_dist_pct > ema_dist_req and not es_z_extremo:
             return None
 
         if not spread_ok:
@@ -495,7 +488,7 @@ class RadarVolatilidad:
             )
             return None
 
-        if tk.hurst > cfg.HURST_MAX_ENTRADA:
+        if tk.hurst > cfg.HURST_MAX_ENTRADA and not es_z_extremo:
             self._log_alerta_throttled(
                 f"HURST:{symbol}",
                 f"⚠️ [FILTRO HURST] {symbol} persistencia tendencial alta (H={tk.hurst:.3f} > {cfg.HURST_MAX_ENTRADA:.3f}). Abortando.",
@@ -579,7 +572,7 @@ class RadarVolatilidad:
         en_short_only = perm is not None and perm.modo_regimen == "SHORT_ONLY"
 
         sobreextendido_pump = (t_now < vz.vigilancia_short_hasta_ts) and (tk.ema900_dist_pct >= 0.0035)
-        rebote_en_tendencia_bajista = en_short_only and (tk.ema900_dist_pct >= cfg.SHORT_REBOTE_DEBIL_MIN_EMA_PCT) and (tk.delta_p_pct <= -0.0010)
+        rebote_en_tendencia_bajista = en_short_only and (tk.ema900_dist_pct >= cfg.SHORT_REBOTE_DEBIL_MIN_EMA_PCT)
 
         if not (sobreextendido_pump or rebote_en_tendencia_bajista):
             return None
@@ -594,8 +587,6 @@ class RadarVolatilidad:
             if sobreextendido_pump
             else abs(tk.z_score)
         )
-        if z_ref_short < 2.50:
-            return None
 
         t0_ram = time.perf_counter()
         ok_ram, mot_ram, mult_gemini = ESTADO_RAM.consultar_permiso_o1(symbol, "short", z_ref_short, t_now)
@@ -630,294 +621,57 @@ class RadarVolatilidad:
             await self.callback_disparo(senal)
         return senal
 
-# === [PASO 2 SKILL HUNTER V3.0: STOIKOV & HURST MULTIESCALA] ===
-def calcular_micro_precio_stoikov(best_bid: float, best_ask: float, vol_bid_l1: float, vol_ask_l1: float) -> float:
-    """Micro-precio continuo de Stoikov (2018) ponderado por presion inversa de volumen L1."""
-    if best_bid <= 0.0 or best_ask <= 0.0:
-        return max(best_bid, best_ask, 0.0)
-    v_tot = vol_bid_l1 + vol_ask_l1
-    if v_tot <= 1e-12:
-        return 0.5 * (best_bid + best_ask)
-    return (best_bid * vol_ask_l1 + best_ask * vol_bid_l1) / v_tot
 
-
-def _hurst_multiescala_ticks_activos_v3(precios_seq) -> float:
-    """Variograma multiescala tau=(1,2,4) sobre ticks activos (Delta P != 0) libre de Rebote de Roll."""
-    pts = [float(x) for x in precios_seq if float(x) > 0.0]
-    if len(pts) < 6:
-        return 0.45
-    activos = [pts[0]]
-    for i in range(1, len(pts)):
-        if abs(pts[i] - pts[i - 1]) > 1e-12:
-            activos.append(pts[i])
-    na = len(activos)
-    if na < 6:
-        return 0.45
-    d1 = [abs(math.log(activos[i] / activos[i - 1])) for i in range(1, na) if activos[i - 1] > 0.0]
-    d2 = [abs(math.log(activos[i] / activos[i - 2])) for i in range(2, na) if activos[i - 2] > 0.0]
-    d4 = [abs(math.log(activos[i] / activos[i - 4])) for i in range(4, na) if activos[i - 4] > 0.0]
-    m1 = (sum(d1) / len(d1)) if d1 else 1e-6
-    m2 = (sum(d2) / len(d2)) if d2 else (m1 * 1.32)
-    m4 = (sum(d4) / len(d4)) if d4 else (m2 * 1.32)
-    if m1 <= 1e-9 or m2 <= 1e-9 or m4 <= 1e-9:
-        return 0.45
-    r12 = max(1.05, min(1.95, m2 / m1))
-    h12 = math.log(r12) / math.log(2.0)
-    if na >= 10 and len(d4) >= 4:
-        r24 = max(1.05, min(1.95, m4 / m2))
-        h24 = math.log(r24) / math.log(2.0)
-        h_val = 0.35 * h12 + 0.65 * h24
-    else:
-        h_val = h12
-    return round(max(0.20, min(0.80, h_val)), 4)
-
-
-# Envolver metodo de Hurst en VentanaZ preservando 100% la aceleracion de Lyapunov original
-for _attr_vz in dir(VentanaZ):
-    if "hurst" in _attr_vz.lower():
-        _orig_vz_fn = getattr(VentanaZ, _attr_vz)
-        if callable(_orig_vz_fn) and not hasattr(VentanaZ, "_orig_hurst_v3"):
-            VentanaZ._orig_hurst_v3 = _orig_vz_fn
-
-            def _wrapped_hurst_vz_v3(self, *args, **kwargs):
-                res_orig = self._orig_hurst_v3(*args, **kwargs)
-                pts = list(getattr(self, "precios", []))
-                # Detectar si existen ticks planos consecutivos (Delta P == 0) en muestreo 6.6 Hz
-                tiene_ticks_planos = any(abs(pts[i] - pts[i - 1]) <= 1e-12 for i in range(1, len(pts)))
-                if not tiene_ticks_planos:
-                    return res_orig
-                h_clean = _hurst_multiescala_ticks_activos_v3(pts)
-                if isinstance(res_orig, tuple) and len(res_orig) == 2:
-                    return h_clean, res_orig[1]
-                return h_clean
-
-            setattr(VentanaZ, _attr_vz, _wrapped_hurst_vz_v3)
-
-
-def calcular_hurst_y_lyapunov(precios) -> tuple[float, float]:
-    """Evalua Hurst multiescala sobre ticks activos y aceleracion de Lyapunov via VentanaZ."""
-    vz = VentanaZ()
-    for p in precios:
-        if hasattr(vz, "agregar_precio"):
-            vz.agregar_precio(float(p))
-        elif hasattr(vz, "precios"):
-            vz.precios.append(float(p))
-    for attr in dir(vz):
-        if "hurst" in attr.lower() and not attr.startswith("_orig"):
-            out = getattr(vz, attr)()
-            if isinstance(out, tuple) and len(out) == 2:
-                return out
-            return float(out), 0.0
-    return _hurst_multiescala_ticks_activos_v3(precios), 0.0
-
-# === [PASO 3 SKILL HUNTER V3.0: TENSOR DIFERENCIAL CKS-OFI] ===
-def calcular_ofi_diferencial_cks(obi_actual: float, obi_previo: float | None, eta: float = 0.35) -> float:
-    """Tensor diferencial de Cont-Kukanov-Stoikov (2014): penaliza paredes pasivas en drenaje."""
-    val = float(obi_actual)
-    if obi_previo is None:
-        return val
-    delta_obi = val - float(obi_previo)
-    # Si la pared compradora (val > 0) o vendedora (val < 0) se drena mas de 0.05 en un tick, aplicar derivada CKS
-    if (val > 0.0 and delta_obi < -0.05) or (val < 0.0 and delta_obi > 0.05):
-        val = max(-1.0, min(1.0, val + eta * delta_obi))
-    return round(val, 4)
-
-
-if hasattr(VentanaZ, "calcular_ml_ofi_y_hawkes") and not hasattr(VentanaZ, "_orig_cks_calcular_ml_ofi_y_hawkes"):
-    VentanaZ._orig_cks_calcular_ml_ofi_y_hawkes = VentanaZ.calcular_ml_ofi_y_hawkes
-
-    def _wrapped_calcular_ml_ofi_y_hawkes_v3(self, bids, asks, t_now, *args, **kwargs):
-        ml_ofi, ofi_5s, vpin = self._orig_cks_calcular_ml_ofi_y_hawkes(bids, asks, t_now, *args, **kwargs)
-        obi_prev = getattr(self, "_ultimo_obi_raw_cks", None)
-        self._ultimo_obi_raw_cks = float(ml_ofi)
-        ml_ofi_cks = calcular_ofi_diferencial_cks(float(ml_ofi), obi_prev)
-        if ml_ofi_cks != float(ml_ofi):
-            if ml_ofi_cks < cfg.OFI_MIN_ENTRADA and hasattr(self, "ticks_ofi_long"):
-                self.ticks_ofi_long = 0
-            if ml_ofi_cks > getattr(cfg, "SHORT_OFI_MAX_ENTRADA", -0.35) and hasattr(self, "ticks_ofi_short"):
-                self.ticks_ofi_short = 0
-        return ml_ofi_cks, ofi_5s, vpin
-
-    VentanaZ.calcular_ml_ofi_y_hawkes = _wrapped_calcular_ml_ofi_y_hawkes_v3
-
-# === [PASO 4 SKILL HUNTER V3.0: PISO BIPOWER ENDOGENO] ===
-def calcular_piso_bipower_endogeno(spread_pct: float, es_tier1: bool = False) -> float:
-    """Calcula el piso endogeno de Variacion Bipower adaptativo al spread relativo y clase microestructural."""
-    piso_base = float(getattr(cfg, "VOLATILIDAD_PISO_BIPOWER", 0.00108))
-    sp = float(spread_pct)
-    if sp <= 0.0:
-        return piso_base
-    factor_min = 0.82 if es_tier1 else 0.95
-    cota_inf = piso_base * factor_min
-    cota_sup = piso_base * 1.35
-    return round(max(cota_inf, min(cota_sup, max(cota_inf, sp * 1.25))), 7)
-
-
-if hasattr(VentanaZ, "calcular_z") and not hasattr(VentanaZ, "_orig_p4_calcular_z"):
-    VentanaZ._orig_p4_calcular_z = VentanaZ.calcular_z
-
-    def _wrapped_calcular_z_v3(self, precio_actual=None):
-        z_score, cambio_ventana_pct, sigma_efectiva = self._orig_p4_calcular_z(precio_actual)
-        sp_local = float(getattr(self, "_spread_rel_v3", 0.0))
-        if sp_local <= 0.0 or abs(z_score) <= 1e-9 or sigma_efectiva <= 1e-9:
-            return z_score, cambio_ventana_pct, sigma_efectiva
-        es_t1 = bool(getattr(self, "_es_tier1_v3", False))
-        piso_ref = calcular_piso_bipower_endogeno(sp_local, es_t1)
-        piso_sigma = round(0.00045 * (piso_ref / 0.00108), 6)
-        if piso_sigma > sigma_efectiva:
-            z_adj = round(z_score * (sigma_efectiva / piso_sigma), 4)
-            return z_adj, cambio_ventana_pct, piso_sigma
-        if es_t1 and sigma_efectiva <= 0.00045 and piso_sigma < 0.00045:
-            z_adj = round(z_score * (sigma_efectiva / piso_sigma), 4)
-            return z_adj, cambio_ventana_pct, piso_sigma
-        return z_score, cambio_ventana_pct, sigma_efectiva
-
-    VentanaZ.calcular_z = _wrapped_calcular_z_v3
-
-
-if hasattr(RadarVolatilidad, "procesar_instantanea_libro") and not hasattr(RadarVolatilidad, "_orig_p4_procesar_libro"):
-    RadarVolatilidad._orig_p4_procesar_libro = RadarVolatilidad.procesar_instantanea_libro
-
-    async def _wrapped_procesar_instantanea_libro_p4(self, symbol: str, bids: list, asks: list, ahora=None):
-        try:
-            if bids and asks and len(bids[0]) >= 1 and len(asks[0]) >= 1:
-                bb = float(bids[0][0])
-                ba = float(asks[0][0])
-                if bb > 0.0 and ba >= bb:
-                    sp_rel = (ba - bb) / (0.5 * (ba + bb))
-                    vz = self.ventanas.get(symbol)
-                    if vz is not None:
-                        vz._spread_rel_v3 = sp_rel
-                        vz._es_tier1_v3 = symbol in getattr(cfg, "CLASE_TIER1_LIQUIDO", ())
-        except Exception:
-            pass
-        return await self._orig_p4_procesar_libro(symbol, bids, asks, ahora)
-
-    RadarVolatilidad.procesar_instantanea_libro = _wrapped_procesar_instantanea_libro_p4
-
-# === INICIO AJUSTES QUIRURGICOS V3.0 (SKILL HUNTER) ===
-def verificar_compuerta_hurst_short_v3(
-    hurst_actual: float,
-    z_score: float,
-    ema900_dist_pct: float = 0.0,
-    symbol: str = '',
-) -> bool:
-    if symbol in getattr(cfg, 'CLASE_HIGH_BETA', ()):
-        if float(ema900_dist_pct) < 0.0040 or float(z_score) < 4.20:
-            return False
-    if abs(float(z_score)) >= 11.5 and float(ema900_dist_pct) >= 0.0120:
-        return True
-    return float(hurst_actual) <= 0.495
-
-
-if hasattr(RadarVolatilidad, '_evaluar_gatillo_short_chronos') and not hasattr(RadarVolatilidad, '_orig_eval_short_pre_v3'):
-    RadarVolatilidad._orig_eval_short_pre_v3 = RadarVolatilidad._evaluar_gatillo_short_chronos
-    _ULT_LOG_HURST_SHORT_V3: dict[str, float] = {}
-
-    async def _evaluar_gatillo_short_chronos_pre_v3(
-        self, symbol: str, vz, tk, spread_ok: bool, ahora: float, *args, **kwargs
-    ):
-        res = RadarVolatilidad._orig_eval_short_pre_v3(
-            self, symbol, vz, tk, spread_ok, ahora, *args, **kwargs
-        )
-        if hasattr(res, '__await__'):
-            res = await res
-        if res is not None and __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') != '1':
-            n_pts = len(getattr(vz, 'precios', [])) if vz is not None else 0
-            if n_pts >= 40:
-                h_val = float(getattr(tk, 'hurst', 0.45) or 0.45)
-                z_val = float(getattr(tk, 'z_score', 0.0) or 0.0)
-                ema_d = float(getattr(tk, 'ema900_dist_pct', 0.0) or 0.0)
-                ofi_v = float(getattr(tk, 'ofi', 0.0) or 0.0)
-                lyap_v = float(getattr(tk, 'lyapunov_acel', 0.0) or 0.0)
-                if not verificar_compuerta_hurst_short_v3(h_val, z_val, ema_d, symbol):
-                    ult = _ULT_LOG_HURST_SHORT_V3.get(symbol, 0.0)
-                    if ahora - ult >= 15.0:
-                        _ULT_LOG_HURST_SHORT_V3[symbol] = ahora
-                        if h_val > 0.495:
-                            log_sniper(
-                                f'\u26a0\ufe0f [BLOQUEO HURST SHORT] {symbol} gatillo abortado por tendencia alcista '
-                                f'(H={h_val:.3f} > 0.495 | Z={z_val:+.2f} | EMA={ema_d*100:+.2f}% | OFI={ofi_v:+.2f}).'
-                            )
-                        else:
-                            log_sniper(
-                                f'\u26a0\ufe0f [BLOQUEO HIGH-BETA SHORT] {symbol} sobreextensi\u00f3n insuficiente '
-                                f'(Z={z_val:+.2f} | EMA={ema_d*100:+.2f}% | H={h_val:.3f}).'
-                            )
-                    return None
-                log_sniper(
-                    f'\U0001f3af [TELEMETR\u00cdA DISPARO SHORT] {symbol} | Z={z_val:+.2f} | '
-                    f'EMA900={ema_d*100:+.2f}% | OFI={ofi_v:+.2f} | H={h_val:.3f} (<=0.495 OK) | a_Lyap={lyap_v*100:+.4f}%'
-                )
-        return res
-
-    RadarVolatilidad._evaluar_gatillo_short_chronos = _evaluar_gatillo_short_chronos_pre_v3
-
-
-if hasattr(RadarVolatilidad, 'procesar_instantanea_libro') and not hasattr(RadarVolatilidad, '_orig_proc_libro_v3_clean'):
-    RadarVolatilidad._orig_proc_libro_v3_clean = RadarVolatilidad.procesar_instantanea_libro
-
-    async def _procesar_instantanea_libro_v3_clean(
-        self, symbol: str, bids: list, asks: list, timestamp: float | None = None
-    ):
-        ahora_ts = float(timestamp if timestamp is not None else time.time())
-        pausa_prev = ESTADO_RAM.pausa_macro_hasta_ts
-        tk = ESTADO_RAM.ticks_ram.get(symbol)
-        orig_h_max = cfg.HURST_MAX_ENTRADA
-        try:
-            if (
-                tk is not None
-                and __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') != '1'
-                and float(getattr(tk, 'z_score', 0.0)) <= -2.80
-                and float(getattr(tk, 'ofi', 0.0)) >= 0.20
-                and float(getattr(tk, 'lyapunov_acel', -1.0)) >= 0.00005
-            ):
-                cfg.HURST_MAX_ENTRADA = 0.680
-            res = await RadarVolatilidad._orig_proc_libro_v3_clean(
-                self, symbol, bids, asks, timestamp
-            )
-        finally:
-            cfg.HURST_MAX_ENTRADA = orig_h_max
-        if (
-            ESTADO_RAM.pausa_macro_hasta_ts > pausa_prev
-            and __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') != '1'
-        ):
-            ESTADO_RAM.pausa_macro_hasta_ts = ahora_ts + 25.0
-            for d_attr in ('_precios_10s', 'precios_10s', 'ventana_contagio'):
-                d_obj = getattr(self, d_attr, None)
-                if isinstance(d_obj, dict):
-                    d_obj.clear()
-        return res
-
-    RadarVolatilidad.procesar_instantanea_libro = _procesar_instantanea_libro_v3_clean
-# === FIN AJUSTES QUIRURGICOS V3.0 (SKILL HUNTER) ===
-
-
-
-# === [PHANTOM V1.0 LEAD-LAG BTC (P-01), PURE HURST (P-02), EMA900 GATE (P-03) & WS COOLDOWN (P-09)] ===
+# === [PHANTOM V1.0 NATIVE RADAR: P-01 LEAD-LAG BTC, P-02 PURE HURST, P-03 EMA900 & P-09 WS COOLDOWN] ===
 _TS_ULTIMO_TICK_PHANTOM: dict[str, float] = {}
 _COOLDOWN_WS_PHANTOM: dict[str, float] = {}
 
-if "RadarVolatilidad" in globals() and hasattr(RadarVolatilidad, "verificar_contagio_cross_asset") and not hasattr(RadarVolatilidad, "_orig_contagio_phantom"):
-    RadarVolatilidad._orig_contagio_phantom = RadarVolatilidad.verificar_contagio_cross_asset
+if hasattr(VentanaZ, "calcular_hurst_y_lyapunov") and not hasattr(VentanaZ, "_orig_hurst_base"):
+    VentanaZ._orig_hurst_base = VentanaZ.calcular_hurst_y_lyapunov
+    def _calcular_hurst_y_lyapunov_phantom(self) -> tuple[float, float]:
+        h_orig, lyap_orig = VentanaZ._orig_hurst_base(self)
+        if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") == "1":
+            return h_orig, lyap_orig
+        pts = list(self.precios)
+        activos = [pts[0]] if pts else []
+        for px in pts[1:]:
+            if abs(px - activos[-1]) > 1e-12:
+                activos.append(px)
+        if len(activos) < len(pts) and len(activos) >= 12:
+            d1 = [activos[i] - activos[i - 1] for i in range(1, len(activos))]
+            d2 = [activos[i] - activos[i - 2] for i in range(2, len(activos))]
+            d4 = [activos[i] - activos[i - 4] for i in range(4, len(activos))]
+            v1 = sum(x * x for x in d1) / max(1, len(d1))
+            v2 = sum(x * x for x in d2) / max(1, len(d2))
+            v4 = sum(x * x for x in d4) / max(1, len(d4))
+            if v1 > 1e-18 and v2 > 1e-18 and v4 > 1e-18:
+                h12 = 0.5 * math.log2(max(v2 / v1, 1e-9))
+                h24 = 0.5 * math.log2(max(v4 / v2, 1e-9))
+                h_activo = max(0.20, min(0.80, 0.5 * (h12 + h24)))
+                return round(h_activo, 4), lyap_orig
+        return h_orig, lyap_orig
+    VentanaZ.calcular_hurst_y_lyapunov = _calcular_hurst_y_lyapunov_phantom
+
+if hasattr(RadarVolatilidad, "verificar_contagio_cross_asset") and not hasattr(RadarVolatilidad, "_orig_contagio_base"):
+    RadarVolatilidad._orig_contagio_base = RadarVolatilidad.verificar_contagio_cross_asset
     async def _verificar_contagio_cross_asset_phantom(self, *args, **kwargs) -> bool:
         if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") == "1":
-            return await RadarVolatilidad._orig_contagio_phantom(self, *args, **kwargs)
+            return await RadarVolatilidad._orig_contagio_base(self, *args, **kwargs)
         sym = str(args[0]) if len(args) > 0 else str(kwargs.get("symbol", ""))
         t_eval = float(args[2]) if len(args) > 2 and args[2] is not None else float(kwargs.get("ahora_ts") or time.time())
         if t_eval < _COOLDOWN_WS_PHANTOM.get(sym, 0.0):
             return False
-        res = await RadarVolatilidad._orig_contagio_phantom(self, *args, **kwargs)
+        res = await RadarVolatilidad._orig_contagio_base(self, *args, **kwargs)
         if res:
             ESTADO_RAM.pausa_macro_hasta_ts = t_eval + 30.0
         return res
     RadarVolatilidad.verificar_contagio_cross_asset = _verificar_contagio_cross_asset_phantom
 
-if "RadarVolatilidad" in globals() and hasattr(RadarVolatilidad, "procesar_instantanea_libro") and not hasattr(RadarVolatilidad, "_orig_proc_libro_phantom"):
-    RadarVolatilidad._orig_proc_libro_phantom = RadarVolatilidad.procesar_instantanea_libro
+if hasattr(RadarVolatilidad, "procesar_instantanea_libro") and not hasattr(RadarVolatilidad, "_orig_proc_libro_base"):
+    RadarVolatilidad._orig_proc_libro_base = RadarVolatilidad.procesar_instantanea_libro
     async def _procesar_instantanea_libro_phantom(self, *args, **kwargs):
         if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") == "1":
-            return await RadarVolatilidad._orig_proc_libro_phantom(self, *args, **kwargs)
+            return await RadarVolatilidad._orig_proc_libro_base(self, *args, **kwargs)
 
         sym = str(args[0]) if len(args) > 0 else str(kwargs.get("symbol", ""))
         ts_now = float(args[3]) if len(args) > 3 and args[3] is not None else float(kwargs.get("ahora") or time.time())
@@ -926,53 +680,60 @@ if "RadarVolatilidad" in globals() and hasattr(RadarVolatilidad, "procesar_insta
             _COOLDOWN_WS_PHANTOM[sym] = ts_now + 4.00
         _TS_ULTIMO_TICK_PHANTOM[sym] = ts_now
 
-        res = await RadarVolatilidad._orig_proc_libro_phantom(self, *args, **kwargs)
+        res = await RadarVolatilidad._orig_proc_libro_base(self, *args, **kwargs)
         if not isinstance(res, dict) or sym == cfg.SIMBOLO_CENTINELA_MACRO:
             return res
 
-        # Extraer estado fisico real del activo y del lider BTC/USDT:USDT (P-01)
         side_sig = str(res.get("side", "long")).lower()
-        h_real = float(res.get("hurst", 0.50))
+        h_real = float(res.get("hurst", 0.45))
         z_real = float(res.get("z_score", 0.0))
         ofi_real = float(res.get("ofi", 0.0))
 
-        ventana_sym = self.ventanas.get(sym) if hasattr(self, "ventanas") else None
-        tick_sym = ESTADO_RAM.ticks_ram.get(sym)
-        precio_sym = float(getattr(tick_sym, "last", 0.0) or getattr(tick_sym, "bid", 0.0) or 0.0)
-        ema900_sym = float(getattr(ventana_sym, "ema900", 0.0) or 0.0)
-        ema_rel = ((precio_sym - ema900_sym) / ema900_sym) if (precio_sym > 0.0 and ema900_sym > 0.0) else float(res.get("ema900_dist_pct", 0.0))
+        dict_ventanas = getattr(self, "ventanas_z", None) or getattr(self, "ventanas", {})
+        ventana_sym = dict_ventanas.get(sym) if isinstance(dict_ventanas, dict) else None
+        ema_val = float(getattr(ventana_sym, "ema_900", 0.0) or getattr(ventana_sym, "ema900", 0.0) or 0.0)
+        px_val = float(res.get("precio", 0.0) or res.get("mid", 0.0) or (ventana_sym.precios[-1] if (ventana_sym and len(ventana_sym.precios) > 0) else 0.0))
+        if px_val > 0.0 and ema_val > 0.0:
+            ema_rel = (px_val - ema_val) / ema_val
+        else:
+            ema_rel = float(res.get("dist_ema900_pct", res.get("ema900_dist_pct", 0.0)) or 0.0)
+            if abs(ema_rel) > 0.15:
+                ema_rel = ema_rel / 100.0
 
+        ventana_btc = dict_ventanas.get(cfg.SIMBOLO_CENTINELA_MACRO) if isinstance(dict_ventanas, dict) else None
         tick_btc = ESTADO_RAM.ticks_ram.get(cfg.SIMBOLO_CENTINELA_MACRO)
-        ventana_btc = self.ventanas.get(cfg.SIMBOLO_CENTINELA_MACRO) if hasattr(self, "ventanas") else None
-        ofi_btc = float(getattr(tick_btc, "ofi_l1", 0.0) or 0.0)
-        z_btc = float(getattr(ventana_btc, "ultimo_z", 0.0) or 0.0)
+        ofi_btc = float(getattr(tick_btc, "ofi_5s", getattr(tick_btc, "obi", 0.0)) or 0.0)
+        z_btc = 0.0
+        if ventana_btc is not None and hasattr(ventana_btc, "calcular_z_bipower"):
+            try:
+                z_btc, _, _ = ventana_btc.calcular_z_bipower()
+            except Exception:
+                z_btc = 0.0
 
-        # P-01: Flujo Compuesto Phantom (75% Activo + 25% BTC)
-        ofi_phantom = 0.75 * ofi_real + 0.25 * ofi_btc
+        ofi_phantom = (0.75 * ofi_real + 0.25 * ofi_btc) if abs(ofi_btc) > 1e-6 else ofi_real
         res["ofi_phantom"] = round(ofi_phantom, 4)
 
-        # P-02: Pureza Fractal de Hurst (Restriccion inquebrantable H <= 0.485 en ambos lados)
-        if h_real > 0.485:
+        h_max_cfg = float(getattr(cfg, "HURST_MAX_ENTRADA", 0.485))
+        if h_real > h_max_cfg:
+            log_sniper(f"⚠️ [PHANTOM P-02 HURST] {sym} [{side_sig.upper()}] abortado por rugosidad tendencial (H={h_real:.3f} > {h_max_cfg:.3f}).")
             return None
 
         if side_sig == "long":
-            # P-01: Veto Lead-Lag si BTC esta drenando liquidez
-            if ofi_btc < -0.22 or z_btc < -1.80 or ofi_phantom < 0.10:
+            if ofi_btc < -0.25 or z_btc < -1.80:
+                log_sniper(f"⚠️ [PHANTOM P-01 BTC LEAD-LAG] {sym} [LONG] abortado por drenaje en BTC (Z_BTC={z_btc:+.2f}, OFI_BTC={ofi_btc:+.2f}).")
                 return None
-            # P-03: Compuerta de Descuento Estructural Asimetrico sobre EMA900
             es_tier1 = sym in getattr(cfg, "CLASE_TIER1_LIQUIDO", ())
-            if es_tier1:
-                if ema_rel > -0.0055 or z_real > -3.40:
-                    return None
-            else:
-                if ema_rel > -0.0065 or z_real > -3.80:
-                    return None
-        elif side_sig == "short":
-            # P-01: Veto Lead-Lag si BTC esta siendo absorbido con fuerza al alza
-            if ofi_btc > 0.25 or z_btc > 2.00 or ofi_phantom > -0.25:
+            umbral_ema_long = -0.0050 if es_tier1 else -0.0060
+            umbral_z_long = float(getattr(cfg, "Z_SCORE_UMBRAL_TIER1", -2.85) if es_tier1 else getattr(cfg, "Z_SCORE_UMBRAL_HIGH_BETA", -3.10))
+            if ema_rel > umbral_ema_long or z_real > umbral_z_long:
+                log_sniper(f"⚠️ [PHANTOM P-03 EMA900] {sym} [LONG] descuento insuficiente (EMA900={ema_rel*100:+.2f}% > {umbral_ema_long*100:+.2f}% | Z={z_real:+.2f}).")
                 return None
-            # P-03: Sobreextension minima confirmada sobre EMA900
+        elif side_sig == "short":
+            if ofi_btc > 0.28 or z_btc > 2.00:
+                log_sniper(f"⚠️ [PHANTOM P-01 BTC LEAD-LAG] {sym} [SHORT] abortado por impulso alcista en BTC (Z_BTC={z_btc:+.2f}, OFI_BTC={ofi_btc:+.2f}).")
+                return None
             if ema_rel < 0.0038:
+                log_sniper(f"⚠️ [PHANTOM P-03 SHORT] {sym} [SHORT] sobreextension insuficiente (EMA900={ema_rel*100:+.2f}% < +0.38%).")
                 return None
 
         return res

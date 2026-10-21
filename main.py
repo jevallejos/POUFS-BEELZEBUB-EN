@@ -184,9 +184,7 @@ async def reconciliar_posiciones_arranque(exchange: Any) -> int:
             t_apertura = ahora - edad_seg
 
         edad_min = edad_seg / 60.0
-        pnl_boot_pct = ((mark_p - ep) / ep if side == 'long' else (ep - mark_p) / ep) if ep > 0 else 0.0
-        es_campeon_en_ganancia = (sym in cfg.PARES_CAMPEONES_ALFA) and (pnl_boot_pct >= 0.0020) and (os.environ.get('TRIBRAIN_TEST_MODE') != '1')
-        if edad_seg >= cfg.TIEMPO_MAX_HOLD_SEG and not es_campeon_en_ganancia:
+        if edad_seg >= cfg.TIEMPO_MAX_HOLD_SEG:
             log_sniper(
                 f"🧹 [RECONCILIADOR] Posición zombie huérfana detectada en {sym}: "
                 f"{qty} contratos @ {ep} (edad {edad_min:.1f} min >= {cfg.TIEMPO_MAX_HOLD_SEG:.0f}s). "
@@ -470,7 +468,6 @@ if __name__ == "__main__":
         sys.exit(0)
 
 
-
 # === [PHANTOM V1.0 BOOT RECONCILIATION & OOS JSON SANITIZER] ===
 def _sanear_json_oos_disco_phantom() -> None:
     if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") == "1":
@@ -481,23 +478,28 @@ def _sanear_json_oos_disco_phantom() -> None:
         return
     try:
         d = _json.loads(ruta_j.read_text(encoding="utf-8"))
-        blanco = d["parametros"] if ("parametros" in d and isinstance(d["parametros"], dict)) else d
-        blanco["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
-        blanco["OFI_MIN_ENTRADA"] = 0.12
-        blanco["Z_SCORE_UMBRAL_HIGH_BETA"] = min(float(blanco.get("Z_SCORE_UMBRAL_HIGH_BETA", -3.10)), -3.10)
-        blanco["Z_SCORE_UMBRAL_TIER1"] = min(float(blanco.get("Z_SCORE_UMBRAL_TIER1", -2.85)), -2.85)
+        for sub_k in ("parametros", "parametros_calibrados", "hot_reload"):
+            if sub_k in d and isinstance(d[sub_k], dict):
+                d[sub_k]["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
+                d[sub_k]["OFI_MIN_ENTRADA"] = 0.12
+                d[sub_k]["Z_SCORE_UMBRAL_HIGH_BETA"] = max(-3.60, min(float(d[sub_k].get("Z_SCORE_UMBRAL_HIGH_BETA", -3.10)), -3.00))
+                d[sub_k]["Z_SCORE_UMBRAL_TIER1"] = max(-3.30, min(float(d[sub_k].get("Z_SCORE_UMBRAL_TIER1", -2.85)), -2.75))
+        d["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
+        d["OFI_MIN_ENTRADA"] = 0.12
+        d["Z_SCORE_UMBRAL_HIGH_BETA"] = max(-3.60, min(float(d.get("Z_SCORE_UMBRAL_HIGH_BETA", -3.10)), -3.00))
+        d["Z_SCORE_UMBRAL_TIER1"] = max(-3.30, min(float(d.get("Z_SCORE_UMBRAL_TIER1", -2.85)), -2.75))
         ruta_j.write_bytes((_json.dumps(d, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
     except Exception:
         pass
 
 _sanear_json_oos_disco_phantom()
 
-if "reconciliar_posiciones_arranque" in globals() and "_orig_reconciliar_phantom" not in globals():
-    _orig_reconciliar_phantom = reconciliar_posiciones_arranque
+if "reconciliar_posiciones_arranque" in globals() and "_orig_reconciliar_base" not in globals():
+    _orig_reconciliar_base = reconciliar_posiciones_arranque
     async def reconciliar_posiciones_arranque(*args, **kwargs) -> int:
         _sanear_json_oos_disco_phantom()
-        cfg._aplicar_candados_phantom_v1()
-        procesadas = await _orig_reconciliar_phantom(*args, **kwargs)
+        cfg._aplicar_parametros_produccion_phantom()
+        procesadas = await _orig_reconciliar_base(*args, **kwargs)
         if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1":
             ahora_r = time.time()
             for sym_k, pos_obj in list(ESTADO_RAM.posiciones_activas.items()):

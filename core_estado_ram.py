@@ -12,7 +12,9 @@ para comunicar modulos internos.
 """
 from __future__ import annotations
 
+import asyncio
 import os
+import pathlib
 import sys
 import time
 from dataclasses import asdict, dataclass, field
@@ -99,12 +101,13 @@ class PosicionActiva:
     trinquete_be_armado: bool = False
     trinquete_ratchet_activo: bool = False
     trailing_activo: bool = False
-    cosecha_25_ejecutada: bool = False
-    chain_jail_activo: bool = False
-    eslabon_chain_jail: int = 0
 
-    # Control de sincronizacion de Stop-Loss escalonado en servidor Bybit (Free-Runner 50%)
-    sl_bybit_ultimo_sync_price: float = 0.0
+    # Control de orden Limit PostOnly de salida en vuelo (PFQI)
+    orden_salida_id: Optional[str] = None
+    orden_salida_precio: float = 0.0
+    orden_salida_qty: float = 0.0
+    orden_salida_ts: float = 0.0
+    orden_salida_tipo: str = ""             # "COSECHA_50" | "RATCHET" | "SCRATCH_18S" | "ESCUDO_FASE2"
 
     # Cerrojo atomico anti-doble-contabilizacion
     cerrada: bool = False
@@ -223,6 +226,8 @@ class EstadoGlobalRAM:
         # Pares excluidos dinamicamente por filtro de lote minimo indivisible
         self.pares_excluidos_lote: set[str] = set()
 
+        # Cola asincrona de eventos para desacoplar modulos sin tocar print()
+        self.cola_eventos: asyncio.Queue[Dict[str, Any]] = asyncio.Queue(maxsize=1024)
 
     def consultar_permiso_o1(
         self,
@@ -369,114 +374,18 @@ def log_sniper(mensaje: str, escribir_disco: bool = True) -> str:
 
     return linea
 
-# === INICIO MODO RECOLECCION ESTADISTICA ACTIVA V3.0 ===
-if hasattr(EstadoGlobalRAM, 'consultar_permiso_o1') and not hasattr(EstadoGlobalRAM, '_orig_consultar_o1_freq_v3'):
-    EstadoGlobalRAM._orig_consultar_o1_freq_v3 = EstadoGlobalRAM.consultar_permiso_o1
 
-    def _consultar_permiso_o1_freq_v3(
-        self, symbol: str, side_solicitado: str, z_score_actual: float, ahora: float
-    ):
-        if (
-            str(side_solicitado).lower() == 'short'
-            and ahora < self.pausa_macro_hasta_ts
-            and __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') != '1'
-        ):
-            respaldo_pausa = self.pausa_macro_hasta_ts
-            try:
-                self.pausa_macro_hasta_ts = 0.0
-                return EstadoGlobalRAM._orig_consultar_o1_freq_v3(
-                    self, symbol, side_solicitado, z_score_actual, ahora
-                )
-            finally:
-                self.pausa_macro_hasta_ts = respaldo_pausa
-        return EstadoGlobalRAM._orig_consultar_o1_freq_v3(
-            self, symbol, side_solicitado, z_score_actual, ahora
-        )
-
-    EstadoGlobalRAM.consultar_permiso_o1 = _consultar_permiso_o1_freq_v3
-
-if '_orig_log_sniper_v3' not in globals():
-    _orig_log_sniper_v3 = log_sniper
-    _TELEMETRIA_ESTADO_V3: dict[str, object] = {
-        'groq_state': '',
-        'groq_ts': 0.0,
-        'gemini_state': '',
-        'gemini_ts': 0.0,
-        'evento_importante_ts': 0.0,
-        'box_ts': 0.0,
-        'suprimir_box_actual': False,
-        'ws_timeout_ts': 0.0,
-        'warn_cooldown': {},
-    }
-
-    def _smart_log_sniper_v3(mensaje: str) -> None:
-        msg = str(mensaje)
-        if __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') == '1':
-            return _orig_log_sniper_v3(msg)
-        ahora = time.time()
-        st = _TELEMETRIA_ESTADO_V3
-        if (
-            'INICIANDO CEREBRO' in msg
-            or 'CIERRE ' in msg
-            or 'Auditoria UTA' in msg
-            or 'Auditor\u00eda UTA' in msg
-        ):
-            st['evento_importante_ts'] = ahora
-        if '[RADAR] Error en ' in msg and ('RequestTimeout' in msg or 'closing code 1006' in msg):
-            ult_ws = float(st.get('ws_timeout_ts', 0.0) or 0.0)
-            if ahora - ult_ws < 12.0:
-                return
-            st['ws_timeout_ts'] = ahora
-            return _orig_log_sniper_v3(
-                '\U0001f504 [WS BYBIT] Reconexi\u00f3n autom\u00e1tica de stream p\u00fablico completada (keepalive ping-pong).'
-            )
-        if '[ESCUDO RAM TRI-CORTEX] Matriz Direccional Groq LPU' in msg:
-            partes = msg.split(': ')
-            estado_g = partes[-1].strip() if len(partes) > 1 else msg
-            ult_g_ts = float(st.get('groq_ts', 0.0) or 0.0)
-            if estado_g == st.get('groq_state') and estado_g.startswith('7/7') and (ahora - ult_g_ts) < 1800.0:
-                return
-            st['groq_state'] = estado_g
-            st['groq_ts'] = ahora
-            return _orig_log_sniper_v3(msg)
-        if '[TRI-CORTEX GOOGLE AI]' in msg:
-            idx_p = msg.find('(Ultimos')
-            estado_m = msg[idx_p:] if idx_p != -1 else msg
-            ult_m_ts = float(st.get('gemini_ts', 0.0) or 0.0)
-            if estado_m == st.get('gemini_state') and (ahora - ult_m_ts) < 1800.0:
-                return
-            st['gemini_state'] = estado_m
-            st['gemini_ts'] = ahora
-            return _orig_log_sniper_v3(msg)
-        if '\u2554\u2550\u2550\u2550\u2550\u2550\u2550 [CAJA NEGRA]' in msg:
-            reciente = (ahora - float(st.get('evento_importante_ts', 0.0) or 0.0)) <= 6.0
-            caduco = (ahora - float(st.get('box_ts', 0.0) or 0.0)) >= 1800.0
-            if reciente or caduco:
-                st['suprimir_box_actual'] = False
-                st['box_ts'] = ahora
-                return _orig_log_sniper_v3(msg)
-            else:
-                st['suprimir_box_actual'] = True
-                return
-        if msg.startswith('\u2551 ') or msg.startswith('\u255a\u2550\u2550'):
-            if st.get('suprimir_box_actual'):
-                if msg.startswith('\u255a\u2550\u2550'):
-                    st['suprimir_box_actual'] = False
-                return
-            return _orig_log_sniper_v3(msg)
-        for tag_w in ('[REPULSOR LYAPUNOV]', '[FILTRO HURST]', '[MEMORIA HAWKES]', '[ANTI-PUMP-TOP]', '[MICROESTRUCTURA]'):
-            if tag_w in msg:
-                palabras = msg.split()
-                par_w = next((w for w in palabras if '/USDT' in w), tag_w)
-                clave_w = f'{tag_w}:{par_w}'
-                cd_map = st['warn_cooldown']
-                if isinstance(cd_map, dict):
-                    ult_w = float(cd_map.get(clave_w, 0.0) or 0.0)
-                    if ahora - ult_w < 20.0:
-                        return
-                    cd_map[clave_w] = ahora
-                break
-        return _orig_log_sniper_v3(msg)
-
-    log_sniper = _smart_log_sniper_v3
-# === FIN MODO RECOLECCION ESTADISTICA ACTIVA V3.0 ===
+# === [PHANTOM V1.0 SHORT-SNIPER IMMUNITY DURING MACRO CONTAGION] ===
+if hasattr(EstadoGlobalRAM, "consultar_permiso_o1") and not hasattr(EstadoGlobalRAM, "_orig_consultar_phantom"):
+    EstadoGlobalRAM._orig_consultar_phantom = EstadoGlobalRAM.consultar_permiso_o1
+    def _consultar_permiso_o1_phantom(self, symbol: str, side_solicitado: str = "long", *args, **kwargs):
+        if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1":
+            if str(side_solicitado).lower() == "short" and self.pausa_macro_hasta_ts > 0.0:
+                respaldo = self.pausa_macro_hasta_ts
+                try:
+                    self.pausa_macro_hasta_ts = 0.0
+                    return EstadoGlobalRAM._orig_consultar_phantom(self, symbol, side_solicitado, *args, **kwargs)
+                finally:
+                    self.pausa_macro_hasta_ts = respaldo
+        return EstadoGlobalRAM._orig_consultar_phantom(self, symbol, side_solicitado, *args, **kwargs)
+    EstadoGlobalRAM.consultar_permiso_o1 = _consultar_permiso_o1_phantom

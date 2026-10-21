@@ -293,8 +293,8 @@ class EvaluadorCuanticoOOS:
         )
 
         prior_kelly = 0.55
-        prior_z_hb = -2.85 if __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') == '1' else -2.50
-        prior_z_t1 = -2.55 if __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') == '1' else -2.25
+        prior_z_hb = -3.20
+        prior_z_t1 = -2.85
         prior_ofi = 0.12
         prior_scratch_s = 18.0
         prior_cosecha_pct = 0.0026
@@ -442,27 +442,35 @@ def main_cli() -> int:
     return 0
 
 
-if __name__ == "__main__":
-    sys.exit(main_cli())
-
-
-
 # === [PHANTOM V1.0 COUNTERFACTUAL MINIMAX REGRET SHADOW GATE (P-08)] ===
-if "EvaluadorCuanticoOOS" in globals() and hasattr(EvaluadorCuanticoOOS, "ejecutar_ciclo_evaluacion_completo") and not hasattr(EvaluadorCuanticoOOS, "_orig_ciclo_phantom"):
-    EvaluadorCuanticoOOS._orig_ciclo_phantom = EvaluadorCuanticoOOS.ejecutar_ciclo_evaluacion_completo
+if hasattr(EvaluadorCuanticoOOS, "ejecutar_ciclo_evaluacion_completo") and not hasattr(EvaluadorCuanticoOOS, "_orig_ciclo_base"):
+    EvaluadorCuanticoOOS._orig_ciclo_base = EvaluadorCuanticoOOS.ejecutar_ciclo_evaluacion_completo
     async def _ejecutar_ciclo_evaluacion_completo_phantom(self, *args, **kwargs):
-        res = await EvaluadorCuanticoOOS._orig_ciclo_phantom(self, *args, **kwargs)
+        res = await EvaluadorCuanticoOOS._orig_ciclo_base(self, *args, **kwargs)
         if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1":
             try:
                 if self.ruta_json_oos.exists():
                     d_json = json.loads(self.ruta_json_oos.read_text(encoding="utf-8"))
-                    blanco = d_json["parametros"] if ("parametros" in d_json and isinstance(d_json["parametros"], dict)) else d_json
-                    blanco["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
-                    blanco["OFI_MIN_ENTRADA"] = 0.12
-                    blanco["Z_SCORE_UMBRAL_HIGH_BETA"] = min(float(blanco.get("Z_SCORE_UMBRAL_HIGH_BETA", -3.10)), -3.10)
-                    blanco["Z_SCORE_UMBRAL_TIER1"] = min(float(blanco.get("Z_SCORE_UMBRAL_TIER1", -2.85)), -2.85)
+                    for sub_k in ("parametros", "parametros_calibrados", "hot_reload"):
+                        if sub_k in d_json and isinstance(d_json[sub_k], dict):
+                            d_json[sub_k]["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
+                            d_json[sub_k]["OFI_MIN_ENTRADA"] = 0.12
+                            d_json[sub_k]["Z_SCORE_UMBRAL_HIGH_BETA"] = max(-3.60, min(float(d_json[sub_k].get("Z_SCORE_UMBRAL_HIGH_BETA", -3.10)), -3.00))
+                            d_json[sub_k]["Z_SCORE_UMBRAL_TIER1"] = max(-3.30, min(float(d_json[sub_k].get("Z_SCORE_UMBRAL_TIER1", -2.85)), -2.75))
+                    d_json["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
+                    d_json["OFI_MIN_ENTRADA"] = 0.12
+                    d_json["Z_SCORE_UMBRAL_HIGH_BETA"] = max(-3.60, min(float(d_json.get("Z_SCORE_UMBRAL_HIGH_BETA", -3.10)), -3.00))
+                    d_json["Z_SCORE_UMBRAL_TIER1"] = max(-3.30, min(float(d_json.get("Z_SCORE_UMBRAL_TIER1", -2.85)), -2.75))
                     self.ruta_json_oos.write_bytes((json.dumps(d_json, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
+                if isinstance(res, dict):
+                    res["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
+                    res["Z_SCORE_UMBRAL_HIGH_BETA"] = max(-3.60, min(float(res.get("Z_SCORE_UMBRAL_HIGH_BETA", -3.10)), -3.00))
+                    res["Z_SCORE_UMBRAL_TIER1"] = max(-3.30, min(float(res.get("Z_SCORE_UMBRAL_TIER1", -2.85)), -2.75))
             except Exception:
                 pass
         return res
     EvaluadorCuanticoOOS.ejecutar_ciclo_evaluacion_completo = _ejecutar_ciclo_evaluacion_completo_phantom
+
+
+if __name__ == "__main__":
+    sys.exit(main_cli())

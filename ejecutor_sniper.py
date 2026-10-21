@@ -379,10 +379,6 @@ class EjecutorSniper:
             volatilidad_entry=volatilidad,
         )
 
-        # Ajustar el margen bloqueado en RAM exactamente a los contratos llenados (qty_llenada)
-        margen_llenado = round((qty_llenada * precio_fill) / cfg.APALANCAMIENTO_BASE, 4)
-        ESTADO_RAM.margen_bloqueado_usdt = margen_llenado
-        ESTADO_RAM.margen_libre_usdt = max(0.0, ESTADO_RAM.patrimonio_total_usdt - margen_llenado)
         ESTADO_RAM.orden_en_vuelo_symbol = None
         ESTADO_RAM.posiciones_activas[symbol] = pos
 
@@ -404,72 +400,3 @@ class EjecutorSniper:
             await self.callback_posicion_abierta(pos)
 
         return pos
-
-# === [PASO 2 SKILL HUNTER V3.0: GUARDIA MUTEX ANTI-110007] ===
-if hasattr(EjecutorSniper, "ejecutar_senal_sniper") and not hasattr(EjecutorSniper, "_orig_ejecutar_v3"):
-    EjecutorSniper._orig_ejecutar_v3 = EjecutorSniper.ejecutar_senal_sniper
-
-    async def _ejecutar_senal_sniper_blindado_v3(self, *args, **kwargs):
-        try:
-            return await self._orig_ejecutar_v3(*args, **kwargs)
-        finally:
-            if not ESTADO_RAM.posiciones_activas and ESTADO_RAM.orden_en_vuelo_symbol is None:
-                ESTADO_RAM.slot_ocupado = False
-
-    EjecutorSniper.ejecutar_senal_sniper = _ejecutar_senal_sniper_blindado_v3
-
-# === INICIO AJUSTES QUIRURGICOS V3.0 (SKILL HUNTER) ===
-if hasattr(EjecutorSniper, 'ejecutar_senal_sniper') and not hasattr(EjecutorSniper, '_orig_ejecutar_gm_cap_v3'):
-    EjecutorSniper._orig_ejecutar_gm_cap_v3 = EjecutorSniper.ejecutar_senal_sniper
-
-    async def _ejecutar_senal_sniper_gm_cap_v3(self, *args, **kwargs):
-        es_prod = __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') != '1'
-        senal_d = None
-        if args and isinstance(args[0], dict):
-            senal_d = args[0]
-        elif 'senal' in kwargs and isinstance(kwargs['senal'], dict):
-            senal_d = kwargs['senal']
-        if es_prod and isinstance(senal_d, dict):
-            sym_s = str(senal_d.get('symbol', ''))
-            side_s = str(senal_d.get('side', 'long')).lower()
-            tk_s = ESTADO_RAM.ticks_ram.get(sym_s)
-            if side_s == 'short' and tk_s is not None:
-                h_now = float(senal_d.get('hurst', getattr(tk_s, 'hurst', 0.45)) or 0.45)
-                z_now = float(senal_d.get('z_score', getattr(tk_s, 'z_score', 0.0)) or 0.0)
-                ema_now = float(getattr(tk_s, 'ema900_dist_pct', 0.0) or 0.0)
-                if h_now > 0.495 and not (abs(z_now) >= 11.5 and ema_now >= 0.0120):
-                    log_sniper(
-                        f'\u26a0\ufe0f [ESCUDO EJECUTOR] Orden SHORT abortada en {sym_s} por Hurst alto (H={h_now:.3f} > 0.495).'
-                    )
-                    return None
-                if sym_s in getattr(cfg, 'CLASE_HIGH_BETA', ()) and (ema_now < 0.0040 or z_now < 4.20):
-                    return None
-        z_val = abs(float(senal_d.get('z_score', 0.0) or 0.0)) if isinstance(senal_d, dict) else 0.0
-        orig_hb = getattr(cfg, 'NOCIONAL_MAX_HIGH_BETA_USDT', 16.50)
-        tiene_t1 = hasattr(cfg, 'NOCIONAL_MAX_TIER1_USDT')
-        orig_t1 = getattr(cfg, 'NOCIONAL_MAX_TIER1_USDT', 25.00)
-        try:
-            if z_val > 8.50 and es_prod:
-                factor_gm = max(0.55, min(1.0, math.exp(-0.12 * (z_val - 8.50))))
-                cfg.NOCIONAL_MAX_HIGH_BETA_USDT = round(float(orig_hb) * factor_gm, 4)
-                if tiene_t1:
-                    cfg.NOCIONAL_MAX_TIER1_USDT = round(float(orig_t1) * factor_gm, 4)
-            return await EjecutorSniper._orig_ejecutar_gm_cap_v3(self, *args, **kwargs)
-        finally:
-            cfg.NOCIONAL_MAX_HIGH_BETA_USDT = orig_hb
-            if tiene_t1:
-                cfg.NOCIONAL_MAX_TIER1_USDT = orig_t1
-
-    EjecutorSniper.ejecutar_senal_sniper = _ejecutar_senal_sniper_gm_cap_v3
-
-if '_orig_penny_jump_v3' not in globals():
-    _orig_penny_jump_v3 = calcular_precio_penny_jump
-
-    def calcular_precio_penny_jump(
-        side: str, best_bid: float, best_ask: float, tick_size: float, ofi: float
-    ) -> float:
-        ofi_eff = float(ofi)
-        if __import__('os').getenv('TRIBRAIN_TEST_MODE', '0') != '1' and abs(ofi_eff) >= 0.10:
-            ofi_eff = 0.35 if ofi_eff >= 0 else -0.35
-        return _orig_penny_jump_v3(side, best_bid, best_ask, tick_size, ofi_eff)
-# === FIN AJUSTES QUIRURGICOS V3.0 (SKILL HUNTER) ===

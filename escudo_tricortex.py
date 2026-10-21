@@ -292,13 +292,6 @@ class OrquestadorTriCortex:
                             )
                             if sugerencia == "VETO_TOXIC" and not toxicidad_fisica:
                                 sugerencia = "LONG_ONLY"
-                            presion_bajista_real = (
-                                tk_sym is not None
-                                and tk_sym.bid > 0.0
-                                and (tk_sym.ema900_dist_pct <= -0.0040 or tk_sym.delta_p_pct <= -0.0040)
-                            )
-                            if sugerencia == "SHORT_ONLY" and not presion_bajista_real:
-                                sugerencia = "LONG_ONLY"
                             if sugerencia in ("LONG_ONLY", "SHORT_ONLY", "EXTREME_Z_ONLY", "VETO_TOXIC"):
                                 perm.modo_regimen = sugerencia
                                 perm.aprobado_groq = sugerencia != "VETO_TOXIC"
@@ -508,73 +501,15 @@ class OrquestadorTriCortex:
 # Instancia Singleton global del Orquestador Tri-Cortex
 ESCUDO_TRICORTEX: OrquestadorTriCortex = OrquestadorTriCortex()
 
-# === [PASO 5 SKILL HUNTER V3.0: KELLY GLOSTEN-MILGROM (O(1) PURO SIN INSPECT)] ===
-def calcular_atenuacion_glosten_milgrom(f_kelly: float, z_score: float, z_crit: float = 8.50, kappa: float = 0.025) -> float:
-    """Contrae de forma no-monotona la fraccion de Kelly cuando |Z| supera el umbral de seleccion adversa z_crit."""
-    f_val = float(f_kelly)
-    z_abs = abs(float(z_score))
-    if z_abs <= z_crit:
-        return f_val
-    f_min = float(getattr(cfg, "KELLY_FRACCION_MIN", 0.42))
-    f_max = float(getattr(cfg, "KELLY_FRACCION_MAX", 0.62))
-    return round(max(f_min, min(f_max, f_val * math.exp(-kappa * (z_abs - z_crit)))), 4)
 
-
-if "calcular_fraccion_kelly_antifragil" in globals() and not hasattr(sys.modules[__name__], "_orig_p5_kelly_fn"):
-    _orig_p5_kelly_fn = calcular_fraccion_kelly_antifragil
-
-    def calcular_fraccion_kelly_antifragil(z_score: float, ofi: float, *args, **kwargs):
-        res = _orig_p5_kelly_fn(z_score, ofi, *args, **kwargs)
-        z_abs = abs(float(z_score))
-        if z_abs <= 8.50:
-            return res
-        if isinstance(res, (int, float)):
-            return calcular_atenuacion_glosten_milgrom(float(res), z_abs)
-        if isinstance(res, tuple) and len(res) >= 2 and isinstance(res[0], (int, float)):
-            f_orig = float(res[0])
-            if f_orig <= 1e-9:
-                return res
-            f_gm = calcular_atenuacion_glosten_milgrom(f_orig, z_abs)
-            lista = list(res)
-            lista[0] = f_gm
-            if isinstance(lista[1], (int, float)):
-                lista[1] = round(float(lista[1]) * (f_gm / f_orig), 4)
-            return tuple(lista)
-        return res
-
-# === INICIO AJUSTES QUIRURGICOS V3.0 (SKILL HUNTER) ===
-def calcular_factor_tope_glosten_milgrom(
-    z_score: float, z_crit: float = 8.50, kappa: float = 0.12
-) -> float:
-    z_abs = abs(float(z_score))
-    if z_abs <= float(z_crit):
-        return 1.0
-    factor = math.exp(-float(kappa) * (z_abs - float(z_crit)))
-    return float(max(0.55, min(1.0, factor)))
-# === FIN AJUSTES QUIRURGICOS V3.0 (SKILL HUNTER) ===
-
-
-
-# === [PHANTOM V1.0 SYMBOLIC HIGH-ENTROPY REGIME FILTER (P-07)] ===
-if "ESCUDO_TRICORTEX" in globals():
-    _ClsEscudoPhantom = type(ESCUDO_TRICORTEX)
-    for _m_groq_name in ("sincronizar_matriz_groq", "actualizar_matriz_direccional_groq", "consultar_matriz_groq"):
-        if hasattr(_ClsEscudoPhantom, _m_groq_name) and not hasattr(_ClsEscudoPhantom, "_orig_groq_phantom"):
-            _ClsEscudoPhantom._orig_groq_phantom = getattr(_ClsEscudoPhantom, _m_groq_name)
-            async def _sincronizar_matriz_groq_phantom(self, *args, **kwargs):
-                res = await _ClsEscudoPhantom._orig_groq_phantom(self, *args, **kwargs)
-                if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1":
-                    tick_btc = ESTADO_RAM.ticks_ram.get(cfg.SIMBOLO_CENTINELA_MACRO)
-                    ofi_btc = float(getattr(tick_btc, "ofi_l1", 0.0) or 0.0)
-                    for sym in cfg.WHITELIST_CAMPEONES_ALFA:
-                        t_s = ESTADO_RAM.ticks_ram.get(sym)
-                        p_s = ESTADO_RAM.permisos_ram.get(sym)
-                        if t_s is not None and p_s is not None and getattr(p_s, "regimen", "") != "VETO_TOXIC":
-                            ofi_s = float(getattr(t_s, "ofi_l1", 0.0) or 0.0)
-                            if ofi_btc < -0.28 and ofi_s < -0.25:
-                                p_s.regimen = "SHORT_ONLY"
-                                p_s.long_permitido = False
-                                p_s.short_permitido = True
-                return res
-            setattr(_ClsEscudoPhantom, _m_groq_name, _sincronizar_matriz_groq_phantom)
-            break
+# === [PHANTOM V1.0 GLOSTEN-MILGROM KELLY & SYMBOLIC REGIME FILTER (P-07)] ===
+if "_orig_kelly_phantom" not in globals() and "calcular_fraccion_kelly_antifragil" in globals():
+    _orig_kelly_phantom = calcular_fraccion_kelly_antifragil
+    def calcular_fraccion_kelly_antifragil(z_score: float, ofi: float, mult_ia: float = 1.0) -> float:
+        base_k = _orig_kelly_phantom(z_score, ofi, mult_ia)
+        if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1":
+            z_abs = abs(float(z_score))
+            if z_abs > 8.50:
+                exceso = min(1.0, (z_abs - 8.50) / 10.0)
+                base_k = max(cfg.KELLY_FRACCION_MIN, base_k * (1.0 - 0.18 * exceso))
+        return round(float(base_k), 4)
