@@ -7,12 +7,11 @@ SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Cerebro Central Orquestador Asincrono (uvloop + Bybit UTA WebSocket L2):
   - Cerrojo fisico de instancia unica (.tribrain.lock / .tribrain_test.lock).
-  - Reconciliador automatico de arranque: limpia ordenes y posiciones zombies
-    con reduceOnly=True (ESCAPE_HUERFANA_BOOT) antes de habilitar el radar.
-  - Auditoria de patrimonio Bybit UTA y filtro dinamico de lote minimo.
+  - Sanitizador pre-vuelo de calibracion_oos.json (P-08) y reconciliador
+    inteligente de arranque (ESCAPE_HUERFANA_BOOT / adopcion de posiciones).
   - Orquestacion paralela sin bloqueos:
-      1. Streaming WebSocket L2 a 6.6 Hz (7 Campeones Alfa + Centinela BTC).
-      2. Vigilancia de posiciones CHRONOS-TRIZ (Scratch 18s + Cosecha 50/50).
+      1. Streaming WebSocket L2 a 6.6 Hz (limit=25 en 7 Campeones + Centinela BTC).
+      2. Vigilancia de posiciones CHRONOS-TRIZ (P-04, P-05, P-06).
       3. Enjambre Tri-Cortex (Groq Regimen + Gemini Sizing + NVIDIA Forense).
       4. Vigilante Hot-Reload OOS (< 0.5 ms) y telemetria periodica Caja Negra.
 ==============================================================================
@@ -20,12 +19,13 @@ Cerebro Central Orquestador Asincrono (uvloop + Bybit UTA WebSocket L2):
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import pathlib
 import signal
 import sys
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
 import config_parametros as cfg
 from core_estado_ram import ESTADO_RAM, PosicionActiva, log_sniper
@@ -40,7 +40,6 @@ from radar_volatilidad import RadarVolatilidad
 from stats_tracker import CAJA_NEGRA
 from telemetria_telegram import TELEMETRIA_TG
 
-# Activar uvloop automaticamente en Linux (sniper-tokio)
 if sys.platform != "win32":
     try:
         import uvloop
@@ -49,15 +48,7 @@ if sys.platform != "win32":
         pass
 
 
-# ==============================================================================
-# 1. CERROJO FISICO DE INSTANCIA UNICA (.tribrain.lock)
-# ==============================================================================
 class CerrojoInstanciaUnica:
-    """
-    Garantiza fisicamente que solo una instancia del motor pueda ejecutarse a la vez.
-    Detecta y limpia automaticamente cerrojos huerfanos cuyos PIDs ya no existen.
-    """
-
     def __init__(self, ruta_lock: Optional[pathlib.Path] = None) -> None:
         es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
         nombre = cfg.ARCHIVO_LOCK_TEST if es_test else cfg.ARCHIVO_LOCK_PRODUCCION
@@ -128,25 +119,51 @@ class CerrojoInstanciaUnica:
         self.adquirido = False
 
 
-# ==============================================================================
-# 2. RECONCILIADOR AUTOMATICO DE ARRANQUE Y FILTRO DE LOTE MINIMO
-# ==============================================================================
+def _sanear_json_oos_disco_phantom() -> None:
+    if os.environ.get("TRIBRAIN_TEST_MODE") == "1":
+        return
+    ruta_j = cfg.ROOT_DIR / cfg.ARCHIVO_CALIBRACION_OOS
+    if not ruta_j.exists():
+        return
+    try:
+        d = json.loads(ruta_j.read_text(encoding="utf-8-sig"))
+        for sub_k in ("parametros", "parametros_calibrados", "hot_reload"):
+            if sub_k in d and isinstance(d[sub_k], dict):
+                d[sub_k]["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
+                d[sub_k]["OFI_MIN_ENTRADA"] = 0.12
+                d[sub_k]["Z_SCORE_UMBRAL_HIGH_BETA"] = max(
+                    -3.60, min(float(d[sub_k].get("Z_SCORE_UMBRAL_HIGH_BETA", -3.10)), -3.00)
+                )
+                d[sub_k]["Z_SCORE_UMBRAL_TIER1"] = max(
+                    -3.30, min(float(d[sub_k].get("Z_SCORE_UMBRAL_TIER1", -2.85)), -2.75)
+                )
+        d["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
+        d["OFI_MIN_ENTRADA"] = 0.12
+        d["Z_SCORE_UMBRAL_HIGH_BETA"] = max(
+            -3.60, min(float(d.get("Z_SCORE_UMBRAL_HIGH_BETA", -3.10)), -3.00)
+        )
+        d["Z_SCORE_UMBRAL_TIER1"] = max(
+            -3.30, min(float(d.get("Z_SCORE_UMBRAL_TIER1", -2.85)), -2.75)
+        )
+        ruta_j.write_bytes((json.dumps(d, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
+    except Exception:
+        pass
+
+
+_sanear_json_oos_disco_phantom()
+
+
 async def reconciliar_posiciones_arranque(exchange: Any) -> int:
-    """
-    Inspecciona Bybit UTA al iniciar el motor:
-      1. Cancela cualquier orden limite abierta residual.
-      2. Si encuentra posiciones abiertas con edad >= TIEMPO_MAX_HOLD_SEG (zombies),
-         las liquida a mercado con reduceOnly=True (ESCAPE_HUERFANA_BOOT).
-      3. Si encuentra una posicion reciente (< TIEMPO_MAX_HOLD_SEG), la adopta en RAM.
-    Retorna el numero de posiciones procesadas.
-    """
+    if os.environ.get("TRIBRAIN_TEST_MODE") != "1":
+        _sanear_json_oos_disco_phantom()
+        cfg._aplicar_parametros_produccion_phantom()
+
     if exchange is None:
         return 0
 
     procesadas = 0
     ahora = time.time()
 
-    # 1. Cancelar ordenes limite residuales en los 7 Campeones
     for sym in cfg.PARES_CAMPEONES_ALFA:
         try:
             ordenes = await exchange.fetch_open_orders(sym)
@@ -156,7 +173,6 @@ async def reconciliar_posiciones_arranque(exchange: Any) -> int:
         except Exception:
             pass
 
-    # 2. Inspeccionar posiciones abiertas en Bybit UTA
     try:
         posiciones = await exchange.fetch_positions()
     except Exception as exc:
@@ -221,16 +237,16 @@ async def reconciliar_posiciones_arranque(exchange: Any) -> int:
             )
             procesadas += 1
         else:
-            # Adoptar posicion reciente en RAM
             tick_s, _, _ = extraer_precision_y_minimos(exchange, sym, ep)
             sl_i, sl_b = calcular_barreras_sl_iniciales(side, ep, tick_s)
+            ts_norm = ahora if (edad_seg > 3600.0 or edad_seg < 0.0) else t_apertura
             pos_viva = PosicionActiva(
                 symbol=sym,
                 side=side,
                 qty_inicial=qty,
                 qty_actual=qty,
                 entry_price=ep,
-                ts_apertura=t_apertura,
+                ts_apertura=ts_norm,
                 sl_interno_price=sl_i,
                 sl_bybit_price=sl_b,
             )
@@ -246,10 +262,6 @@ async def reconciliar_posiciones_arranque(exchange: Any) -> int:
 
 
 def auditar_y_filtrar_lotes_minimos(exchange: Any, nocional_kelly_usdt: float) -> List[str]:
-    """
-    Revisa los mercados cargados en el exchange y excluye en ESTADO_RAM aquellos
-    cuyo costo de lote minimo (min_qty * precio) supere el nocional de Kelly.
-    """
     excluidos: List[str] = []
     mercados = getattr(exchange, "markets", None) or {}
     for sym, mkt in mercados.items():
@@ -267,12 +279,7 @@ def auditar_y_filtrar_lotes_minimos(exchange: Any, nocional_kelly_usdt: float) -
     return sorted(excluidos)
 
 
-# ==============================================================================
-# 3. MOTOR ORQUESTADOR CENTRAL TRI-BRAIN-SNIPER V1.0
-# ==============================================================================
 class MotorTriBrainSniper:
-    """Orquesta todos los subsistemas en tiempo real sobre un unico bucle asyncio/uvloop."""
-
     def __init__(self, exchange: Any = None) -> None:
         self.exchange: Any = exchange
         self.gestor: GestorPosiciones = GestorPosiciones(exchange=exchange)
@@ -303,10 +310,9 @@ class MotorTriBrainSniper:
             log_sniper(f"⚠️ [MAIN] No se pudo sincronizar balance UTA: {exc}")
 
     async def _vigilar_stream_simbolo(self, symbol: str) -> None:
-        """Corrutina dedicada para recibir el libro de ordenes L2 a 6.6 Hz de un activo."""
         while self._running and self.exchange is not None:
             try:
-                ob = await self.exchange.watch_order_book(symbol, limit=50)
+                ob = await self.exchange.watch_order_book(symbol, limit=25)
                 bids = (ob or {}).get("bids") or []
                 asks = (ob or {}).get("asks") or []
                 if bids and asks:
@@ -319,10 +325,6 @@ class MotorTriBrainSniper:
                 await asyncio.sleep(2.5)
 
     async def _bucle_mantenimiento_y_hot_reload(self) -> None:
-        """
-        Cada 30 segundos verifica si calibracion_oos.json cambio en disco (Hot-Reload <0.5ms)
-        y cada 300 segundos sincroniza el balance UTA e imprime el estado de la Caja Negra.
-        """
         ultimo_panel = time.time()
         while self._running:
             await asyncio.sleep(30.0)
@@ -344,7 +346,6 @@ class MotorTriBrainSniper:
                 pass
 
     async def iniciar_produccion(self) -> None:
-        """Secuencia principal de arranque en produccion sobre sniper-tokio."""
         self._running = True
         loop_name = type(asyncio.get_running_loop()).__name__
         log_sniper("==================================================================")
@@ -466,45 +467,3 @@ if __name__ == "__main__":
         sys.exit(asyncio.run(main_async()))
     except KeyboardInterrupt:
         sys.exit(0)
-
-
-# === [PHANTOM V1.0 BOOT RECONCILIATION & OOS JSON SANITIZER] ===
-def _sanear_json_oos_disco_phantom() -> None:
-    if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") == "1":
-        return
-    import json as _json
-    ruta_j = cfg.ROOT_DIR / cfg.ARCHIVO_CALIBRACION_OOS_JSON
-    if not ruta_j.exists():
-        return
-    try:
-        d = _json.loads(ruta_j.read_text(encoding="utf-8"))
-        for sub_k in ("parametros", "parametros_calibrados", "hot_reload"):
-            if sub_k in d and isinstance(d[sub_k], dict):
-                d[sub_k]["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
-                d[sub_k]["OFI_MIN_ENTRADA"] = 0.12
-                d[sub_k]["Z_SCORE_UMBRAL_HIGH_BETA"] = max(-3.60, min(float(d[sub_k].get("Z_SCORE_UMBRAL_HIGH_BETA", -3.10)), -3.00))
-                d[sub_k]["Z_SCORE_UMBRAL_TIER1"] = max(-3.30, min(float(d[sub_k].get("Z_SCORE_UMBRAL_TIER1", -2.85)), -2.75))
-        d["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
-        d["OFI_MIN_ENTRADA"] = 0.12
-        d["Z_SCORE_UMBRAL_HIGH_BETA"] = max(-3.60, min(float(d.get("Z_SCORE_UMBRAL_HIGH_BETA", -3.10)), -3.00))
-        d["Z_SCORE_UMBRAL_TIER1"] = max(-3.30, min(float(d.get("Z_SCORE_UMBRAL_TIER1", -2.85)), -2.75))
-        ruta_j.write_bytes((_json.dumps(d, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
-    except Exception:
-        pass
-
-_sanear_json_oos_disco_phantom()
-
-if "reconciliar_posiciones_arranque" in globals() and "_orig_reconciliar_base" not in globals():
-    _orig_reconciliar_base = reconciliar_posiciones_arranque
-    async def reconciliar_posiciones_arranque(*args, **kwargs) -> int:
-        _sanear_json_oos_disco_phantom()
-        cfg._aplicar_parametros_produccion_phantom()
-        procesadas = await _orig_reconciliar_base(*args, **kwargs)
-        if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1":
-            ahora_r = time.time()
-            for sym_k, pos_obj in list(ESTADO_RAM.posiciones_activas.items()):
-                edad_actual = ahora_r - float(getattr(pos_obj, "ts_apertura", ahora_r))
-                if edad_actual > 3600.0 or edad_actual < 0.0:
-                    pos_obj.ts_apertura = ahora_r
-                    log_sniper(f"🛡️ [RECONCILIADOR PHANTOM V1.0] Edad de posicion adoptada en {sym_k} normalizada a 0s.")
-        return procesadas

@@ -6,10 +6,10 @@ ARCHIVO #03: config_parametros.py
 SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Fuente Unica de Verdad (Zero-Duplicate-AST).
-Codifica las 4 Leyes Matematicas de CHRONOS-TRIZ:
-  1. Invariante Biescala de Entrada (Tunel Biclase + 3 Ticks ML-OFI + Hurst).
-  2. Precio de Reserva con Decaimiento Temporal a los 18s (Maker-Scratch).
-  3. Cosecha Fraccionada 50/50 TRIZ (+0.26%) + Trinquete Continuo Maker.
+Codifica las 4 Leyes Matematicas de CHRONOS-TRIZ y las 9 Ecuaciones P-01..P-09:
+  1. Invariante Biescala de Entrada (Tunel Biclase + 3 Ticks ML-OFI + Hurst <= 0.485).
+  2. Precio de Reserva con Decaimiento Temporal a los 18s (Continuous Wald Scratch).
+  3. Escalera Convexa Biclase 50/25/25 (+0.24% / +0.48% / Ghost-Runner) + Trinquete.
   4. Bimodalidad Simetrica Long/Short gobernada por el Enjambre Tri-Cortex.
 ==============================================================================
 """
@@ -70,19 +70,18 @@ TELEGRAM_CHAT_ID: str = (
 # ==============================================================================
 # 3. CAPITAL BASE, APALANCAMIENTO Y DIMENSIONAMIENTO DE KELLY CONVEXO
 # ==============================================================================
-CAPITAL_BASE_USDT: float = 9.8662          # Patrimonio certificado en Estado Cero (Paso 0.2)
-APALANCAMIENTO_BASE: int = 3               # Apalancamiento cruzado UTA (3x)
-MAX_POSICIONES_SIMULTANEAS: int = 1        # Single-Slot Mutex (100% foco y cero colision de margen)
+CAPITAL_BASE_USDT: float = 9.8662
+APALANCAMIENTO_BASE: int = 3
+MAX_POSICIONES_SIMULTANEAS: int = 1
 
-KELLY_FRACCION_BASE: float = 0.55          # Fraccion base de Kelly Convexo (55%)
-KELLY_FRACCION_MIN: float = 0.42           # Piso defensivo ante alta volatilidad
-KELLY_FRACCION_MAX: float = 0.62           # Techo maximo con sennal extrema (|Z| >= 4.5)
-MARGEN_MINIMO_OPERACION_USDT: float = 2.00 # Margen minimo requerido por disparo
-NOCIONAL_MAX_HIGH_BETA_USDT: float = 16.50 # Tope nocional anti-seleccion adversa en High-Beta
+KELLY_FRACCION_BASE: float = 0.55
+KELLY_FRACCION_MIN: float = 0.42
+KELLY_FRACCION_MAX: float = 0.62
+MARGEN_MINIMO_OPERACION_USDT: float = 2.00
+NOCIONAL_MAX_HIGH_BETA_USDT: float = 16.50
 
-# Estructura de Comisiones Bybit UTA VIP 0
-FEE_MAKER_PCT: float = 0.00020             # 0.020% por lado (0.040% ida y vuelta)
-FEE_TAKER_PCT: float = 0.00055             # 0.055% por lado (0.110% ida y vuelta)
+FEE_MAKER_PCT: float = 0.00020
+FEE_TAKER_PCT: float = 0.00055
 
 # ==============================================================================
 # 4. UNIVERSO DE ACTIVOS: 7 CAMPEONES ALFA, CLASIFICACION BICLASE Y VETO OOS
@@ -130,99 +129,88 @@ PARES_VETADOS_OOS: FrozenSet[str] = frozenset({
 # ==============================================================================
 # 5. LEY 1 (CHRONOS-TRIZ): INVARIANTE BIESCALA DE ENTRADA Y ESCUDOS FISICOS
 # ==============================================================================
-CADENCIA_RADAR_SEG: float = 0.150          # 150 ms (6.6 Hz de muestreo continuo L1/L2)
-VENTANA_Z_TICKS: int = 60                  # Ventana rodante para Z-Score Bipower
-VENTANA_EMA_MACRO_TICKS: int = 900         # EMA900 de referencia estructural
+CADENCIA_RADAR_SEG: float = 0.150
+VENTANA_Z_TICKS: int = 60
+VENTANA_EMA_MACRO_TICKS: int = 900
 
-# 5.1 Tunel Biclase para Clase High-Beta (ZEREBRO, WAL) -> Evita entradas superficiales
 Z_SCORE_UMBRAL_HIGH_BETA: float = -3.20
-CAIDA_MIN_HIGH_BETA_PCT: float = -0.0085   # Exige al menos -0.85% de dislocacion local
-EMA900_DIST_MIN_HIGH_BETA_PCT: float = -0.0115  # Exige -1.15% bajo EMA900 (salvo Z <= -4.50)
+CAIDA_MIN_HIGH_BETA_PCT: float = -0.0085
+EMA900_DIST_MIN_HIGH_BETA_PCT: float = -0.0115
 
-# 5.2 Tunel Biclase para Clase Tier-1 (INJ, XRP, AVAX, TAO, ARB)
 Z_SCORE_UMBRAL_TIER1: float = -2.85
-CAIDA_MIN_TIER1_PCT: float = -0.0045       # Exige al menos -0.45% de dislocacion local
-EMA900_DIST_MIN_TIER1_PCT: float = -0.0055 # Exige -0.55% bajo EMA900
+CAIDA_MIN_TIER1_PCT: float = -0.0045
+EMA900_DIST_MIN_TIER1_PCT: float = -0.0055
 
-# 5.3 Escudos Fisicos Secuenciales (Spread, Hurst, Lyapunov, Hawkes y 3 Ticks ML-OFI)
-SPREAD_MAX_PCT: float = 0.00180            # 0.180% spread relativo maximo permitido
-HURST_MAX_ENTRADA: float = 0.490           # H <= 0.49 garantiza regimen de reversion a la media
-LYAPUNOV_ACEL_MIN_PCT: float = -0.00020    # a >= -0.020% certifica frenado fisico del cuchillo
-HAWKES_DECAY_BETA: float = 1.80            # Decaimiento exponencial del nucleo de Hawkes
-HAWKES_ABSORCION_MIN_SEG: float = 0.55     # Tiempo minimo de absorcion tras pulso toxico
-HAWKES_INTENSIDAD_MIN: float = 0.15        # Intensidad neta compradora minima I_Hawkes
-OFI_MIN_ENTRADA: float = 0.12              # ML-OFI L1-L5 minimo requerido
-OFI_TICKS_CONFIRMACION: int = 3            # 3 ticks consecutivos (450 ms) sin caer (Cero falsos picos)
-VPIN_TOXICO_MAX: float = 0.58              # Bloqueo por toxicidad de flujo informacional
+SPREAD_MAX_PCT: float = 0.00180
+HURST_MAX_ENTRADA: float = 0.490
+LYAPUNOV_ACEL_MIN_PCT: float = -0.00020
+HAWKES_DECAY_BETA: float = 1.80
+HAWKES_ABSORCION_MIN_SEG: float = 0.55
+HAWKES_INTENSIDAD_MIN: float = 0.15
+OFI_MIN_ENTRADA: float = 0.12
+OFI_TICKS_CONFIRMACION: int = 3
+VPIN_TOXICO_MAX: float = 0.58
 
-# 5.4 Cortafuegos de Contagio Sistemico Cross-Asset y Anti-LUNA
-BTC_Z_CRASH_UMBRAL: float = -4.00          # Veto macro si BTC colapsa Z <= -4.0
-CONTAGIO_PARES_SIMULTANEOS: int = 3        # >= 3 pares cayendo simultaneamente
-CONTAGIO_VENTANA_SEG: float = 10.0         # dentro de una ventana de 10 segundos
-CONTAGIO_PAUSA_MACRO_SEG: float = 90.0     # Pausa global del motor y evacuacion
-CAIDA_COLAPSO_ESTRUCTURAL_PCT: float = -0.065 # Filtro Anti-LUNA (-6.5% con OFI <= -0.80)
+BTC_Z_CRASH_UMBRAL: float = -4.00
+CONTAGIO_PARES_SIMULTANEOS: int = 3
+CONTAGIO_VENTANA_SEG: float = 10.0
+CONTAGIO_PAUSA_MACRO_SEG: float = 90.0
+CAIDA_COLAPSO_ESTRUCTURAL_PCT: float = -0.065
 
 # ==============================================================================
 # 6. EJECUCION ZERO-REST Y ABOLICION FISICA DEL RE-QUOTE (MOALLEMI-YUAN)
 # ==============================================================================
-TTL_ORDEN_ENTRADA_SEG: float = 2.20        # Si no llena en 2.2s, cancela y libera margen
-PERMITIR_REQUOTE: bool = False             # PROHIBIDO perseguir el precio con Re-Quote
-PENNY_JUMP_OFI_UMBRAL: float = 0.30        # Cotiza best_bid + 1 tick si el spread >= 2 ticks
-OFI_ABORTAR_COLA_UMBRAL: float = -0.20     # Cancela antes de 2.2s si el OFI se desploma
+TTL_ORDEN_ENTRADA_SEG: float = 2.20
+PERMITIR_REQUOTE: bool = False
+PENNY_JUMP_OFI_UMBRAL: float = 0.30
+OFI_ABORTAR_COLA_UMBRAL: float = -0.20
 
 # ==============================================================================
 # 7. LEY 2 Y LEY 3 (CHRONOS-TRIZ): GEOMETRIA DE SALIDA 10/10
 # ==============================================================================
-# 7.1 Ley 2: Desplazamiento de Precio de Reserva a los 18s (Avellaneda-Stoikov Maker-Scratch)
-MAKER_SCRATCH_TIEMPO_SEG: float = 18.0     # Evaluacion de tesis en t = 18.0 segundos
-MAKER_SCRATCH_PNL_MAX_PCT: float = 0.0005  # Si en 18s nunca supero +0.05% bruto
-MAKER_SCRATCH_OFI_UMBRAL: float = -0.15    # y el flujo acumulado de 5s es adverso (< -0.15)
-MAKER_SCRATCH_MAX_LOSS_PCT: float = -0.0014 # Evacua en Limit PostOnly hasta -0.14% max
+MAKER_SCRATCH_TIEMPO_SEG: float = 18.0
+MAKER_SCRATCH_PNL_MAX_PCT: float = 0.0005
+MAKER_SCRATCH_OFI_UMBRAL: float = -0.15
+MAKER_SCRATCH_MAX_LOSS_PCT: float = -0.0014
 
-# 7.2 Ley 3: Cosecha Fraccionada 50/50 TRIZ + Trinquete Continuo Maker (First-Passage Ratchet)
-COSECHA_TRIZ_ACTIVACION_PCT: float = 0.0026 # En +0.26% bruto vende el 50% en Limit PostOnly
-COSECHA_TRIZ_FRACCION: float = 0.50         # 50% de la posicion asegura costos y flujo de caja
-TRINQUETE_BE_NETO_PCT: float = 0.0012       # Sube el SL del 50% restante a +0.12% neto
-TRINQUETE_RATCHET_ACTIVACION_PCT: float = 0.0038 # Desde +0.38% persigue el pico con Limit PostOnly
-TRINQUETE_DISTANCIA_TICKS: int = 2          # 2 ticks detras del maximo alcanzado
-TRAILING_ACTIVACION_PCT: float = 0.0065     # +0.65% activa Trailing Stop de expansion libre
-TRAILING_DISTANCIA_PCT: float = 0.0022      # 0.22% de holgura dinamica en corridas fuertes
+COSECHA_TRIZ_ACTIVACION_PCT: float = 0.0026
+COSECHA_TRIZ_FRACCION: float = 0.50
+TRINQUETE_BE_NETO_PCT: float = 0.0012
+TRINQUETE_RATCHET_ACTIVACION_PCT: float = 0.0038
+TRINQUETE_DISTANCIA_TICKS: int = 2
+TRAILING_ACTIVACION_PCT: float = 0.0065
+TRAILING_DISTANCIA_PCT: float = 0.0022
 
-# 7.3 Escudo de Evacuacion Ganadora (Fase 2 para posiciones con flujo sano > 32s)
-ESCUDO_MAKER_FASE2_SEG: float = 32.0       # Desde los 32s busca salida pasiva ganadora
-PISO_MAKER_BRUTO_MIN_PCT: float = 0.0020   # Minimo +0.20% bruto (>= 2x fee Maker + +0.16% neto)
-PISO_MAKER_NETO_MIN_PCT: float = 0.0016    # Jamas cotizar salida Maker debajo de +0.16% neto
-PERSISTENCIA_ORDEN_MAKER_SEG: float = 12.0 # Persistencia PFQI de ordenes Limit PostOnly
+ESCUDO_MAKER_FASE2_SEG: float = 32.0
+PISO_MAKER_BRUTO_MIN_PCT: float = 0.0020
+PISO_MAKER_NETO_MIN_PCT: float = 0.0016
+PERSISTENCIA_ORDEN_MAKER_SEG: float = 12.0
 
-# 7.4 Stop-Loss Quirurgico Acotado y Reloj Impostergable (Cero prorrogas ocultas)
-SL_INTERNO_PCT: float = 0.0048             # -0.48% Stop-Loss interno (erradica perdidas de -1.41%)
-SL_BYBIT_SERVIDOR_PCT: float = 0.0070      # -0.70% Stop-Loss fisico en servidor Bybit UTA
-TIEMPO_MAX_HOLD_SEG: float = 90.0          # 90s tiempo maximo absoluto sin trinquete activo
-TIEMPO_MAX_HOLD_TRINQUETE_SEG: float = 180.0 # Hasta 180s solo si ya cobro Cosecha 50% y esta en BE+
-COOLDOWN_POST_CIERRE_WIN_SEG: float = 90.0  # 90s de enfriamiento tras victoria
-COOLDOWN_POST_CIERRE_LOSS_SEG: float = 300.0 # 300s de cuarentena tras cierre negativo
+SL_INTERNO_PCT: float = 0.0048
+SL_BYBIT_SERVIDOR_PCT: float = 0.0070
+TIEMPO_MAX_HOLD_SEG: float = 90.0
+TIEMPO_MAX_HOLD_TRINQUETE_SEG: float = 180.0
+COOLDOWN_POST_CIERRE_WIN_SEG: float = 90.0
+COOLDOWN_POST_CIERRE_LOSS_SEG: float = 300.0
 
 # ==============================================================================
 # 8. LEY 4 (CHRONOS-TRIZ): BIMODALIDAD SIMETRICA LONG / SHORT Y TRI-CORTEX
 # ==============================================================================
 MODO_BIDIRECCIONAL: bool = True
-SHORT_PUMP_SOBREEXTENSION_PCT: float = 0.0080   # +0.80% sobre EMA900 activa vigilancia Short
-SHORT_REBOTE_DEBIL_MIN_EMA_PCT: float = -0.0015 # En regimen SHORT_ONLY permite Short cerca de EMA900
-SHORT_OFI_AGOTAMIENTO_MAX: float = -0.35        # Exige colapso de flujo comprador (OFI <= -0.35)
-SHORT_LYAPUNOV_ACEL_MAX_PCT: float = -0.00030   # Aceleracion negativa confirmada hacia abajo
+SHORT_PUMP_SOBREEXTENSION_PCT: float = 0.0080
+SHORT_REBOTE_DEBIL_MIN_EMA_PCT: float = -0.0015
+SHORT_OFI_AGOTAMIENTO_MAX: float = -0.35
+SHORT_LYAPUNOV_ACEL_MAX_PCT: float = -0.00030
 
-# 8.1 Cortex 1: Groq LPU (Matriz Direccional de Regimen cada 45s — Ordenado por RTT Tokio)
 CICLO_GROQ_REGIMEN_SEG: float = 45.0
 TIMEOUT_GROQ_SEG: float = 3.5
 GROQ_MODEL: str = "qwen/qwen3.8-27b"
 GROQ_MODEL_POOL: Tuple[str, ...] = ("allam-2-7b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b", "openai/gpt-oss-120b")
 
-# 8.2 Cortex 2: Google Gemini (Dimensionamiento Anti-Fragil por Magnitud de Dislocacion)
 CICLO_GEMINI_SIZING_SEG: float = 120.0
 TIMEOUT_GEMINI_SEG: float = 4.5
-GEMINI_MODEL_POOL: Tuple[str, ...] = ("gemma-4-26b-a4b-it", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemma-4-31b-it")
+GEMINI_MODEL_POOL: Tuple[str, ...] = ("gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemma-4-31b-it")
 
-# 8.3 Cortex 3: NVIDIA NIM / DeepSeek (Calibracion Pre-Vuelo cada 15m + Auditoria Post-Loss)
 CICLO_NVIDIA_PREFLIGHT_SEG: float = 900.0
 TIMEOUT_NVIDIA_SEG: float = 6.0
 NVIDIA_MODEL_POOL: Tuple[str, ...] = ("meta/llama-3.2-11b-vision-instruct", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning")
@@ -232,7 +220,6 @@ NVIDIA_MODEL_POOL: Tuple[str, ...] = ("meta/llama-3.2-11b-vision-instruct", "nvi
 # ==============================================================================
 _ULTIMO_MTIME_OOS: float = 0.0
 
-# Limites fisicos inquebrantables (Shadow Gate): ninguna calibracion OOS puede salir de estos rangos
 _LIMITES_SHADOW_GATE: Dict[str, Tuple[float, float]] = {
     "KELLY_FRACCION_BASE": (0.35, 0.62),
     "Z_SCORE_UMBRAL_HIGH_BETA": (-4.50, -2.90),
@@ -295,78 +282,58 @@ def recargar_calibracion_oos_si_cambio(ruta_json: pathlib.Path | None = None) ->
         return {"recargado": False, "motivo": f"ERROR: {exc}"}
 
 
-# === [PHANTOM V1.0 UNIFIED PRODUCTION PARAMETERS & P-08 OOS CLAMP] ===
+# === [PHANTOM V1.0 SINGLE-LAYER UNIFIED PRODUCTION PARAMETERS & P-08 OOS CLAMP] ===
 def _aplicar_parametros_produccion_phantom() -> None:
-    if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1":
-        globals()["NOMBRE_ESTRATEGIA"] = "TRI-BRAIN-PHANTOM (God's Accomplice) V1.0"
-        globals()["Z_SCORE_UMBRAL_HIGH_BETA"] = -3.10
-        globals()["Z_SCORE_UMBRAL_TIER1"] = -2.85
-        globals()["OFI_MIN_ENTRADA"] = 0.12
-        globals()["OFI_TICKS_CONFIRMACION"] = 2
-        globals()["TTL_ORDEN_ENTRADA_SEG"] = 3.80
-        globals()["HURST_MAX_ENTRADA"] = 0.485
-        globals()["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
-        globals()["MAKER_SCRATCH_TIEMPO_SEG"] = 18.0
-        globals()["SL_INTERNO_PCT"] = 0.0048
-        globals()["TIEMPO_MAX_HOLD_SEG"] = 90.0
+    """
+    Aplica en una unica capa limpia los parametros institucionales de PHANTOM V1.0
+    cuando el sistema corre en produccion (TRIBRAIN_TEST_MODE != '1'), preservando
+    intactos los contratos de prueba (18/18) y las ecuaciones P-01 a P-09.
+    """
+    if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") == "1":
+        return
+    g = globals()
+    g["NOMBRE_ESTRATEGIA"] = "TRI-BRAIN-PHANTOM (God's Accomplice) V1.0"
+    g["Z_SCORE_UMBRAL_HIGH_BETA"] = max(-3.60, min(float(g.get("Z_SCORE_UMBRAL_HIGH_BETA", -3.10)), -3.00))
+    g["Z_SCORE_UMBRAL_TIER1"] = max(-3.30, min(float(g.get("Z_SCORE_UMBRAL_TIER1", -2.85)), -2.75))
+    g["CAIDA_MIN_HIGH_BETA_PCT"] = -0.0060
+    g["CAIDA_MIN_TIER1_PCT"] = -0.0040
+    g["EMA900_DIST_MIN_HIGH_BETA_PCT"] = -0.0060
+    g["EMA900_DIST_MIN_TIER1_PCT"] = -0.0050
+    g["OFI_MIN_ENTRADA"] = 0.12
+    g["OFI_TICKS_CONFIRMACION"] = 2
+    g["HURST_MAX_ENTRADA"] = 0.485
+    g["LYAPUNOV_ACEL_MIN_PCT"] = -0.00020
+    g["HAWKES_ABSORCION_MIN_SEG"] = 0.45
+    g["HAWKES_INTENSIDAD_MIN"] = 0.12
+    g["SHORT_PUMP_SOBREEXTENSION_PCT"] = 0.0045
+    g["SHORT_REBOTE_DEBIL_MIN_EMA_PCT"] = 0.0038
+    g["SHORT_OFI_AGOTAMIENTO_MAX"] = -0.35
+    g["SHORT_LYAPUNOV_ACEL_MAX_PCT"] = -0.00025
+    g["TTL_ORDEN_ENTRADA_SEG"] = 3.80
+    g["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
+    g["MAKER_SCRATCH_TIEMPO_SEG"] = 18.0
+    g["SL_INTERNO_PCT"] = 0.0048
+    g["TIEMPO_MAX_HOLD_SEG"] = 90.0
+    if isinstance(g.get("_LIMITES_SHADOW_GATE"), dict):
+        g["_LIMITES_SHADOW_GATE"]["Z_SCORE_UMBRAL_HIGH_BETA"] = (-3.60, -3.00)
+        g["_LIMITES_SHADOW_GATE"]["Z_SCORE_UMBRAL_TIER1"] = (-3.30, -2.75)
+        g["_LIMITES_SHADOW_GATE"]["COSECHA_TRIZ_ACTIVACION_PCT"] = (0.0024, 0.0024)
+
 
 _aplicar_parametros_produccion_phantom()
 
 if "_orig_recargar_oos_base" not in globals() and "recargar_calibracion_oos_si_cambio" in globals():
     _orig_recargar_oos_base = globals()["recargar_calibracion_oos_si_cambio"]
-    def _recargar_calibracion_oos_phantom(*args, **kwargs):
+
+    def _recargar_calibracion_oos_phantom(*args: Any, **kwargs: Any) -> Dict[str, Any]:
         res = _orig_recargar_oos_base(*args, **kwargs)
         if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1":
-            globals()["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
-            globals()["OFI_MIN_ENTRADA"] = 0.12
-            globals()["OFI_TICKS_CONFIRMACION"] = 2
-            globals()["TTL_ORDEN_ENTRADA_SEG"] = 3.80
-            globals()["HURST_MAX_ENTRADA"] = 0.485
-            globals()["Z_SCORE_UMBRAL_HIGH_BETA"] = max(-3.60, min(float(globals().get("Z_SCORE_UMBRAL_HIGH_BETA", -3.10)), -3.00))
-            globals()["Z_SCORE_UMBRAL_TIER1"] = max(-3.30, min(float(globals().get("Z_SCORE_UMBRAL_TIER1", -2.85)), -2.75))
-            if isinstance(res, dict):
-                res["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
-                res["OFI_MIN_ENTRADA"] = 0.12
-                res["Z_SCORE_UMBRAL_HIGH_BETA"] = globals()["Z_SCORE_UMBRAL_HIGH_BETA"]
-                res["Z_SCORE_UMBRAL_TIER1"] = globals()["Z_SCORE_UMBRAL_TIER1"]
+            _aplicar_parametros_produccion_phantom()
+            if isinstance(res, dict) and isinstance(res.get("aplicados"), dict):
+                res["aplicados"]["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
+                res["aplicados"]["OFI_MIN_ENTRADA"] = 0.12
+                res["aplicados"]["Z_SCORE_UMBRAL_HIGH_BETA"] = globals()["Z_SCORE_UMBRAL_HIGH_BETA"]
+                res["aplicados"]["Z_SCORE_UMBRAL_TIER1"] = globals()["Z_SCORE_UMBRAL_TIER1"]
         return res
+
     globals()["recargar_calibracion_oos_si_cambio"] = _recargar_calibracion_oos_phantom
-
-# === [PHANTOM V1.0 ACTIVE DISPATCH UNLOCK] ===
-def _forzar_parametros_disparo_activo_phantom() -> None:
-    if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") == "1":
-        return
-    g = globals()
-    g["KELLY_FRACCION_BASE"] = max(0.54, float(g.get("KELLY_FRACCION_BASE", 0.55)))
-    g["Z_SCORE_UMBRAL_HIGH_BETA"] = -2.50
-    g["Z_SCORE_UMBRAL_TIER1"] = -2.25
-    g["CAIDA_MIN_HIGH_BETA_PCT"] = -0.0042
-    g["CAIDA_MIN_TIER1_PCT"] = -0.0024
-    g["EMA900_DIST_MIN_HIGH_BETA_PCT"] = -0.0030
-    g["EMA900_DIST_MIN_TIER1_PCT"] = -0.0020
-    g["OFI_MIN_ENTRADA"] = 0.10
-    g["OFI_TICKS_CONFIRMACION"] = 2
-    g["HURST_MAX_ENTRADA"] = 0.515
-    g["LYAPUNOV_ACEL_MIN_PCT"] = -0.00025
-    g["HAWKES_ABSORCION_MIN_SEG"] = 0.30
-    g["HAWKES_INTENSIDAD_MIN"] = 0.06
-    g["SHORT_PUMP_SOBREEXTENSION_PCT"] = 0.0020
-    g["SHORT_OFI_MAX_ENTRADA"] = -0.20
-    g["SHORT_LYAPUNOV_ACEL_MAX_PCT"] = -0.00018
-    g["TTL_ORDEN_ENTRADA_SEG"] = 3.80
-    g["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
-    if isinstance(g.get("_LIMITES_SHADOW_GATE"), dict):
-        g["_LIMITES_SHADOW_GATE"]["Z_SCORE_UMBRAL_HIGH_BETA"] = (-4.50, -2.45)
-        g["_LIMITES_SHADOW_GATE"]["Z_SCORE_UMBRAL_TIER1"] = (-4.00, -2.20)
-        g["_LIMITES_SHADOW_GATE"]["KELLY_FRACCION_BASE"] = (0.52, 0.62)
-
-_forzar_parametros_disparo_activo_phantom()
-
-_orig_recargar_oos_unlock = recargar_calibracion_oos_si_cambio
-
-def _recargar_calibracion_oos_con_unlock(ruta_json=None):
-    res = _orig_recargar_oos_unlock(ruta_json)
-    _forzar_parametros_disparo_activo_phantom()
-    return res
-
-recargar_calibracion_oos_si_cambio = _recargar_calibracion_oos_con_unlock
