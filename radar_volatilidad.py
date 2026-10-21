@@ -12,11 +12,12 @@ Radar Microestructural de Alta Frecuencia (6.6 Hz / 150 ms) en O(1) (< 25 us):
     de Lyapunov en Pisos de Caida.
   - Interceptor Pre-Orden Single-Layer Nativo:
       * P-01: Lead-Lag BTC Cross-Veto conjuntivo (requiere desplazamiento Z_BTC).
-      * P-02: Techo Post-Impulso con Frenado Lyapunov + Confirmacion ML-OFI
-        (H <= 0.640 en LONG con I_Hawkes >= -0.25; H <= 0.585 en SHORT).
-      * P-03: Compuerta Asimetrica sobre min(EMA900, DeltaP) (-0.28% HB /
-        -0.20% T1 en LONG), memoria Z de pump en SHORT y Escudo Fisico
-        Anti-Short-Squeeze (Slope EMA900 <= +0.12% + STEP-LOCK de 600s).
+      * P-02: Acoplamiento Condicional H <-> Z en LONG (H <= 0.495 en caidas
+        normales Z > -4.20; H <= 0.620 exclusivamente en capitulacion profunda
+        Z <= -4.20, Desc <= -0.38% e I_Hawkes > 0.0) y H <= 0.585 en SHORT.
+      * P-03: Memoria de sobreextension de pico (vz.max_sobreextension_ema_pct)
+        en SHORT siempre que ema_rel >= +0.32%, y Escudo Fisico Anti-Squeeze
+        (Slope EMA900 <= +0.12% + STEP-LOCK de 600s).
       * P-09: Enfriamiento Determinista Post-Reconexion WebSocket (4.00s).
 ==============================================================================
 """
@@ -419,20 +420,24 @@ class RadarVolatilidad:
                 umbral_ema_long = max(umbral_ema_long, -0.0018)
             umbral_z_long = -2.45 if es_tier1 else -2.80
 
-            # En LONG: Aprueba H <= 0.485 puro, o H <= 0.640 con frenado de Lyapunov + confirmacion ML-OFI + I_Hawkes >= -0.25
-            absorcion_post_impulso_long = (
-                h_real <= 0.640
-                and z_real <= umbral_z_long
+            # Acoplamiento Condicional H <-> Z en LONG:
+            # 1) Caidas normales (Z > -4.20): exige H <= 0.495.
+            # 2) Capitulacion profunda (Z <= -4.20 y descuento_eff <= -0.38% con I_Hawkes > 0.0): permite H en (0.495, 0.620].
+            h_puro_long = 0.495
+            absorcion_capitulacion_profunda_long = (
+                h_real <= 0.620
+                and z_real <= -4.20
+                and descuento_eff <= -0.0038
                 and ofi_real >= cfg.OFI_MIN_ENTRADA
-                and hawkes_val >= -0.25
+                and hawkes_val > 0.0
                 and lyap_val >= cfg.LYAPUNOV_ACEL_MIN_PCT
             )
-            if h_real > h_max_cfg and not absorcion_post_impulso_long:
+            if h_real > h_puro_long and not absorcion_capitulacion_profunda_long:
                 if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P02_H_L"), 0.0) >= 10.0:
                     _SILENCIO_LOG_PHANTOM[(sym, "P02_H_L")] = ahora_t
                     log_sniper(
                         f"[PHANTOM P-02 PRE-ORDEN] {sym} [LONG] bloqueado ANTES de enviar orden "
-                        f"(H={h_real:.3f} > 0.640 o sin absorcion I_Hawkes={hawkes_val:+.2f})."
+                        f"(H={h_real:.3f} > {h_puro_long:.3f} sin capitulacion profunda Z={z_real:+.2f}, Desc={descuento_eff*100:+.2f}%, I_Hawkes={hawkes_val:+.2f})."
                     )
                 return False
 
@@ -458,20 +463,25 @@ class RadarVolatilidad:
                     )
                 return False
 
+            vz_sym = self.ventanas.get(sym)
+            max_sobreext_pump = float(vz_sym.max_sobreextension_ema_pct if vz_sym is not None else 0.0)
             umbral_ema_short = 0.0032 if es_tier1 else 0.0042
-            sobreext_eff = max(ema_rel, dp_rel)
+            sobreext_eff = (
+                max(ema_rel, dp_rel, max_sobreext_pump)
+                if ema_rel >= 0.0032
+                else max(ema_rel, dp_rel)
+            )
             z_short_eff = max(z_real, float(senal.get("z_score") or 0.0))
             if sobreext_eff < umbral_ema_short or ofi_real > -0.35 or z_short_eff < 1.80:
                 if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_S"), 0.0) >= 12.0:
                     _SILENCIO_LOG_PHANTOM[(sym, "P03_S")] = ahora_t
                     log_sniper(
                         f"[PHANTOM P-03 SHORT] {sym} [SHORT] bloqueado ANTES de orden "
-                        f"(EMA900={ema_rel*100:+.2f}% < +{umbral_ema_short*100:.2f}% | Z_eff={z_short_eff:+.2f} | OFI={ofi_real:+.2f})."
+                        f"(EMA900={ema_rel*100:+.2f}% | SobreextEff={sobreext_eff*100:+.2f}% < +{umbral_ema_short*100:.2f}% | Z_eff={z_short_eff:+.2f} | OFI={ofi_real:+.2f})."
                     )
                 return False
 
             # Escudo Fisico Anti-Short-Squeeze 1: Bloquear si la pendiente EMA900 expande al alza (> +0.12%)
-            vz_sym = self.ventanas.get(sym)
             if vz_sym is not None and len(vz_sym.precios) >= 10:
                 p_now = vz_sym.precios[-1]
                 max_ventana = max(vz_sym.precios)
@@ -658,8 +668,8 @@ class RadarVolatilidad:
             )
             return None
 
-        # En produccion permitimos que H <= 0.640 sea evaluado con absorcion post-impulso en _validar_filtros_phantom_pre_orden
-        h_techo_radar = cfg.HURST_MAX_ENTRADA if es_test else 0.640
+        # En produccion permitimos que H <= 0.620 pase a _validar_filtros_phantom_pre_orden (donde exige Z <= -4.20 si H > 0.495)
+        h_techo_radar = cfg.HURST_MAX_ENTRADA if es_test else 0.620
         if tk.hurst > h_techo_radar and not (es_test and es_z_extremo):
             self._log_alerta_throttled(
                 f"HURST:{symbol}",
