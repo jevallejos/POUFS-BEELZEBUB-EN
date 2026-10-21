@@ -727,8 +727,26 @@ if "GestorPosiciones" in globals():
 
 
 def imprimir_status_cli_verbot() -> None:
+    """Resumen contable con renderizado TrueColor 24-bit RGB e insignias 3D para MobaXterm/PuTTY."""
     import json
     from collections import defaultdict
+
+    # Paleta TrueColor 24-bit ANSI + Pildoras 3D con fondo iluminado
+    RST = "\033[0m"
+    C_BORDER = "\033[38;2;80;140;255m"
+    C_TITLE = "\033[1;38;2;0;240;255m"
+    C_GOLD = "\033[1;38;2;255;215;0m"
+    C_WHITE = "\033[1;38;2;245;248;255m"
+    C_GREEN = "\033[1;38;2;0;255;135m"
+    C_RED = "\033[1;38;2;255;75;95m"
+    C_YELLOW = "\033[1;38;2;255;210;60m"
+    C_MAGENTA = "\033[1;38;2;215;120;255m"
+    # Insignias 3D (Fondo RGB + Texto Negrita)
+    BADGE_WIN = "\033[1;38;2;10;25;15;48;2;0;230;118m 🟩 WIN  \033[0m"
+    BADGE_LOSS = "\033[1;38;2;255;255;255;48;2;220;38;68m 🔴 LOSS \033[0m"
+    BADGE_SCR = "\033[1;38;2;25;20;0;48;2;255;196;0m 🟨 SCR  \033[0m"
+    BADGE_POS = "\033[1;38;2;10;25;15;48;2;0;230;118m 🟩 + \033[0m"
+    BADGE_NEG = "\033[1;38;2;255;255;255;48;2;220;38;68m 🔴 - \033[0m"
 
     stats_f = cfg.ROOT_DIR / cfg.ARCHIVO_STATS_JSONL
     log_f = cfg.ROOT_DIR / getattr(cfg, "ARCHIVO_LOG_SESION", "bot_hft.log")
@@ -765,12 +783,13 @@ def imprimir_status_cli_verbot() -> None:
                 except Exception:
                     pass
 
-    print("------------------------------------------------------------------------------------------")
-    print(f" 📊 CAJA NEGRA : {total} Trades (W: {w} | L: {l} | Scratch 18s: {s} | Cosecha 50%: {triz})")
-    print(f" 🎯 Win Rate   : Clasico {wr:.1f}% | Efectivo {wr_ef:.1f}% | PnL Neto: {pnl:+.4f} USDT | UTA Real: {bal_real} | λ={lam:.2f}")
-    print("------------------------------------------------------------------------------------------")
-    print(f" {'PAR Y DIRECCION':<22} {'TRADES (W/L)':<15} {'WIN RATE':<10} {'HURST MEDIO':<13} {'PNL NETO USDT':<15}")
-    print("------------------------------------------------------------------------------------------")
+    c_pnl_tot = C_GREEN if pnl >= 0 else C_RED
+    print(f"{C_BORDER}------------------------------------------------------------------------------------------{RST}")
+    print(f" {C_TITLE}📊 CAJA NEGRA :{RST} {C_WHITE}{total} Trades{RST} ({C_GREEN}W: {w}{RST} | {C_RED}L: {l}{RST} | {C_YELLOW}Scratch 18s: {s}{RST} | {C_MAGENTA}Cosecha 50%: {triz}{RST})")
+    print(f" {C_GOLD}🎯 Win Rate   :{RST} Clasico {C_WHITE}{wr:.1f}%{RST} | Efectivo {C_GREEN}{wr_ef:.1f}%{RST} | PnL Neto: {c_pnl_tot}{pnl:+.4f} USDT{RST} | UTA Real: {C_GOLD}{bal_real}{RST} | λ={C_TITLE}{lam:.2f}{RST}")
+    print(f"{C_BORDER}------------------------------------------------------------------------------------------{RST}")
+    print(f" {C_TITLE}{'PAR Y DIRECCION':<22} {'TRADES (W/L)':<15} {'WIN RATE':<10} {'HURST MEDIO':<13} {'PNL NETO USDT':<18}{RST}")
+    print(f"{C_BORDER}------------------------------------------------------------------------------------------{RST}")
 
     grupos = defaultdict(list)
     for t in ops:
@@ -786,27 +805,38 @@ def imprimir_status_cli_verbot() -> None:
         h_vals = [float(i.get("hurst_entry", 0.0)) for i in lista if i.get("hurst_entry") is not None]
         h_med = (sum(h_vals) / len(h_vals)) if h_vals else 0.0
         pnl_g = sum(float(i.get("pnl_usdt", 0.0)) for i in lista)
-        ic = "🟩" if pnl_g >= 0 else "🔴"
-        print(f" {k:<22} {f'{len(lista)} ({w_g}W/{l_g}L)':<15} {f'{wr_g:5.1f}%':<10} {f'H={h_med:.3f}':<13} {ic} {pnl_g:+.4f} USDT")
+        badge = BADGE_POS if pnl_g >= 0 else BADGE_NEG
+        c_row = C_GREEN if pnl_g >= 0 else C_RED
+        c_side = C_MAGENTA if "[SHORT]" in k else C_TITLE
+        print(f" {c_side}{k:<22}{RST} {C_WHITE}{f'{len(lista)} ({w_g}W/{l_g}L)':<15}{RST} {c_row}{f'{wr_g:5.1f}%':<10}{RST} {C_YELLOW}{f'H={h_med:.3f}':<13}{RST} {badge} {c_row}{pnl_g:+.4f} USDT{RST}")
 
-    print("------------------------------------------------------------------------------------------")
-    print(" 📜 ULTIMAS 10 OPERACIONES REGISTRADAS EN LA CAJA NEGRA:")
-    print("------------------------------------------------------------------------------------------")
+    print(f"{C_BORDER}------------------------------------------------------------------------------------------{RST}")
+    print(f" {C_MAGENTA}📜 ULTIMAS 10 OPERACIONES REGISTRADAS EN LA CAJA NEGRA:{RST}")
+    print(f"{C_BORDER}------------------------------------------------------------------------------------------{RST}")
     if ops:
         idx_base = max(1, total - 9)
         for idx, op in enumerate(ops[-10:], start=idx_base):
             pnl_u = float(op.get("pnl_usdt", 0.0))
             mot = str(op.get("motivo", ""))
-            ic = "🟩" if pnl_u >= 0 else ("🟨" if "SCRATCH" in mot.upper() else "🔴")
+            if pnl_u >= 0:
+                badge_op = BADGE_WIN
+                c_op = C_GREEN
+            elif "SCRATCH" in mot.upper():
+                badge_op = BADGE_SCR
+                c_op = C_YELLOW
+            else:
+                badge_op = BADGE_LOSS
+                c_op = C_RED
             ts_s = str(op.get("timestamp", ""))[:19]
-            sym_s = str(op.get("symbol", "")).replace("/USDT:USDT", "").ljust(10)
+            sym_s = str(op.get("symbol", "")).replace("/USDT:USDT", "").ljust(9)
             side_s = str(op.get("side", "long")).upper().ljust(5)
             pct_s = float(op.get("pnl_percentage", 0.0))
             hold_s = float(op.get("hold_seg", 0.0))
-            print(f" #{idx:<2} {ic} {ts_s} | {sym_s} [{side_s}] | {pct_s:+6.2f}% ({pnl_u:+.4f} USDT) | {hold_s:4.0f}s | {mot}")
+            # Usamos N° en vez de # para que MobaXterm no lo pinte como comentario de Bash
+            print(f" {C_WHITE}{idx:02d}.{RST} {badge_op} {C_WHITE}{ts_s}{RST} | {C_TITLE}{sym_s}{RST} [{C_MAGENTA}{side_s}{RST}] | {c_op}{pct_s:+6.2f}% ({pnl_u:+.4f} USDT){RST} | {C_YELLOW}{hold_s:3.0f}s{RST} | {c_op}{mot}{RST}")
     else:
-        print("  ⏳ Esperando el primer disparo confirmado...")
-    print("==========================================================================================")
+        print(f"  {C_YELLOW}⏳ Esperando el primer disparo confirmado...{RST}")
+    print(f"{C_BORDER}=========================================================================================={RST}")
 
 
 async def reenviar_ultimo_cierre_cli() -> None:
@@ -832,11 +862,19 @@ async def reenviar_ultimo_cierre_cli() -> None:
         exit_price=float(u.get("exit_price", 0.0)),
         cosecha_50_previa=bool(u.get("cosecha_triz_50", False)),
     )
-    print(f"  ✅ [VERBOT -T] Reenvio manual a Telegram del ultimo cierre ({u['symbol']}): {ok}")
+    print(f"  \033[1;38;2;0;255;135m✅ [VERBOT -T] Reenvio manual a Telegram del ultimo cierre ({u['symbol']}): {ok}\033[0m")
 
 
 async def ejecutar_radar_xray_cli(accion: str = "status") -> None:
     import ccxt.async_support as ccxt
+    RST = "\033[0m"
+    C_BORDER = "\033[38;2;80;140;255m"
+    C_TITLE = "\033[1;38;2;0;240;255m"
+    C_GREEN = "\033[1;38;2;0;255;135m"
+    C_GOLD = "\033[1;38;2;255;215;0m"
+    BADGE_GHOST = "\033[1;38;2;255;255;255;48;2;105;48;195m 👻 PHANTOM 3D \033[0m"
+    BADGE_TG = "\033[1;38;2;255;255;255;48;2;0;136;204m 📲 TELEGRAM \033[0m"
+
     nl = chr(10)
     modo = str(accion or "status").strip().lower()
     ex = ccxt.bybit({
@@ -857,20 +895,20 @@ async def ejecutar_radar_xray_cli(accion: str = "status") -> None:
         tot = float(usdt.get("total") or 0.0)
         lib = float(usdt.get("free") or tot)
 
-        print("------------------------------------------------------------------------------------------")
-        print(f" 👻 RADAR TACTICO GOD'S ACCOMPLICE V1.0 (verbot -x) | Balance UTA: {tot:.4f} USDT (Libre: {lib:.4f})")
-        print("------------------------------------------------------------------------------------------")
+        print(f"{C_BORDER}------------------------------------------------------------------------------------------{RST}")
+        print(f" {BADGE_GHOST} {C_TITLE}RADAR TACTICO GOD'S ACCOMPLICE V1.0 (verbot -x){RST} | Balance UTA: {C_GOLD}{tot:.4f} USDT{RST} (Libre: {C_GREEN}{lib:.4f}{RST})")
+        print(f"{C_BORDER}------------------------------------------------------------------------------------------{RST}")
 
         if not activas:
-            print(" 🟢 Sin posiciones abiertas en Bybit en este instante (0 contratos corriendo).")
-            print("==========================================================================================")
+            print(f" {C_GREEN}🟢 Sin posiciones abiertas en Bybit en este instante (0 contratos corriendo).{RST}")
+            print(f"{C_BORDER}=========================================================================================={RST}")
             msg_vacio = nl.join([
-                "👻 [RADAR PHANTOM (GOD'S ACCOMPLICE) V1.0 EN VIVO]",
+                "�� [RADAR PHANTOM (GOD'S ACCOMPLICE) V1.0 EN VIVO]",
                 "• Estado: Sin posiciones abiertas (0 contratos)",
                 f"• Balance UTA: {tot:.4f} USDT (Libre: {lib:.4f} USDT)",
             ])
             ok_tg = await TELEMETRIA_TG.enviar_mensaje_sistema(msg_vacio)
-            print(f" 📲 [TELEGRAM] Reporte de estado enviado a tu celular: {ok_tg}")
+            print(f" {BADGE_TG} {C_TITLE}Reporte de estado enviado a tu celular:{RST} {C_GREEN}{ok_tg}{RST}")
             return
 
         lineas_tg = [
@@ -902,9 +940,9 @@ async def ejecutar_radar_xray_cli(accion: str = "status") -> None:
                 await ex.create_order(sym, "market", lado_c, qty, None, {"reduceOnly": True})
                 bal2 = await ex.fetch_balance()
                 tot2 = float(((bal2 or {}).get("USDT") or {}).get("total") or tot)
-                print(f" 🟩 COBRO MANUAL PHANTOM EJECUTADO: {sym} [{side.upper()}] ({qty} contratos)")
-                print(f" �� Resultado Capturado: {pct*100:+.2f}% puro ({pnl_u:+.4f} USDT) | Nuevo Balance: {tot2:.4f} USDT")
-                print("==========================================================================================")
+                print(f" {C_GREEN}🟩 COBRO MANUAL PHANTOM EJECUTADO: {sym} [{side.upper()}] ({qty} contratos){RST}")
+                print(f" {C_GOLD}💵 Resultado Capturado: {pct*100:+.2f}% puro ({pnl_u:+.4f} USDT) | Nuevo Balance: {tot2:.4f} USDT{RST}")
+                print(f"{C_BORDER}=========================================================================================={RST}")
                 msg_cierre = nl.join([
                     "💰 [COBRO MANUAL PHANTOM V1.0 (verbot -x cerrar)]",
                     f"• Activo: {sym} [{side.upper()}] ({qty} contratos)",
@@ -913,13 +951,13 @@ async def ejecutar_radar_xray_cli(accion: str = "status") -> None:
                     f"• Nuevo Balance Consolidado: {tot2:.4f} USDT",
                 ])
                 ok_tg = await TELEMETRIA_TG.enviar_mensaje_sistema(msg_cierre)
-                print(f" 📲 [TELEGRAM] Recibo de cobro manual enviado: {ok_tg}")
+                print(f" {BADGE_TG} {C_TITLE}Recibo de cobro manual enviado:{RST} {C_GREEN}{ok_tg}{RST}")
             else:
-                print(f" 🎯 ACTIVO      : {sym} [{side.upper()}] ({qty} contratos)")
-                print(f" 📈 PRECIO      : Entrada {ep} -> Marca Actual {mp}")
-                print(f" 🔥 GANANCIA    : {pct*100:+.2f}% puro ({pct*lev*100:+.2f}% ROE {lev:.0f}x) | {pnl_u:+.4f} USDT")
-                print(f" ⛓️ ESLABON     : {eslabon}/5 (Piso Eslabon: +{piso_sug*100:.2f}% -> Meta: {techo_str}) | SL Bybit: {sl_b}")
-                print("==========================================================================================")
+                print(f" {C_TITLE}🎯 ACTIVO      : {sym} [{side.upper()}] ({qty} contratos){RST}")
+                print(f" {C_GOLD}📈 PRECIO      : Entrada {ep} -> Marca Actual {mp}{RST}")
+                print(f" {C_GREEN}🔥 GANANCIA    : {pct*100:+.2f}% puro ({pct*lev*100:+.2f}% ROE {lev:.0f}x) | {pnl_u:+.4f} USDT{RST}")
+                print(f" {C_TITLE}⛓️ ESLABON     : {eslabon}/5 (Piso Eslabon: +{piso_sug*100:.2f}% -> Meta: {techo_str}) | SL Bybit: {sl_b}{RST}")
+                print(f"{C_BORDER}=========================================================================================={RST}")
                 lineas_tg.extend([
                     f"🎯 {sym} [{side.upper()}] ({qty} contratos)",
                     f"• Precio: {ep} -> {mp}",
@@ -930,6 +968,6 @@ async def ejecutar_radar_xray_cli(accion: str = "status") -> None:
 
         if modo != "cerrar":
             ok_tg = await TELEMETRIA_TG.enviar_mensaje_sistema(nl.join(lineas_tg))
-            print(f" 📲 [TELEGRAM] Alerta en vivo enviada a tu celular: {ok_tg}")
+            print(f" {BADGE_TG} {C_TITLE}Alerta en vivo enviada a tu celular:{RST} {C_GREEN}{ok_tg}{RST}")
     finally:
         await ex.close()

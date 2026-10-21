@@ -108,7 +108,7 @@ verbot() {
     local SUBMODO="${2:-status}"
 
     echo "=========================================================================================="
-    echo " 👁️  PANEL FORENSE EN TIEMPO REAL — TRI-BRAIN-PHANTOM (God's Accomplice) V1.0"
+    echo -e " \033[1;38;2;255;255;255;48;2;105;48;195m 👁️ PHANTOM 3D \033[0m \033[1;38;2;0;240;255mPANEL FORENSE EN TIEMPO REAL — TRI-BRAIN-PHANTOM (God's Accomplice) V1.0\033[0m"
     echo "=========================================================================================="
 
     if [ -f "${LOCK}" ]; then
@@ -117,7 +117,7 @@ verbot() {
         if [ -n "${PID}" ] && kill -0 "${PID}" 2>/dev/null; then
             local PS_INFO
             PS_INFO=$(ps -p "${PID}" -o pid=,etime=,rss=,%cpu= 2>/dev/null | awk '{printf "PID: %s | Uptime: %s | RAM: %.1f MB | CPU: %s%%", $1, $2, $3/1024, $4}' || true)
-            echo " 🟢 MOTOR EN VIVO -> ${PS_INFO}"
+            echo -e " \033[1;38;2;10;25;15;48;2;0;230;118m 🟢 ONLINE \033[0m \033[1;38;2;0;255;135mMOTOR EN VIVO -> ${PS_INFO}\033[0m"
         else
             echo " 🔴 ALERTA: Archivo .tribrain.lock presente (PID ${PID}), pero el proceso no responde."
         fi
