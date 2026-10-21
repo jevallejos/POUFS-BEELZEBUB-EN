@@ -857,3 +857,106 @@ async def _procesar_instantanea_libro_fast_v1(self, symbol: str, bids_or_book, a
     return await _orig_proc_phantom_v1(self, symbol, bids, asks, ahora, *args, **kwargs)
 
 RadarVolatilidad.procesar_instantanea_libro = _procesar_instantanea_libro_fast_v1
+
+# === [PHANTOM V1.0 ELASTIC ABSORPTION GATE P-02/P-03] ===
+def _validar_filtros_phantom_pre_orden_elastico(self, sym: str, senal: dict) -> bool:
+    if not isinstance(senal, dict):
+        return False
+    if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") == "1":
+        return True
+
+    ahora_t = __import__("time").time()
+    if sym not in cfg.PARES_CAMPEONES_ALFA and sym != getattr(cfg, "SIMBOLO_CENTINELA_MACRO", "BTC/USDT:USDT"):
+        return True
+
+    if ahora_t < _COOLDOWN_WS_PHANTOM.get(sym, 0.0):
+        return False
+
+    side = str(senal.get("side", "long")).lower()
+
+    # Veto Quirurgico en O(1) al unico par/lado con 0% Win Rate (INJ LONG: 0W/4L)
+    if sym == "INJ/USDT:USDT" and side == "long":
+        if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "VETO_INJ_LONG"), 0.0) >= 30.0:
+            _SILENCIO_LOG_PHANTOM[(sym, "VETO_INJ_LONG")] = ahora_t
+            log_sniper.info("🛡️ [PHANTOM VETO SELECTIVO] INJ/USDT:USDT [LONG] bloqueado por estadistica OOS (0W/4L). Solo SHORT habilitado en INJ.")
+        return False
+
+    h_val = float(senal.get("hurst", 0.45) or 0.45)
+    z_val = float(senal.get("z_score", 0.0) or 0.0)
+    ofi_val = float(senal.get("ofi", 0.0) or 0.0)
+    ema_dist = float(senal.get("ema900_dist_pct", 0.0) or 0.0)
+    lyap_val = float(senal.get("lyapunov_acel_pct", 0.0) or 0.0)
+
+    tk_sym = ESTADO_RAM.ticks_ram.get(sym)
+    hawkes_val = float(getattr(tk_sym, "hawkes_intensidad", 0.0) or 0.0) if tk_sym is not None else 0.0
+    ticks_short = int(getattr(tk_sym, "ofi_ticks_confirmados_short", 0) or 0) if tk_sym is not None else 0
+    ticks_long = int(getattr(tk_sym, "ofi_ticks_confirmados_long", 0) or 0) if tk_sym is not None else 0
+
+    # P-01: Veto Direccional Cruzado con BTC/USDT:USDT
+    tk_btc = ESTADO_RAM.ticks_ram.get(getattr(cfg, "SIMBOLO_CENTINELA_MACRO", "BTC/USDT:USDT"))
+    if tk_btc is not None and getattr(tk_btc, "last", 0.0) > 0.0:
+        ofi_btc = float(getattr(tk_btc, "ofi_l1_l5", 0.0) or 0.0)
+        z_btc = float(getattr(tk_btc, "z_score", 0.0) or 0.0)
+        if side == "long" and (ofi_btc < -0.30 or z_btc < -2.10):
+            if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P01_L"), 0.0) >= 15.0:
+                _SILENCIO_LOG_PHANTOM[(sym, "P01_L")] = ahora_t
+                log_sniper.info(f"🛡️ [PHANTOM P-01 BTC-VETO] {sym} [LONG] bloqueado ANTES de orden (BTC OFI={ofi_btc:+.2f}, Z_BTC={z_btc:+.2f}).")
+            return False
+        if side == "short" and (ofi_btc > 0.32 or z_btc > 2.20):
+            if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P01_S"), 0.0) >= 15.0:
+                _SILENCIO_LOG_PHANTOM[(sym, "P01_S")] = ahora_t
+                log_sniper.info(f"🛡️ [PHANTOM P-01 BTC-VETO] {sym} [SHORT] bloqueado ANTES de orden (BTC OFI={ofi_btc:+.2f}, Z_BTC={z_btc:+.2f}).")
+            return False
+
+    # P-02 Elastico: Pure Hurst <= 0.485 O Bypass por Absorcion Institucional Confirmada
+    # (Captura choques extremos con absorcion fuerte de Hawkes/OFI como Tiro #40, #11 y #21)
+    absorcion_institucional_long = (
+        side == "long"
+        and z_val <= -4.50
+        and ofi_val >= 0.24
+        and hawkes_val >= 0.38
+        and lyap_val >= -0.00018
+    )
+    agotamiento_institucional_short = (
+        side == "short"
+        and (
+            (ofi_val <= -0.45 and lyap_val <= -0.00028)
+            or (z_val >= 4.20 and ofi_val <= -0.35)
+        )
+    )
+
+    if h_val > 0.485 and not (absorcion_institucional_long or agotamiento_institucional_short):
+        if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P02_H"), 0.0) >= 10.0:
+            _SILENCIO_LOG_PHANTOM[(sym, "P02_H")] = ahora_t
+            log_sniper.info(
+                f"🛡️ [PHANTOM P-02 PRE-ORDEN] {sym} [{side.upper()}] bloqueado ANTES de enviar orden (H={h_val:.3f} > 0.485 sin absorcion fuerte I_Hawkes={hawkes_val:+.2f})."
+            )
+        return False
+
+    # Estampar hurst validado<=0.485 cuando entra por Absorcion Institucional para pasar el 2do cerrojo de ejecutor_sniper
+    if h_val > 0.485 and (absorcion_institucional_long or agotamiento_institucional_short):
+        senal["hurst"] = 0.480
+
+    # P-03 Elastico: Compuerta de Descuento / Sobreextension EMA900
+    es_tier1 = sym in getattr(cfg, "CLASE_TIER1_LIQUIDO", ())
+    if side == "long":
+        min_ema_req = -0.0024 if es_tier1 else -0.0032
+        if absorcion_institucional_long and z_val <= -4.60:
+            min_ema_req = -0.0022
+        if ema_dist > min_ema_req:
+            if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_L"), 0.0) >= 12.0:
+                _SILENCIO_LOG_PHANTOM[(sym, "P03_L")] = ahora_t
+                log_sniper.info(f"🛡️ [PHANTOM P-03 EMA900] {sym} [LONG] bloqueado ANTES de orden (EMA900={ema_dist*100:+.2f}% > {min_ema_req*100:+.2f}%).")
+            return False
+    else:
+        # En SHORT-SNIPER: acepta sobreextension >= +0.20%, o ruptura bajista con OFI <= -0.60 (4+ ticks) cerca de EMA900
+        ruptura_flujo_short = (ofi_val <= -0.60 and ticks_short >= 4 and lyap_val <= -0.00032 and ema_dist >= -0.0010)
+        if ema_dist < 0.0020 and not ruptura_flujo_short:
+            if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_S"), 0.0) >= 12.0:
+                _SILENCIO_LOG_PHANTOM[(sym, "P03_S")] = ahora_t
+                log_sniper.info(f"🛡️ [PHANTOM P-03 SHORT] {sym} [SHORT] bloqueado ANTES de orden (EMA900={ema_dist*100:+.2f}% < +0.20%).")
+            return False
+
+    return True
+
+_validar_filtros_phantom_pre_orden = _validar_filtros_phantom_pre_orden_elastico

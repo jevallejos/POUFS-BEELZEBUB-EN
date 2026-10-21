@@ -215,12 +215,7 @@ SHORT_LYAPUNOV_ACEL_MAX_PCT: float = -0.00030   # Aceleracion negativa confirmad
 CICLO_GROQ_REGIMEN_SEG: float = 45.0
 TIMEOUT_GROQ_SEG: float = 3.5
 GROQ_MODEL: str = "qwen/qwen3.8-27b"
-GROQ_MODEL_POOL: Tuple[str, ...] = (
-    "qwen/qwen3.8-27b",
-    "allam-2-7b",
-    "openai/gpt-oss-120b",
-    "openai/gpt-oss-20b",
-)
+GROQ_MODEL_POOL: Tuple[str, ...] = ("allam-2-7b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b", "openai/gpt-oss-120b")
 
 # 8.2 Cortex 2: Google Gemini (Dimensionamiento Anti-Fragil por Magnitud de Dislocacion)
 CICLO_GEMINI_SIZING_SEG: float = 120.0

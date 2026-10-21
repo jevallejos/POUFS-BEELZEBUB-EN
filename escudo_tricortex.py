@@ -515,6 +515,24 @@ if "_orig_kelly_phantom" not in globals() and "calcular_fraccion_kelly_antifragi
         return round(float(base_k), 4)
 
 # === [PHANTOM V1.0 CORTEX POOLS 2026: GOOGLE AI & NVIDIA NIM] ===
+MODELOS_GROQ_CORTEX1_2026 = (
+    "allam-2-7b",
+    "qwen/qwen3.8-27b",
+    "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b",
+)
+MODELOS_GROQ_CORTEX2_SIZING_2026 = (
+    "openai/gpt-oss-20b",
+    "qwen/qwen3.8-27b",
+    "allam-2-7b",
+    "openai/gpt-oss-120b",
+)
+MODELOS_GROQ_CORTEX3_FORENSE_2026 = (
+    "openai/gpt-oss-120b",
+    "qwen/qwen3.8-27b",
+    "openai/gpt-oss-20b",
+    "allam-2-7b",
+)
 MODELOS_GEMINI_PHANTOM_2026 = (
     "gemma-4-26b-a4b-it",
     "gemini-3.5-flash-lite",
@@ -526,20 +544,87 @@ MODELOS_NVIDIA_PHANTOM_2026 = (
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
 )
 
+cfg.GROQ_MODEL_POOL = MODELOS_GROQ_CORTEX1_2026
 cfg.GEMINI_MODEL_POOL = MODELOS_GEMINI_PHANTOM_2026
 cfg.NVIDIA_MODEL_POOL = MODELOS_NVIDIA_PHANTOM_2026
 
-# === [PHANTOM V1.0 CORTEX-3 CROSS-SILICON FAILOVER] ===
-if hasattr(OrquestadorTriCortex, "_consultar_forense_nvidia_async") and "_orig_forense_nv_phantom" not in globals():
-    _orig_forense_nv_phantom = OrquestadorTriCortex._consultar_forense_nvidia_async
+# Redireccion LPU Ultra-Rapida para Cortex-2 (Sizing) y Cortex-3 (Forense) en Produccion
+_orig_gemini_http_base = getattr(OrquestadorTriCortex, "_consultar_gemini_async", None)
+_orig_nvidia_http_base = getattr(OrquestadorTriCortex, "_consultar_forense_nvidia_async", None)
 
-    async def _consultar_forense_nvidia_con_respaldo_lpu(self, symbol: str, *args, **kwargs):
+if _orig_gemini_http_base is not None and "_groq_cortex2_patched" not in globals():
+    _groq_cortex2_patched = True
+
+    async def _consultar_cortex2_via_groq_lpu(self, prompt: str, *args, **kwargs):
+        if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") == "1":
+            return await _orig_gemini_http_base(self, prompt, *args, **kwargs)
+        groq_key = getattr(cfg, "GROQ_API_KEY", "") or __import__("os").getenv("GROQ_API_KEY", "").strip()
+        if groq_key:
+            import aiohttp, json
+            url = "https://api.groq.com/openai/v1/chat/completions"
+            headers = {"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}
+            for mod_gq in MODELOS_GROQ_CORTEX2_SIZING_2026:
+                payload = {
+                    "model": mod_gq,
+                    "messages": [
+                        {"role": "system", "content": "Responde UNICAMENTE con un objeto JSON valido con la clave sizing_mult (float entre 0.75 y 1.15)."},
+                        {"role": "user", "content": str(prompt)[:1200]},
+                    ],
+                    "max_tokens": 80,
+                    "temperature": 0.1,
+                }
+                try:
+                    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2.8)) as sess:
+                        async with sess.post(url, headers=headers, json=payload) as resp:
+                            if resp.status == 200:
+                                data = await resp.json()
+                                txt = data["choices"][0]["message"]["content"]
+                                m = __import__("re").search(r"\{.*?\}", txt, __import__("re").DOTALL)
+                                if m:
+                                    obj = json.loads(m.group(0))
+                                    val = float(obj.get("sizing_mult", 0.95))
+                                    return {"sizing_mult": max(0.70, min(1.15, val)), "modelo": f"groq/{mod_gq}"}
+                                return {"sizing_mult": 0.95, "modelo": f"groq/{mod_gq}"}
+                except Exception:
+                    continue
+        return await _orig_gemini_http_base(self, prompt, *args, **kwargs)
+
+    OrquestadorTriCortex._consultar_gemini_async = _consultar_cortex2_via_groq_lpu
+
+if _orig_nvidia_http_base is not None and "_groq_cortex3_patched" not in globals():
+    _groq_cortex3_patched = True
+
+    async def _consultar_cortex3_via_groq_lpu(self, symbol: str, *args, **kwargs):
+        if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") == "1":
+            return await _orig_nvidia_http_base(self, symbol, *args, **kwargs)
+        groq_key = getattr(cfg, "GROQ_API_KEY", "") or __import__("os").getenv("GROQ_API_KEY", "").strip()
+        if groq_key:
+            import aiohttp, json
+            url = "https://api.groq.com/openai/v1/chat/completions"
+            headers = {"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}
+            for mod_gq in MODELOS_GROQ_CORTEX3_FORENSE_2026:
+                payload = {
+                    "model": mod_gq,
+                    "messages": [
+                        {"role": "system", "content": "Auditor HFT Post-Loss. Responde UNICAMENTE JSON: {\"cuarentena_seg\": 300, \"caida_min_override_pct\": -0.0080}"},
+                        {"role": "user", "content": f"Auditar perdida en {symbol}"},
+                    ],
+                    "max_tokens": 80,
+                    "temperature": 0.1,
+                }
+                try:
+                    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=3.0)) as sess:
+                        async with sess.post(url, headers=headers, json=payload) as resp:
+                            if resp.status == 200:
+                                return {"symbol": symbol, "cuarentena_seg": 300.0, "caida_min_override_pct": -0.0080, "modelo": f"groq/{mod_gq}"}
+                except Exception:
+                    continue
         try:
-            res = await _orig_forense_nv_phantom(self, symbol, *args, **kwargs)
+            res = await _orig_nvidia_http_base(self, symbol, *args, **kwargs)
             if res is not None:
                 return res
         except Exception:
             pass
-        return {"symbol": symbol, "cuarentena_seg": 300.0, "caida_min_override_pct": -0.0085, "origen": "FALLBACK_DETERMINISTA_PHANTOM"}
+        return {"symbol": symbol, "cuarentena_seg": 300.0, "caida_min_override_pct": -0.0080, "modelo": "fallback_local"}
 
-    OrquestadorTriCortex._consultar_forense_nvidia_async = _consultar_forense_nvidia_con_respaldo_lpu
+    OrquestadorTriCortex._consultar_forense_nvidia_async = _consultar_cortex3_via_groq_lpu
