@@ -389,3 +389,18 @@ if hasattr(EstadoGlobalRAM, "consultar_permiso_o1") and not hasattr(EstadoGlobal
                     self.pausa_macro_hasta_ts = respaldo
         return EstadoGlobalRAM._orig_consultar_phantom(self, symbol, side_solicitado, *args, **kwargs)
     EstadoGlobalRAM.consultar_permiso_o1 = _consultar_permiso_o1_phantom
+
+# === [PHANTOM V1.0 CLI LOG SILENCER] ===
+if "_orig_log_sniper_cli_filter" not in globals():
+    _orig_log_sniper_cli_filter = log_sniper
+    _ARGV0_RAM = str(__import__("sys").argv[0]) if __import__("sys").argv else ""
+    _ES_DAEMON_O_SUITE = any(
+        _k in _ARGV0_RAM for _k in ("main.py", "test_tribrain", "evaluador_cuantico")
+    )
+
+    def _log_sniper_filtrado_cli(mensaje: str, *args, **kwargs):
+        if not _ES_DAEMON_O_SUITE and "Whitelist O(1) inicializada" in str(mensaje):
+            return None
+        return _orig_log_sniper_cli_filter(mensaje, *args, **kwargs)
+
+    log_sniper = _log_sniper_filtrado_cli

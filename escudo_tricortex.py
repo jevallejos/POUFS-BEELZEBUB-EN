@@ -514,10 +514,10 @@ if "_orig_kelly_phantom" not in globals() and "calcular_fraccion_kelly_antifragi
                 base_k = max(cfg.KELLY_FRACCION_MIN, base_k * (1.0 - 0.18 * exceso))
         return round(float(base_k), 4)
 
-# === [PHANTOM V1.0 CORTEX FAILOVER PATCH] ===
+# === [PHANTOM V1.0 CORTEX POOLS 2026: GOOGLE AI & NVIDIA NIM] ===
 MODELOS_GEMINI_PHANTOM_2026 = (
-    "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
+    "gemini-3.5-flash-lite",
     "gemma-4-31b-it",
     "gemma-4-26b-a4b-it",
     "gemma-4-26b-it",
@@ -531,17 +531,5 @@ MODELOS_NVIDIA_PHANTOM_2026 = (
     "meta/llama-3.3-70b-instruct",
 )
 
-for _attr_g in ("MODELOS_GEMINI", "POOL_GEMINI", "modelos_gemini"):
-    if hasattr(EscudoTriCortex, _attr_g):
-        setattr(EscudoTriCortex, _attr_g, MODELOS_GEMINI_PHANTOM_2026)
-
-for _attr_n in ("MODELOS_NVIDIA", "POOL_NVIDIA", "modelos_nvidia"):
-    if hasattr(EscudoTriCortex, _attr_n):
-        setattr(EscudoTriCortex, _attr_n, MODELOS_NVIDIA_PHANTOM_2026)
-
-if hasattr(ESCUDO_TRICORTEX, "__dict__"):
-    for _k, _v in list(ESCUDO_TRICORTEX.__dict__.items()):
-        if "gemini" in _k.lower() and isinstance(_v, (tuple, list)):
-            setattr(ESCUDO_TRICORTEX, _k, MODELOS_GEMINI_PHANTOM_2026)
-        elif ("nvidia" in _k.lower() or "nim" in _k.lower()) and isinstance(_v, (tuple, list)):
-            setattr(ESCUDO_TRICORTEX, _k, MODELOS_NVIDIA_PHANTOM_2026)
+cfg.GEMINI_MODEL_POOL = MODELOS_GEMINI_PHANTOM_2026
+cfg.NVIDIA_MODEL_POOL = MODELOS_NVIDIA_PHANTOM_2026

@@ -227,16 +227,16 @@ CICLO_GEMINI_SIZING_SEG: float = 120.0
 TIMEOUT_GEMINI_SEG: float = 4.5
 GEMINI_MODEL_POOL: Tuple[str, ...] = (
     "gemini-3.5-flash-lite",
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemma-4-26b-a4b-it",
 )
 
 # 8.3 Cortex 3: NVIDIA NIM / DeepSeek (Calibracion Pre-Vuelo cada 15m + Auditoria Post-Loss)
 CICLO_NVIDIA_PREFLIGHT_SEG: float = 900.0
 TIMEOUT_NVIDIA_SEG: float = 6.0
 NVIDIA_MODEL_POOL: Tuple[str, ...] = (
-    "deepseek-ai/deepseek-v3.2",
-    "qwen/qwen3-next-80b-a3b-instruct",
+    "nvidia/llama-3.1-nemotron-70b-instruct",
+    "deepseek-ai/deepseek-r1",
 )
 
 # ==============================================================================

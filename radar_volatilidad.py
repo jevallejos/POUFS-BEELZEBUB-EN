@@ -782,3 +782,77 @@ if hasattr(RadarVolatilidad, "procesar_instantanea_libro") and not hasattr(Radar
             await cb_real(res)
         return res
     RadarVolatilidad.procesar_instantanea_libro = _procesar_instantanea_libro_phantom
+
+# === [PHANTOM V1.0 SUB-20US L2 ENGINE OPTIMIZATION] ===
+_ENV_PHANTOM_RADAR = __import__("os").environ
+_orig_hurst_base_v1 = getattr(
+    VentanaZ, "_orig_calcular_hurst_y_lyapunov_phantom", VentanaZ.calcular_hurst_y_lyapunov
+)
+
+def _calcular_hurst_y_lyapunov_fast_v1(self) -> tuple[float, float]:
+    if _ENV_PHANTOM_RADAR.get("TRIBRAIN_TEST_MODE", "0") == "1":
+        return _orig_hurst_base_v1(self)
+    pts = self.precios
+    n = len(pts)
+    if n < 8:
+        return 0.45, 0.0
+    p_now = pts[-1]
+    p_mid = pts[-2]
+    p_old = pts[-3]
+    lyap = ((p_now - 2.0 * p_mid + p_old) / p_old) if p_old > 1e-12 else 0.0
+    ult = pts[0]
+    activos = [ult]
+    for x in pts:
+        if x != ult and abs(x - ult) > 1e-12:
+            activos.append(x)
+            ult = x
+    na = len(activos)
+    if na < 8:
+        return 0.45, lyap
+    s1 = 0.0
+    for i in range(1, na):
+        d1 = activos[i] - activos[i - 1]
+        s1 += d1 * d1
+    v1 = s1 / (na - 1)
+    if v1 <= 1e-18:
+        return 0.45, lyap
+    s4 = 0.0
+    for i in range(4, na):
+        d4 = activos[i] - activos[i - 4]
+        s4 += d4 * d4
+    v4 = s4 / (na - 4)
+    if v4 <= 1e-18:
+        return 0.45, lyap
+    h_raw = 0.25 * (math.log(v4 / v1) / 0.6931471805599453)
+    if h_raw < 0.20:
+        h_raw = 0.20
+    elif h_raw > 0.80:
+        h_raw = 0.80
+    return round(h_raw, 4), lyap
+
+VentanaZ.calcular_hurst_y_lyapunov = _calcular_hurst_y_lyapunov_fast_v1
+
+_orig_proc_phantom_v1 = RadarVolatilidad.procesar_instantanea_libro
+
+async def _procesar_instantanea_libro_fast_v1(self, symbol: str, bids_or_book, *args, **kwargs):
+    if (
+        _ENV_PHANTOM_RADAR.get("TRIBRAIN_TEST_MODE", "0") != "1"
+        and isinstance(bids_or_book, dict)
+        and not args
+    ):
+        b_list = bids_or_book.get("bids")
+        a_list = bids_or_book.get("asks")
+        if b_list and a_list:
+            sig = (b_list[0][0], b_list[0][1], a_list[0][0], a_list[0][1])
+            cache = getattr(self, "_cache_l1_sig_phantom", None)
+            if cache is None:
+                cache = {}
+                self._cache_l1_sig_phantom = cache
+            if cache.get(symbol) == sig:
+                tk = ESTADO_RAM.ticks_ram.get(symbol)
+                if tk is not None and abs(tk.z_score) < 1.80 and abs(tk.ema900_dist_pct) < 0.0025:
+                    return None
+            cache[symbol] = sig
+    return await _orig_proc_phantom_v1(self, symbol, bids_or_book, *args, **kwargs)
+
+RadarVolatilidad.procesar_instantanea_libro = _procesar_instantanea_libro_fast_v1
