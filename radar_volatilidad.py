@@ -783,13 +783,18 @@ if hasattr(RadarVolatilidad, "procesar_instantanea_libro") and not hasattr(Radar
         return res
     RadarVolatilidad.procesar_instantanea_libro = _procesar_instantanea_libro_phantom
 
-# === [PHANTOM V1.0 SUB-20US L2 ENGINE OPTIMIZATION] ===
+# === [PHANTOM V1.0 SINGLE-LAYER L2 ENGINE & ELASTIC GATE P-01..P-03] ===
 _ENV_PHANTOM_RADAR = __import__("os").environ
+if "_SILENCIO_LOG_PHANTOM" not in globals() or not isinstance(globals().get("_SILENCIO_LOG_PHANTOM"), dict):
+    _SILENCIO_LOG_PHANTOM = {}
+if "_COOLDOWN_WS_PHANTOM" not in globals() or not isinstance(globals().get("_COOLDOWN_WS_PHANTOM"), dict):
+    _COOLDOWN_WS_PHANTOM = {}
+
 _orig_hurst_base_v1 = getattr(
     VentanaZ, "_orig_calcular_hurst_y_lyapunov_phantom", VentanaZ.calcular_hurst_y_lyapunov
 )
 
-def _calcular_hurst_y_lyapunov_fast_v1(self) -> tuple[float, float]:
+def _calcular_hurst_y_lyapunov_single_layer(self) -> tuple[float, float]:
     if _ENV_PHANTOM_RADAR.get("TRIBRAIN_TEST_MODE", "0") == "1":
         return _orig_hurst_base_v1(self)
     pts = self.precios
@@ -830,44 +835,12 @@ def _calcular_hurst_y_lyapunov_fast_v1(self) -> tuple[float, float]:
         h_raw = 0.80
     return round(h_raw, 4), lyap
 
-VentanaZ.calcular_hurst_y_lyapunov = _calcular_hurst_y_lyapunov_fast_v1
-
-_orig_proc_phantom_v1 = RadarVolatilidad.procesar_instantanea_libro
-
-async def _procesar_instantanea_libro_fast_v1(self, symbol: str, bids_or_book, asks=None, ahora=None, *args, **kwargs):
-    if isinstance(bids_or_book, dict):
-        ahora = asks if asks is not None else kwargs.pop("ahora", None)
-        asks = bids_or_book.get("asks") or []
-        bids = bids_or_book.get("bids") or []
-    else:
-        bids = bids_or_book
-
-    if _ENV_PHANTOM_RADAR.get("TRIBRAIN_TEST_MODE", "0") != "1" and bids and asks:
-        sig = (bids[0][0], bids[0][1], asks[0][0], asks[0][1])
-        cache = getattr(self, "_cache_l1_sig_phantom", None)
-        if cache is None:
-            cache = {}
-            self._cache_l1_sig_phantom = cache
-        if cache.get(symbol) == sig:
-            tk = ESTADO_RAM.ticks_ram.get(symbol)
-            if tk is not None and abs(tk.z_score) < 1.80 and abs(tk.ema900_dist_pct) < 0.0025:
-                return None
-        cache[symbol] = sig
-
-    return await _orig_proc_phantom_v1(self, symbol, bids, asks, ahora, *args, **kwargs)
-
-RadarVolatilidad.procesar_instantanea_libro = _procesar_instantanea_libro_fast_v1
-
-# === [PHANTOM V1.0 ELASTIC ABSORPTION GATE P-02/P-03] ===
-if "_SILENCIO_LOG_PHANTOM" not in globals() or not isinstance(globals().get("_SILENCIO_LOG_PHANTOM"), dict):
-    _SILENCIO_LOG_PHANTOM = {}
-if "_COOLDOWN_WS_PHANTOM" not in globals() or not isinstance(globals().get("_COOLDOWN_WS_PHANTOM"), dict):
-    _COOLDOWN_WS_PHANTOM = {}
+VentanaZ.calcular_hurst_y_lyapunov = _calcular_hurst_y_lyapunov_single_layer
 
 def _validar_filtros_phantom_pre_orden_elastico(self, sym: str, senal: dict) -> bool:
     if not isinstance(senal, dict):
         return False
-    if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") == "1":
+    if _ENV_PHANTOM_RADAR.get("TRIBRAIN_TEST_MODE", "0") == "1":
         return True
 
     ahora_t = __import__("time").time()
@@ -879,7 +852,6 @@ def _validar_filtros_phantom_pre_orden_elastico(self, sym: str, senal: dict) -> 
 
     side = str(senal.get("side", "long")).lower()
 
-    # Veto Quirurgico en O(1) al unico par/lado con 0% Win Rate (INJ LONG: 0W/4L)
     if sym == "INJ/USDT:USDT" and side == "long":
         if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "VETO_INJ_LONG"), 0.0) >= 30.0:
             _SILENCIO_LOG_PHANTOM[(sym, "VETO_INJ_LONG")] = ahora_t
@@ -896,7 +868,6 @@ def _validar_filtros_phantom_pre_orden_elastico(self, sym: str, senal: dict) -> 
     hawkes_val = float(getattr(tk_sym, "hawkes_intensidad", 0.0) or 0.0) if tk_sym is not None else 0.0
     ticks_short = int(getattr(tk_sym, "ofi_ticks_confirmados_short", 0) or 0) if tk_sym is not None else 0
 
-    # P-01: Veto Direccional Cruzado con BTC/USDT:USDT
     tk_btc = ESTADO_RAM.ticks_ram.get(getattr(cfg, "SIMBOLO_CENTINELA_MACRO", "BTC/USDT:USDT"))
     if tk_btc is not None and getattr(tk_btc, "last", 0.0) > 0.0:
         ofi_btc = float(getattr(tk_btc, "ofi_l1_l5", 0.0) or 0.0)
@@ -912,7 +883,6 @@ def _validar_filtros_phantom_pre_orden_elastico(self, sym: str, senal: dict) -> 
                 log_sniper(f"🛡️ [PHANTOM P-01 BTC-VETO] {sym} [SHORT] bloqueado ANTES de orden (BTC OFI={ofi_btc:+.2f}, Z_BTC={z_btc:+.2f}).")
             return False
 
-    # P-02 Elastico: Pure Hurst <= 0.485 O Bypass por Absorcion Institucional Confirmada
     absorcion_institucional_long = (
         side == "long"
         and z_val <= -4.50
@@ -939,7 +909,6 @@ def _validar_filtros_phantom_pre_orden_elastico(self, sym: str, senal: dict) -> 
     if h_val > 0.485 and (absorcion_institucional_long or agotamiento_institucional_short):
         senal["hurst"] = 0.480
 
-    # P-03 Elastico: Compuerta de Descuento / Sobreextension EMA900
     es_tier1 = sym in getattr(cfg, "CLASE_TIER1_LIQUIDO", ())
     if side == "long":
         min_ema_req = -0.0024 if es_tier1 else -0.0032
@@ -962,3 +931,52 @@ def _validar_filtros_phantom_pre_orden_elastico(self, sym: str, senal: dict) -> 
 
 _validar_filtros_phantom_pre_orden = _validar_filtros_phantom_pre_orden_elastico
 RadarVolatilidad._validar_filtros_phantom_pre_orden = _validar_filtros_phantom_pre_orden_elastico
+
+_orig_proc_base_single = getattr(RadarVolatilidad, "_orig_proc_libro_base", RadarVolatilidad.procesar_instantanea_libro)
+
+async def _procesar_instantanea_libro_single_layer(self, symbol: str, bids_or_book, asks=None, ahora=None, *args, **kwargs):
+    if isinstance(bids_or_book, dict):
+        ahora = asks if asks is not None else kwargs.pop("ahora", None)
+        asks = bids_or_book.get("asks") or []
+        bids = bids_or_book.get("bids") or []
+    else:
+        bids = bids_or_book
+
+    if _ENV_PHANTOM_RADAR.get("TRIBRAIN_TEST_MODE", "0") == "1":
+        return await _orig_proc_base_single(self, symbol, bids, asks, ahora, *args, **kwargs)
+
+    t_now = float(ahora) if ahora is not None else __import__("time").time()
+    ult_ts = _ULTIMO_TS_LIBRO_PHANTOM.get(symbol, 0.0)
+    if ult_ts > 0.0 and (t_now - ult_ts) > 2.20:
+        _COOLDOWN_WS_PHANTOM[symbol] = t_now + 4.00
+    _ULTIMO_TS_LIBRO_PHANTOM[symbol] = t_now
+
+    cb_real = getattr(self, "callback_disparo", None)
+    self.callback_disparo = None
+    logs_retenidos = []
+    log_real = globals().get("log_sniper")
+
+    def _log_interceptor_radar(msg: str, *a_l, **kw_l):
+        s_m = str(msg)
+        if s_m.startswith("[RADAR]") and "APROBADO" in s_m:
+            logs_retenidos.append((msg, a_l, kw_l))
+            return None
+        return log_real(msg, *a_l, **kw_l)
+
+    try:
+        globals()["log_sniper"] = _log_interceptor_radar
+        res = await _orig_proc_base_single(self, symbol, bids, asks, ahora, *args, **kwargs)
+    finally:
+        globals()["log_sniper"] = log_real
+        self.callback_disparo = cb_real
+
+    if isinstance(res, dict):
+        if not _validar_filtros_phantom_pre_orden_elastico(self, symbol, res):
+            return None
+        for m_txt, m_a, m_kw in logs_retenidos:
+            log_real(m_txt, *m_a, **m_kw)
+        if callable(cb_real):
+            await cb_real(res)
+    return res
+
+RadarVolatilidad.procesar_instantanea_libro = _procesar_instantanea_libro_single_layer

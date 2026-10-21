@@ -3,7 +3,7 @@
 """
 ==============================================================================
 ARCHIVO #10: gestor_posiciones.py
-SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 â€” ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 — ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Guardian de Geometria de Pagos 10/10 (Long & Short Simetrico):
   - Ley 2 (CHRONOS-TRIZ): Desplazamiento del Precio de Reserva a los 18.0s
@@ -301,7 +301,7 @@ class GestorPosiciones:
         pnl_parcial_pct = (pnl_parcial_usdt / nocional_mitad * 100.0) if nocional_mitad > 0.0 else 0.0
 
         log_sniper(
-            f"[FRANCOTIRADOR] ðŸ’Ž {pos.symbol} Cosecha 50% TRIZ PostOnly ejecutada: "
+            f"[FRANCOTIRADOR] 💎 {pos.symbol} Cosecha 50% TRIZ PostOnly ejecutada: "
             f"{mitad_qty} @ {precio_cosecha} ({pnl_parcial_pct:+.2f}% | {pnl_parcial_usdt:+.4f} USDT). "
             f"Restan {pos.qty_actual} contratos en Trailing libre."
         )
@@ -443,7 +443,7 @@ class GestorPosiciones:
                 pos.side, pos.entry_price, best_bid, best_ask, tick_size, permitir_scratch=False
             )
             log_sniper(
-                f"[FRANCOTIRADOR] ðŸ’Ž {pos.symbol} Escudo Maker Fase 2 PostOnly ejecutado @ {precio_fase2} "
+                f"[FRANCOTIRADOR] 💎 {pos.symbol} Escudo Maker Fase 2 PostOnly ejecutado @ {precio_fase2} "
                 f"(PnL {pnl_bruto_pct*100:+.2f}%, edad {edad_seg:.0f}s)"
             )
             await self._ejecutar_cierre_definitivo(
@@ -465,8 +465,8 @@ class GestorPosiciones:
         )
         if edad_seg >= limite_hold:
             log_sniper(
-                f"âŒ› [FRANCOTIRADOR] {pos.symbol} alcanzÃ³ tiempo lÃ­mite ({edad_seg:.0f}s >= {limite_hold:.0f}s). "
-                f"Liquidando posiciÃ³n para liberar margen."
+                f"⌛ [FRANCOTIRADOR] {pos.symbol} alcanzó tiempo límite ({edad_seg:.0f}s >= {limite_hold:.0f}s). "
+                f"Liquidando posición para liberar margen."
             )
             await self._ejecutar_cierre_definitivo(
                 pos=pos,
@@ -509,7 +509,7 @@ class GestorPosiciones:
                     if not pos.cerrada:
                         await self.evaluar_posicion_activa(pos, ahora=ahora)
             except Exception as exc:
-                log_sniper(f"âš ï¸ [GESTOR POSICIONES] Error en ciclo de vigilancia: {exc}")
+                log_sniper(f"⚠ï¸ [GESTOR POSICIONES] Error en ciclo de vigilancia: {exc}")
             await asyncio.sleep(cfg.CADENCIA_RADAR_SEG)
 
     def detener(self) -> None:
@@ -903,7 +903,7 @@ async def ejecutar_radar_xray_cli(accion: str = "status") -> None:
             print(f" {C_GREEN}🟢 Sin posiciones abiertas en Bybit en este instante (0 contratos corriendo).{RST}")
             print(f"{C_BORDER}=========================================================================================={RST}")
             msg_vacio = nl.join([
-                "�� [RADAR PHANTOM (GOD'S ACCOMPLICE) V1.0 EN VIVO]",
+                " [RADAR PHANTOM (GOD'S ACCOMPLICE) V1.0 EN VIVO]",
                 "• Estado: Sin posiciones abiertas (0 contratos)",
                 f"• Balance UTA: {tot:.4f} USDT (Libre: {lib:.4f} USDT)",
             ])

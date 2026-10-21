@@ -514,7 +514,7 @@ if "_orig_kelly_phantom" not in globals() and "calcular_fraccion_kelly_antifragi
                 base_k = max(cfg.KELLY_FRACCION_MIN, base_k * (1.0 - 0.18 * exceso))
         return round(float(base_k), 4)
 
-# === [PHANTOM V1.0 CORTEX POOLS 2026: GOOGLE AI & NVIDIA NIM] ===
+# === [PHANTOM V1.0 CORTEX POOLS 2026: GROQ LPU-FIRST & MULTI-CLOUD FAILOVER] ===
 MODELOS_GROQ_CORTEX1_2026 = (
     "allam-2-7b",
     "qwen/qwen3.8-27b",
@@ -548,7 +548,6 @@ cfg.GROQ_MODEL_POOL = MODELOS_GROQ_CORTEX1_2026
 cfg.GEMINI_MODEL_POOL = MODELOS_GEMINI_PHANTOM_2026
 cfg.NVIDIA_MODEL_POOL = MODELOS_NVIDIA_PHANTOM_2026
 
-# Redireccion LPU Ultra-Rapida para Cortex-2 (Sizing) y Cortex-3 (Forense) en Produccion
 _orig_gemini_http_base = getattr(OrquestadorTriCortex, "_consultar_gemini_async", None)
 _orig_nvidia_http_base = getattr(OrquestadorTriCortex, "_consultar_forense_nvidia_async", None)
 
@@ -599,7 +598,7 @@ if _orig_nvidia_http_base is not None and "_groq_cortex3_patched" not in globals
             return await _orig_nvidia_http_base(self, symbol, *args, **kwargs)
         groq_key = getattr(cfg, "GROQ_API_KEY", "") or __import__("os").getenv("GROQ_API_KEY", "").strip()
         if groq_key:
-            import aiohttp, json
+            import aiohttp
             url = "https://api.groq.com/openai/v1/chat/completions"
             headers = {"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}
             for mod_gq in MODELOS_GROQ_CORTEX3_FORENSE_2026:

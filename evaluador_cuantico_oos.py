@@ -293,8 +293,8 @@ class EvaluadorCuanticoOOS:
         )
 
         prior_kelly = 0.55
-        prior_z_hb = -3.20
-        prior_z_t1 = -2.85
+        prior_z_hb = -2.85
+        prior_z_t1 = -2.55
         prior_ofi = 0.12
         prior_scratch_s = 18.0
         prior_cosecha_pct = 0.0026
@@ -413,7 +413,7 @@ class EvaluadorCuanticoOOS:
 
         if notificar_telegram:
             msg_tg = (
-                f"�� [REPORTE CUÁNTICO OOS TRI-SESIÓN]\n"
+                f" [REPORTE CUÁNTICO OOS TRI-SESIÓN]\n"
                 f"• 8h: {h8['n_trades']} ops | WR Efec: {h8['win_rate_efectivo_pct']:.1f}% | PnL: {h8['pnl_neto_usdt']:+.4f} USDT\n"
                 f"• 24h: {h24['n_trades']} ops | WR Efec: {h24['win_rate_efectivo_pct']:.1f}% | PnL: {h24['pnl_neto_usdt']:+.4f} USDT\n"
                 f"• 72h: {h72['n_trades']} ops | PF: {h72['profit_factor']:.2f} | Ahorro Scratch 18s: +{h72['ahorro_scratch_usdt']:.4f} USDT\n"
