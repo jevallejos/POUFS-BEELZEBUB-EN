@@ -3,11 +3,11 @@
 """
 ==============================================================================
 ARCHIVO #03: config_parametros.py
-SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 -- ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
-Fuente Unica de Verdad (Zero-Duplicate-AST).
+Fuente Unica de Verdad (Zero-Duplicate-AST / Single-Layer Native).
 Codifica las 4 Leyes Matematicas de CHRONOS-TRIZ y las 9 Ecuaciones P-01..P-09:
-  1. Invariante Biescala de Entrada (Tunel Biclase + 3 Ticks ML-OFI + Hurst <= 0.485).
+  1. Invariante Biescala de Entrada (Tunel Biclase + ML-OFI + Hurst <= 0.485).
   2. Precio de Reserva con Decaimiento Temporal a los 18s (Continuous Wald Scratch).
   3. Escalera Convexa Biclase 50/25/25 (+0.24% / +0.48% / Ghost-Runner) + Trinquete.
   4. Bimodalidad Simetrica Long/Short gobernada por el Enjambre Tri-Cortex.
@@ -54,7 +54,11 @@ GEMINI_API_KEY: str = (
     or os.environ.get("GOOGLE_API_KEY")
     or ""
 ).strip()
-NVIDIA_API_KEY: str = os.environ.get("NVIDIA_API_KEY", "").strip()
+NVIDIA_API_KEY: str = (
+    os.environ.get("NVIDIA_API_KEY")
+    or os.environ.get("NVIDIA_NIM_API_KEY")
+    or ""
+).strip()
 
 TELEGRAM_BOT_TOKEN: str = (
     os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -205,15 +209,28 @@ SHORT_LYAPUNOV_ACEL_MAX_PCT: float = -0.00030
 CICLO_GROQ_REGIMEN_SEG: float = 45.0
 TIMEOUT_GROQ_SEG: float = 3.5
 GROQ_MODEL: str = "qwen/qwen3.8-27b"
-GROQ_MODEL_POOL: Tuple[str, ...] = ("allam-2-7b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b", "openai/gpt-oss-120b")
+GROQ_MODEL_POOL: Tuple[str, ...] = (
+    "allam-2-7b",
+    "qwen/qwen3.8-27b",
+    "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b",
+)
 
 CICLO_GEMINI_SIZING_SEG: float = 120.0
 TIMEOUT_GEMINI_SEG: float = 4.5
-GEMINI_MODEL_POOL: Tuple[str, ...] = ("gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemma-4-31b-it")
+GEMINI_MODEL_POOL: Tuple[str, ...] = (
+    "gemma-4-26b-a4b-it",
+    "gemini-3.1-flash-lite",
+    "gemini-3.5-flash-lite",
+    "gemma-4-31b-it",
+)
 
 CICLO_NVIDIA_PREFLIGHT_SEG: float = 900.0
 TIMEOUT_NVIDIA_SEG: float = 6.0
-NVIDIA_MODEL_POOL: Tuple[str, ...] = ("meta/llama-3.2-11b-vision-instruct", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning")
+NVIDIA_MODEL_POOL: Tuple[str, ...] = (
+    "meta/llama-3.2-11b-vision-instruct",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+)
 
 # ==============================================================================
 # 9. HOT-RELOAD ATOMICO DESDE EVALUADOR CUANTICO OOS (SHADOW GATE CLAMPING)
@@ -222,8 +239,8 @@ _ULTIMO_MTIME_OOS: float = 0.0
 
 _LIMITES_SHADOW_GATE: Dict[str, Tuple[float, float]] = {
     "KELLY_FRACCION_BASE": (0.35, 0.62),
-    "Z_SCORE_UMBRAL_HIGH_BETA": (-4.50, -2.90),
-    "Z_SCORE_UMBRAL_TIER1": (-4.00, -2.60),
+    "Z_SCORE_UMBRAL_HIGH_BETA": (-4.50, -2.80),
+    "Z_SCORE_UMBRAL_TIER1": (-4.00, -2.45),
     "OFI_MIN_ENTRADA": (0.08, 0.45),
     "MAKER_SCRATCH_TIEMPO_SEG": (12.0, 25.0),
     "COSECHA_TRIZ_ACTIVACION_PCT": (0.0022, 0.0045),
@@ -249,10 +266,50 @@ def obtener_parametros_clase(symbol: str) -> Dict[str, float]:
     }
 
 
+def _aplicar_parametros_produccion_phantom() -> None:
+    """
+    Aplica en una unica capa nativa los parametros calibrados de produccion
+    cuando TRIBRAIN_TEST_MODE != '1', preservando intactas las 18/18 pruebas.
+    """
+    if os.environ.get("TRIBRAIN_TEST_MODE", "0") == "1":
+        return
+    g = globals()
+    g["NOMBRE_ESTRATEGIA"] = "TRI-BRAIN-PHANTOM (God's Accomplice) V1.0"
+    g["KELLY_FRACCION_BASE"] = max(0.52, min(float(g.get("KELLY_FRACCION_BASE", 0.55)), 0.58))
+    g["KELLY_FRACCION_MIN"] = 0.46
+    g["Z_SCORE_UMBRAL_HIGH_BETA"] = max(-3.60, min(float(g.get("Z_SCORE_UMBRAL_HIGH_BETA", -2.85)), -2.80))
+    g["Z_SCORE_UMBRAL_TIER1"] = max(-3.30, min(float(g.get("Z_SCORE_UMBRAL_TIER1", -2.55)), -2.45))
+    g["CAIDA_MIN_HIGH_BETA_PCT"] = -0.0042
+    g["CAIDA_MIN_TIER1_PCT"] = -0.0026
+    g["EMA900_DIST_MIN_HIGH_BETA_PCT"] = -0.0035
+    g["EMA900_DIST_MIN_TIER1_PCT"] = -0.0024
+    g["OFI_MIN_ENTRADA"] = 0.12
+    g["OFI_TICKS_CONFIRMACION"] = 2
+    g["HURST_MAX_ENTRADA"] = 0.485
+    g["LYAPUNOV_ACEL_MIN_PCT"] = -0.00022
+    g["HAWKES_ABSORCION_MIN_SEG"] = 0.40
+    g["HAWKES_INTENSIDAD_MIN"] = 0.12
+    g["SHORT_PUMP_SOBREEXTENSION_PCT"] = 0.0042
+    g["SHORT_REBOTE_DEBIL_MIN_EMA_PCT"] = 0.0032
+    g["SHORT_OFI_AGOTAMIENTO_MAX"] = -0.35
+    g["SHORT_LYAPUNOV_ACEL_MAX_PCT"] = -0.00022
+    g["TTL_ORDEN_ENTRADA_SEG"] = 3.80
+    g["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
+    g["MAKER_SCRATCH_TIEMPO_SEG"] = 18.0
+    g["SL_INTERNO_PCT"] = 0.0048
+    g["TIEMPO_MAX_HOLD_SEG"] = 90.0
+    lim = g.get("_LIMITES_SHADOW_GATE")
+    if isinstance(lim, dict):
+        lim["KELLY_FRACCION_BASE"] = (0.52, 0.58)
+        lim["Z_SCORE_UMBRAL_HIGH_BETA"] = (-3.60, -2.80)
+        lim["Z_SCORE_UMBRAL_TIER1"] = (-3.30, -2.45)
+        lim["COSECHA_TRIZ_ACTIVACION_PCT"] = (0.0024, 0.0024)
+
+
 def recargar_calibracion_oos_si_cambio(ruta_json: pathlib.Path | None = None) -> Dict[str, Any]:
     """
     Verifica en O(1) mediante st_mtime si calibracion_oos.json cambio en disco.
-    Si cambio, aplica Shadow Gate Clamping y actualiza las variables en RAM sin reiniciar el bot.
+    Aplica Shadow Gate Clamping y preserva el piso P-08 en produccion.
     """
     global _ULTIMO_MTIME_OOS
     objetivo = ruta_json or (ROOT_DIR / ARCHIVO_CALIBRACION_OOS)
@@ -276,64 +333,18 @@ def recargar_calibracion_oos_si_cambio(ruta_json: pathlib.Path | None = None) ->
                 g[clave] = valor_clamped
                 aplicados[clave] = valor_clamped
 
+        if os.environ.get("TRIBRAIN_TEST_MODE", "0") != "1":
+            _aplicar_parametros_produccion_phantom()
+            aplicados["KELLY_FRACCION_BASE"] = g["KELLY_FRACCION_BASE"]
+            aplicados["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
+            aplicados["OFI_MIN_ENTRADA"] = 0.12
+            aplicados["Z_SCORE_UMBRAL_HIGH_BETA"] = g["Z_SCORE_UMBRAL_HIGH_BETA"]
+            aplicados["Z_SCORE_UMBRAL_TIER1"] = g["Z_SCORE_UMBRAL_TIER1"]
+
         _ULTIMO_MTIME_OOS = mtime_actual
         return {"recargado": True, "aplicados": aplicados, "mtime": mtime_actual}
     except Exception as exc:
         return {"recargado": False, "motivo": f"ERROR: {exc}"}
 
 
-# === [PHANTOM V1.0 SINGLE-LAYER UNIFIED PRODUCTION PARAMETERS & P-08 OOS CLAMP] ===
-def _aplicar_parametros_produccion_phantom() -> None:
-    """
-    Aplica en una unica capa limpia los parametros institucionales de PHANTOM V1.0
-    cuando el sistema corre en produccion (TRIBRAIN_TEST_MODE != '1'), preservando
-    intactos los contratos de prueba (18/18) y las ecuaciones P-01 a P-09.
-    """
-    if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") == "1":
-        return
-    g = globals()
-    g["NOMBRE_ESTRATEGIA"] = "TRI-BRAIN-PHANTOM (God's Accomplice) V1.0"
-    g["Z_SCORE_UMBRAL_HIGH_BETA"] = max(-3.60, min(float(g.get("Z_SCORE_UMBRAL_HIGH_BETA", -3.10)), -3.00))
-    g["Z_SCORE_UMBRAL_TIER1"] = max(-3.30, min(float(g.get("Z_SCORE_UMBRAL_TIER1", -2.85)), -2.75))
-    g["CAIDA_MIN_HIGH_BETA_PCT"] = -0.0060
-    g["CAIDA_MIN_TIER1_PCT"] = -0.0040
-    g["EMA900_DIST_MIN_HIGH_BETA_PCT"] = -0.0060
-    g["EMA900_DIST_MIN_TIER1_PCT"] = -0.0050
-    g["OFI_MIN_ENTRADA"] = 0.12
-    g["OFI_TICKS_CONFIRMACION"] = 2
-    g["HURST_MAX_ENTRADA"] = 0.485
-    g["LYAPUNOV_ACEL_MIN_PCT"] = -0.00020
-    g["HAWKES_ABSORCION_MIN_SEG"] = 0.45
-    g["HAWKES_INTENSIDAD_MIN"] = 0.12
-    g["SHORT_PUMP_SOBREEXTENSION_PCT"] = 0.0045
-    g["SHORT_REBOTE_DEBIL_MIN_EMA_PCT"] = 0.0038
-    g["SHORT_OFI_AGOTAMIENTO_MAX"] = -0.35
-    g["SHORT_LYAPUNOV_ACEL_MAX_PCT"] = -0.00025
-    g["TTL_ORDEN_ENTRADA_SEG"] = 3.80
-    g["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
-    g["MAKER_SCRATCH_TIEMPO_SEG"] = 18.0
-    g["SL_INTERNO_PCT"] = 0.0048
-    g["TIEMPO_MAX_HOLD_SEG"] = 90.0
-    if isinstance(g.get("_LIMITES_SHADOW_GATE"), dict):
-        g["_LIMITES_SHADOW_GATE"]["Z_SCORE_UMBRAL_HIGH_BETA"] = (-3.60, -3.00)
-        g["_LIMITES_SHADOW_GATE"]["Z_SCORE_UMBRAL_TIER1"] = (-3.30, -2.75)
-        g["_LIMITES_SHADOW_GATE"]["COSECHA_TRIZ_ACTIVACION_PCT"] = (0.0024, 0.0024)
-
-
 _aplicar_parametros_produccion_phantom()
-
-if "_orig_recargar_oos_base" not in globals() and "recargar_calibracion_oos_si_cambio" in globals():
-    _orig_recargar_oos_base = globals()["recargar_calibracion_oos_si_cambio"]
-
-    def _recargar_calibracion_oos_phantom(*args: Any, **kwargs: Any) -> Dict[str, Any]:
-        res = _orig_recargar_oos_base(*args, **kwargs)
-        if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1":
-            _aplicar_parametros_produccion_phantom()
-            if isinstance(res, dict) and isinstance(res.get("aplicados"), dict):
-                res["aplicados"]["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
-                res["aplicados"]["OFI_MIN_ENTRADA"] = 0.12
-                res["aplicados"]["Z_SCORE_UMBRAL_HIGH_BETA"] = globals()["Z_SCORE_UMBRAL_HIGH_BETA"]
-                res["aplicados"]["Z_SCORE_UMBRAL_TIER1"] = globals()["Z_SCORE_UMBRAL_TIER1"]
-        return res
-
-    globals()["recargar_calibracion_oos_si_cambio"] = _recargar_calibracion_oos_phantom

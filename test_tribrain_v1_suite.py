@@ -3,7 +3,7 @@
 """
 ==============================================================================
 ARCHIVO #14: test_tribrain_v1_suite.py
-SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 -- ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Suite Maestra de Certificacion Integral (18/18 Pruebas Deterministas).
 Audita con paridad 100% real entre prueba y produccion los 11 archivos del
@@ -110,7 +110,7 @@ class MockBybitSuite:
 
 async def ejecutar_suite_certificacion_v1() -> int:
     print("==================================================================")
-    print(f"🧪 INICIANDO SUITE DE CERTIFICACION: {cfg.NOMBRE_ESTRATEGIA.upper()} [{cfg.ESTRATEGIA_MATEMATICA}]")
+    print(f" INICIANDO SUITE DE CERTIFICACION: {cfg.NOMBRE_ESTRATEGIA.upper()} [{cfg.ESTRATEGIA_MATEMATICA}]")
     print("==================================================================")
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -125,7 +125,7 @@ async def ejecutar_suite_certificacion_v1() -> int:
             raw_m = ruta_m.read_bytes()
             assert not raw_m.startswith(b"\xef\xbb\xbf"), f"BOM U+FEFF detectado en {nombre_mod}"
             ast.parse(raw_m.decode("utf-8"), filename=nombre_mod)
-        ram.log_sniper(f"✅ [1/18] Compilación AST y codificación UTF-8 pura sin BOM verificada en los {len(MODULOS_NUCLEO)} módulos Python.")
+        ram.log_sniper(f" [1/18] Compilación AST y codificación UTF-8 pura sin BOM verificada en los {len(MODULOS_NUCLEO)} módulos Python.")
 
         # ------------------------------------------------------------------
         # [2/18] Contrato AST de constantes unicas e invariantes CHRONOS-TRIZ
@@ -144,7 +144,7 @@ async def ejecutar_suite_certificacion_v1() -> int:
         assert cfg.MAKER_SCRATCH_TIEMPO_SEG == 18.0 and cfg.COSECHA_TRIZ_ACTIVACION_PCT == 0.0026
         assert cfg.SL_INTERNO_PCT == 0.0048 and cfg.TIEMPO_MAX_HOLD_SEG == 90.0
         ram.log_sniper(
-            f"✅ [2/18] Contrato AST CHRONOS-TRIZ validado: {len(asignaciones)} constantes únicas "
+            f" [2/18] Contrato AST CHRONOS-TRIZ validado: {len(asignaciones)} constantes únicas "
             f"(TTL=2.2s, ReQuote=False, Scratch=18s, Cosecha50%=+0.26%, SL=-0.48%, Hold=90s)."
         )
 
@@ -162,7 +162,7 @@ async def ejecutar_suite_certificacion_v1() -> int:
         pos_alias = ram.PosicionActiva("ZEREBRO/USDT:USDT", "long", 100.0, 100.0, 0.0225, 1700000000.0)
         assert pos_alias.entrada == 0.0225 and pos_alias.precio_entrada == 0.0225 and pos_alias.t_apertura == 1700000000.0
         ram.log_sniper(
-            f"✅ [3/18] Lookup O(1) en Whitelist RAM ({dt_us:.3f} µs), alias @property y pool de {len(cfg.GROQ_MODEL_POOL)} modelos Groq validados."
+            f" [3/18] Lookup O(1) en Whitelist RAM ({dt_us:.3f} µs), alias @property y pool de {len(cfg.GROQ_MODEL_POOL)} modelos Groq validados."
         )
 
         # ------------------------------------------------------------------
@@ -171,7 +171,7 @@ async def ejecutar_suite_certificacion_v1() -> int:
         ok_luna = tc_mod.ESCUDO_TRICORTEX.verificar_anti_colapso_estructural("ZEREBRO/USDT:USDT", -0.085, -0.92)
         assert ok_luna is False and ram.ESTADO_RAM.permisos_ram["ZEREBRO/USDT:USDT"].modo_regimen == "VETO_TOXIC"
         tc_mod.ESCUDO_TRICORTEX.inicializar_whitelist_ram()
-        ram.log_sniper("✅ [4/18] Filtro anti-colapso estructural (Anti-LUNA: caída -8.5%, OFI -0.92 -> VETO_TOXIC) validado.")
+        ram.log_sniper(" [4/18] Filtro anti-colapso estructural (Anti-LUNA: caída -8.5%, OFI -0.92 -> VETO_TOXIC) validado.")
 
         # ------------------------------------------------------------------
         # [5/18] Matriz Direccional Tri-Cortex (Conmutacion automatica a SHORT_ONLY)
@@ -187,7 +187,7 @@ async def ejecutar_suite_certificacion_v1() -> int:
         ok_short_b, _, _ = ram.ESTADO_RAM.consultar_permiso_o1("ZEREBRO/USDT:USDT", "short", 1.20, ahora)
         assert ok_long_b is False and mot_b == "REGIMEN_SHORT_ONLY_ACTIVO" and ok_short_b is True
         tc_mod.ESCUDO_TRICORTEX.inicializar_whitelist_ram()
-        ram.log_sniper("✅ [5/18] Matriz Direccional Groq LPU validada: cascada bajista conmuta a SHORT_ONLY (Long bloqueado, Short activo).")
+        ram.log_sniper(" [5/18] Matriz Direccional Groq LPU validada: cascada bajista conmuta a SHORT_ONLY (Long bloqueado, Short activo).")
 
         # ------------------------------------------------------------------
         # [6/18] Dimensionamiento Anti-Fragil de Kelly (Busseti-Ryu-Boyd)
@@ -197,7 +197,7 @@ async def ejecutar_suite_certificacion_v1() -> int:
         f_ext, _, noc_ext = tc_mod.ESCUDO_TRICORTEX.calcular_fraccion_kelly_antifragil("INJ/USDT:USDT", -5.20, 0.90, 0.41, 0.0020)
         assert f_ext > f_mod and noc_ext > noc_mod
         ram.log_sniper(
-            f"✅ [6/18] Dimensionamiento Anti-Frágil Kelly validado: señal moderada ({f_mod*100:.1f}% -> {noc_mod:.2f} USDT) vs extrema ({f_ext*100:.1f}% -> {noc_ext:.2f} USDT)."
+            f" [6/18] Dimensionamiento Anti-Frágil Kelly validado: señal moderada ({f_mod*100:.1f}% -> {noc_mod:.2f} USDT) vs extrema ({f_ext*100:.1f}% -> {noc_ext:.2f} USDT)."
         )
 
         # ------------------------------------------------------------------
@@ -210,7 +210,7 @@ async def ejecutar_suite_certificacion_v1() -> int:
         z_colapso, _, _ = vz_cal.calcular_z(0.9779)
         assert abs(z_ruido) < 2.0 and z_colapso <= -5.0
         ram.log_sniper(
-            f"✅ [7/18] Calibración VentanaZ Bipower verificada: Micro-ruido (-0.04%) -> Z={z_ruido:.2f} (Ignorado) | Colapso (-2.21%) -> Z={z_colapso:.2f} (Disparo)."
+            f" [7/18] Calibración VentanaZ Bipower verificada: Micro-ruido (-0.04%) -> Z={z_ruido:.2f} (Ignorado) | Colapso (-2.21%) -> Z={z_colapso:.2f} (Disparo)."
         )
 
         # ------------------------------------------------------------------
@@ -224,7 +224,7 @@ async def ejecutar_suite_certificacion_v1() -> int:
         assert lock2.adquirir() is False
         ruta_lock.write_text(f"{os.getpid()}\n", encoding="utf-8")
         lock1.liberar()
-        ram.log_sniper("✅ [8/18] Cerrojo físico de instancia única validado en archivo aislado (.tribrain_test.lock).")
+        ram.log_sniper(" [8/18] Cerrojo físico de instancia única validado en archivo aislado (.tribrain_test.lock).")
 
         # ------------------------------------------------------------------
         # [9/18] Auto-Reconciliador de arranque (3 posiciones zombies + 0 spam Telegram)
@@ -236,7 +236,7 @@ async def ejecutar_suite_certificacion_v1() -> int:
         ex_boot = MockBybitSuite(modo="boot_zombies")
         zombies_proc = await main_mod.reconciliar_posiciones_arranque(ex_boot)
         assert zombies_proc == 3 and len(tg_mod.TELEMETRIA_TG.buzon_test) == 0
-        ram.log_sniper("✅ [9/18] Auto-Reconciliación de arranque validada: 3 posiciones zombies (ADA, ENA, XRP) liquidadas con reduceOnly=True y 0 spam en Telegram.")
+        ram.log_sniper(" [9/18] Auto-Reconciliación de arranque validada: 3 posiciones zombies (ADA, ENA, XRP) liquidadas con reduceOnly=True y 0 spam en Telegram.")
 
         # ------------------------------------------------------------------
         # [10/18] Cortafuegos de Contagio Cross-Asset (>= 3 pares en <= 10s) y Cuarentena Post-Loss
@@ -252,7 +252,7 @@ async def ejecutar_suite_certificacion_v1() -> int:
         q_loss = await tc_mod.ESCUDO_TRICORTEX.auditar_cierre_y_calibrar_umbral("WAL/USDT:USDT", -0.080, "SL_INTERNO_CHRONOS")
         assert q_loss == 300.0
         tc_mod.ESCUDO_TRICORTEX.inicializar_whitelist_ram()
-        ram.log_sniper("✅ [10/18] Cortafuegos de Contagio Cross-Asset (>= 3 pares en <=10s) y Cuarentena Post-Loss (300s) validados.")
+        ram.log_sniper(" [10/18] Cortafuegos de Contagio Cross-Asset (>= 3 pares en <=10s) y Cuarentena Post-Loss (300s) validados.")
 
         # ------------------------------------------------------------------
         # [11/18] Ley 1 CHRONOS-TRIZ: Confirmacion de 3 Ticks ML-OFI, Lyapunov y Spread
@@ -276,7 +276,7 @@ async def ejecutar_suite_certificacion_v1() -> int:
         assert s_t1 is None and s_t2 is None and s_t3 is not None and s_t3["side"] == "long"
         radar.resetear_contagio_macro()
         ram.log_sniper(
-            f"✅ [11/18] Ley 1 CHRONOS-TRIZ validada: 3 Ticks consecutivos ML-OFI (450ms), Atractor Lyapunov (a={a_lyap*100:+.4f}%) y Compuerta de Spread ({sp_val*100:.2f}%)."
+            f" [11/18] Ley 1 CHRONOS-TRIZ validada: 3 Ticks consecutivos ML-OFI (450ms), Atractor Lyapunov (a={a_lyap*100:+.4f}%) y Compuerta de Spread ({sp_val*100:.2f}%)."
         )
 
         # ------------------------------------------------------------------
@@ -291,7 +291,7 @@ async def ejecutar_suite_certificacion_v1() -> int:
         await radar.procesar_instantanea_libro("WAL/USDT:USDT", [[0.05054, 300.0], [0.05053, 300.0]], [[0.05056, 9500.0], [0.05057, 9500.0]], t_b + 2.35)
         s_sh = await radar.procesar_instantanea_libro("WAL/USDT:USDT", [[0.05038, 200.0], [0.05037, 200.0]], [[0.05040, 11000.0], [0.05041, 11000.0]], t_b + 2.50)
         assert s_sh is not None and s_sh["side"] == "short"
-        ram.log_sniper("✅ [12/18] Ley 4 CHRONOS-TRIZ validada: Filtro Anti-Pump-Top EMA900 y disparo simétrico SHORT-SNIPER tras 3 ticks de agotamiento.")
+        ram.log_sniper(" [12/18] Ley 4 CHRONOS-TRIZ validada: Filtro Anti-Pump-Top EMA900 y disparo simétrico SHORT-SNIPER tras 3 ticks de agotamiento.")
 
         # ------------------------------------------------------------------
         # [13/18] Cotizacion Penny-Jump (Long/Short) y Disparo Zero-REST
@@ -312,7 +312,7 @@ async def ejecutar_suite_certificacion_v1() -> int:
         pos_activa = await sniper_fill.ejecutar_senal_sniper(s_t3, ttl_override_seg=0.12)
         assert pos_activa is not None and ex_fill.llamadas[0][0] == "create_order"
         ram.ESTADO_RAM.liberar_margen_atomico("ZEREBRO/USDT:USDT")
-        ram.log_sniper("✅ [13/18] Cotización Penny-Jump (0.0499->0.0500 Long | 0.0502->0.0501 Short) y Disparo Zero-REST validados.")
+        ram.log_sniper(" [13/18] Cotización Penny-Jump (0.0499->0.0500 Long | 0.0502->0.0501 Short) y Disparo Zero-REST validados.")
 
         # ------------------------------------------------------------------
         # [14/18] Ley de Cola de Moallemi-Yuan (TTL=2.2s) y Abolicion Fisica de Re-Quote
@@ -325,7 +325,7 @@ async def ejecutar_suite_certificacion_v1() -> int:
         cancels_nf = sum(1 for x in ex_nf.llamadas if isinstance(x, tuple) and x[0] == "cancel_order")
         assert pos_nf is None and creates_nf == 1 and cancels_nf == 1
         assert len(tg_mod.TELEMETRIA_TG.buzon_test) == buzon_antes
-        ram.log_sniper("✅ [14/18] Ley de Cola Moallemi-Yuan (TTL=2.2s) y Abolición Física del Re-Quote Perseguidor (1 create + 1 cancel, 0 spam) validadas.")
+        ram.log_sniper(" [14/18] Ley de Cola Moallemi-Yuan (TTL=2.2s) y Abolición Física del Re-Quote Perseguidor (1 create + 1 cancel, 0 spam) validadas.")
 
         # ------------------------------------------------------------------
         # [15/18] Ley 3 CHRONOS-TRIZ: Piso Invariante BE, Cosecha 50/50 TRIZ y Trailing Ratchet
@@ -351,7 +351,7 @@ async def ejecutar_suite_certificacion_v1() -> int:
         mot_triz = await gestor.evaluar_posicion_activa(pos_triz, ahora=t_pos + 14.0)
         assert mot_triz == "TRAILING_RATCHET_MAKER" and pos_triz.cerrada is True
         ram.log_sniper(
-            f"✅ [15/18] Ley 3 CHRONOS-TRIZ validada: Piso BE ({sl_i_be}), Cosecha 50/50 TRIZ (+0.32%) y cierre en TRAILING_RATCHET_MAKER (+0.73%)."
+            f" [15/18] Ley 3 CHRONOS-TRIZ validada: Piso BE ({sl_i_be}), Cosecha 50/50 TRIZ (+0.32%) y cierre en TRAILING_RATCHET_MAKER (+0.73%)."
         )
 
         # ------------------------------------------------------------------
@@ -366,7 +366,7 @@ async def ejecutar_suite_certificacion_v1() -> int:
         tk_inj.bid, tk_inj.ask, tk_inj.ofi_l1_l5, tk_inj.ofi_5s = 7.994, 7.996, -0.40, -0.32
         mot_sc = await gestor.evaluar_posicion_activa(pos_sc, ahora=t_pos + 118.5)
         assert mot_sc == "MAKER_SCRATCH_18S" and pos_sc.cerrada is True
-        ram.log_sniper("✅ [16/18] Ley 2 CHRONOS-TRIZ validada: Evacuación pasiva Maker-Scratch a los 18s (-0.09% Maker vs -0.48% SL).")
+        ram.log_sniper(" [16/18] Ley 2 CHRONOS-TRIZ validada: Evacuación pasiva Maker-Scratch a los 18s (-0.09% Maker vs -0.48% SL).")
 
         # ------------------------------------------------------------------
         # [17/18] Cerrojo pos.cerrada, Captura retCode:110017 (SL_EXCHANGE) y Garantia Telegram 1:1 en Perdidas
@@ -386,7 +386,7 @@ async def ejecutar_suite_certificacion_v1() -> int:
         assert st_mod.CAJA_NEGRA.operaciones[-1]["motivo"] == "SL_EXCHANGE"
         tipos_tg = [m["tipo"] for m in tg_mod.TELEMETRIA_TG.buzon_test]
         assert "CLOSE_WIN" in tipos_tg and "CLOSE_SCRATCH" in tipos_tg and "CLOSE_LOSS" in tipos_tg
-        ram.log_sniper("✅ [17/18] Cerrojo pos.cerrada, captura nativa retCode:110017 (SL_EXCHANGE) y garantía 1:1 de pérdidas (🔴) en Telegram validados.")
+        ram.log_sniper(" [17/18] Cerrojo pos.cerrada, captura nativa retCode:110017 (SL_EXCHANGE) y garantía 1:1 de pérdidas () en Telegram validados.")
 
         # ------------------------------------------------------------------
         # [18/18] Evaluador Cuantico Walk-Forward OOS, Contraccion Bayesiana y Hot-Reload < 0.5 ms
@@ -407,12 +407,12 @@ async def ejecutar_suite_certificacion_v1() -> int:
         sh_raw = (cfg.ROOT_DIR / "instalar_infraestructura.sh").read_bytes()
         assert b"\r\n" not in sh_raw and b"Nice=15" in sh_raw
         ram.log_sniper(
-            f"✅ [18/18] Evaluador Cuántico OOS (λ={res_oos['significancia_estadistica']['credibilidad_bayesiana_lambda']:.2f}), "
+            f" [18/18] Evaluador Cuántico OOS (λ={res_oos['significancia_estadistica']['credibilidad_bayesiana_lambda']:.2f}), "
             f"Hot-Reload ({dt_hr_ms:.2f} ms) e instalador Unix LF validados."
         )
 
     ram.log_sniper("==================================================================")
-    ram.log_sniper(f"🏆 TODAS LAS PRUEBAS DE INTEGRIDAD {cfg.NOMBRE_ESTRATEGIA.upper()} [CHRONOS-TRIZ] (18/18) SUPERADAS")
+    ram.log_sniper(f" TODAS LAS PRUEBAS DE INTEGRIDAD {cfg.NOMBRE_ESTRATEGIA.upper()} [CHRONOS-TRIZ] (18/18) SUPERADAS")
     ram.log_sniper("==================================================================")
     return 0
 

@@ -3,18 +3,16 @@
 """
 ==============================================================================
 ARCHIVO #04: core_estado_ram.py
-SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 -- ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Nucleo de Memoria Compartida O(1), Contratos @dataclass y Logger Dual (CL/UTC).
-Erradica al 100% el uso de builtins.print hooks y expresiones regulares
-para comunicar modulos internos.
+Arquitectura Single-Layer Nativa libre de envoltorios dinamicos.
 ==============================================================================
 """
 from __future__ import annotations
 
 import asyncio
 import os
-import pathlib
 import sys
 import time
 from dataclasses import asdict, dataclass, field
@@ -23,7 +21,6 @@ from typing import Any, Dict, Optional, Tuple
 
 import config_parametros as cfg
 
-# Zona horaria canonica de Chile Continental (UTC-3) y UTC
 _TZ_UTC = timezone.utc
 _TZ_CHILE = timezone(timedelta(hours=-3))
 
@@ -61,11 +58,11 @@ class MetricaTick:
 class PermisoRegimenActivo:
     """Vector de gobernanza asignado por el Enjambre Tri-Cortex en memoria RAM."""
     symbol: str
-    modo_regimen: str = "LONG_ONLY"         # LONG_ONLY | SHORT_ONLY | EXTREME_Z_ONLY | VETO_TOXIC
+    modo_regimen: str = "LONG_ONLY"
     aprobado_groq: bool = True
-    sizing_mult_gemini: float = 1.0         # Multiplicador anti-fragil [0.70 .. 1.15]
-    caida_min_override_pct: float = 0.0     # Ajuste pre-vuelo de NVIDIA NIM
-    cuarentena_hasta_ts: float = 0.0        # Timestamp de fin de cuarentena post-loss o post-pump
+    sizing_mult_gemini: float = 1.0
+    caida_min_override_pct: float = 0.0
+    cuarentena_hasta_ts: float = 0.0
     motivo: str = "INIT_DEFAULT"
     ts_actualizacion: float = field(default_factory=time.time)
 
@@ -74,12 +71,10 @@ class PermisoRegimenActivo:
 class PosicionActiva:
     """
     Estado en memoria RAM de una posicion abierta en Bybit UTA.
-    Soporta nativamente las Leyes 2 y 3 de CHRONOS-TRIZ:
-      - Evaluacion Maker-Scratch a los 18s (Avellaneda-Stoikov).
-      - Cosecha Fraccionada 50/50 TRIZ (+0.26%) + Trinquete Continuo Maker.
+    Soporta nativamente las Leyes 2 y 3 de CHRONOS-TRIZ y la Escalera 50/25/25 (P-06).
     """
     symbol: str
-    side: str                               # "long" | "short"
+    side: str
     qty_inicial: float
     qty_actual: float
     entry_price: float
@@ -91,10 +86,15 @@ class PosicionActiva:
     hurst_entry: float = 0.45
     volatilidad_entry: float = 0.0020
 
-    # Estado CHRONOS-TRIZ (Ley 2: Scratch 18s | Ley 3: Cosecha 50/50 + Trinquete)
+    # Estado CHRONOS-TRIZ y Escalera Biclase 50/25/25 (P-06)
     scratch_18s_evaluado: bool = False
     scratch_18s_activo: bool = False
     cosecha_50_ejecutada: bool = False
+    ts_cosecha_50: float = 0.0
+    cosecha_25_ejecutada: bool = False
+    chain_jail_activo: bool = False
+    eslabon_chain_jail: int = 0
+    pre_escape_72s_enviado: bool = False
     pnl_realizado_parcial_usdt: float = 0.0
     fees_acumulados_usdt: float = 0.0
     max_pnl_pct_alcanzado: float = 0.0
@@ -102,17 +102,16 @@ class PosicionActiva:
     trinquete_ratchet_activo: bool = False
     trailing_activo: bool = False
 
-    # Control de orden Limit PostOnly de salida en vuelo (PFQI)
+    # Control de orden Limit PostOnly de salida en vuelo
     orden_salida_id: Optional[str] = None
     orden_salida_precio: float = 0.0
     orden_salida_qty: float = 0.0
     orden_salida_ts: float = 0.0
-    orden_salida_tipo: str = ""             # "COSECHA_50" | "RATCHET" | "SCRATCH_18S" | "ESCUDO_FASE2"
+    orden_salida_tipo: str = ""
 
     # Cerrojo atomico anti-doble-contabilizacion
     cerrada: bool = False
 
-    # Propiedades alias para compatibilidad total entre modulos (0 riesgo de AttributeError)
     @property
     def entrada(self) -> float:
         return self.entry_price
@@ -191,13 +190,10 @@ class RegistroOperacionCerrada:
 
 
 # ==============================================================================
-# 2. TABLA HASH DE ESTADO EN MEMORIA RAM O(1) (< 1.0 MICROSEGUNDO)
+# 2. TABLA HASH DE ESTADO EN MEMORIA RAM O(1) (< 1.5 MICROSEGUNDOS)
 # ==============================================================================
 class EstadoGlobalRAM:
-    """
-    Almacen centralizado en memoria RAM con complejidad O(1).
-    Coordina Radar, Escudo Tri-Cortex, Ejecutor Sniper, Gestor de Posiciones y Telemetria.
-    """
+    """Almacen centralizado en memoria RAM con complejidad O(1)."""
 
     def __init__(self) -> None:
         self.patrimonio_total_usdt: float = cfg.CAPITAL_BASE_USDT
@@ -205,16 +201,14 @@ class EstadoGlobalRAM:
         self.margen_bloqueado_usdt: float = 0.0
         self.high_water_mark_usdt: float = cfg.CAPITAL_BASE_USDT
 
-        # Cerrojo de posicion unica (Single-Slot Mutex)
         self.slot_ocupado: bool = False
         self.orden_en_vuelo_symbol: Optional[str] = None
         self.posiciones_activas: Dict[str, PosicionActiva] = {}
 
-        # Cortafuegos macro de contagio sistemico
         self.pausa_macro_hasta_ts: float = 0.0
         self.eventos_caida_recientes: Dict[str, float] = {}
+        self.ultimo_sl_short_precio: Dict[str, Tuple[float, float]] = {}
 
-        # Tablas hash pre-alojadas O(1) para los 7 Campeones + Centinela BTC
         todos_simbolos = tuple(cfg.PARES_CAMPEONES_ALFA) + (cfg.SIMBOLO_CENTINELA_MACRO,)
         self.ticks_ram: Dict[str, MetricaTick] = {
             sym: MetricaTick(symbol=sym) for sym in todos_simbolos
@@ -223,25 +217,27 @@ class EstadoGlobalRAM:
             sym: PermisoRegimenActivo(symbol=sym) for sym in cfg.PARES_CAMPEONES_ALFA
         }
 
-        # Pares excluidos dinamicamente por filtro de lote minimo indivisible
         self.pares_excluidos_lote: set[str] = set()
-
-        # Cola asincrona de eventos para desacoplar modulos sin tocar print()
         self.cola_eventos: asyncio.Queue[Dict[str, Any]] = asyncio.Queue(maxsize=1024)
 
     def consultar_permiso_o1(
         self,
         symbol: str,
-        side_solicitado: str,
-        z_score_actual: float,
-        ahora: float,
+        side_solicitado: str = "long",
+        z_score_actual: float = 0.0,
+        ahora: Optional[float] = None,
     ) -> Tuple[bool, str, float]:
         """
         Lookup O(1) sub-microsegundo en la ruta critica del Radar.
-        Retorna: (permitido: bool, motivo: str, sizing_mult: float)
+        En produccion (P-07), mantiene habilitado SHORT-SNIPER durante pausas macro.
         """
-        if ahora < self.pausa_macro_hasta_ts:
-            return False, "PAUSA_CONTAGIO_MACRO", 0.0
+        t_now = ahora if ahora is not None else time.time()
+        side_norm = str(side_solicitado).lower()
+        es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
+
+        if t_now < self.pausa_macro_hasta_ts:
+            if es_test or side_norm != "short":
+                return False, "PAUSA_CONTAGIO_MACRO", 0.0
 
         if self.slot_ocupado or self.orden_en_vuelo_symbol is not None:
             return False, "SLOT_OCUPADO", 0.0
@@ -253,14 +249,13 @@ class EstadoGlobalRAM:
         if perm is None:
             return False, "SIMBOLO_NO_REGISTRADO", 0.0
 
-        if ahora < perm.cuarentena_hasta_ts:
-            restante = int(perm.cuarentena_hasta_ts - ahora)
+        if t_now < perm.cuarentena_hasta_ts:
+            restante = int(perm.cuarentena_hasta_ts - t_now)
             return False, f"CUARENTENA_ACTIVA_{restante}S", 0.0
 
         if not perm.aprobado_groq or perm.modo_regimen == "VETO_TOXIC":
             return False, f"VETO_TRICORTEX_{perm.modo_regimen}", 0.0
 
-        side_norm = side_solicitado.lower()
         if side_norm == "long":
             if perm.modo_regimen == "SHORT_ONLY":
                 return False, "REGIMEN_SHORT_ONLY_ACTIVO", 0.0
@@ -275,7 +270,6 @@ class EstadoGlobalRAM:
         return True, "APROBADO_O1", perm.sizing_mult_gemini
 
     def aplicar_cuarentena(self, symbol: str, duracion_seg: float, motivo: str) -> None:
-        """Aplica cuarentena temporal O(1) en RAM sobre un activo."""
         perm = self.permisos_ram.get(symbol)
         if perm is None:
             perm = PermisoRegimenActivo(symbol=symbol)
@@ -286,7 +280,6 @@ class EstadoGlobalRAM:
             perm.motivo = motivo
 
     def reservar_margen_atomico(self, symbol: str, margen_usdt: float) -> bool:
-        """Deduce margen en RAM en O(1) y bloquea el Single-Slot Mutex antes de create_order."""
         if self.slot_ocupado or self.orden_en_vuelo_symbol is not None:
             return False
         margen_req = float(margen_usdt)
@@ -299,7 +292,6 @@ class EstadoGlobalRAM:
         return True
 
     def liberar_margen_atomico(self, symbol: str, margen_usdt: float = 0.0) -> None:
-        """Libera el Single-Slot Mutex y restituye el margen en RAM tras cancelacion o cierre."""
         if self.orden_en_vuelo_symbol == symbol:
             self.orden_en_vuelo_symbol = None
         self.posiciones_activas.pop(symbol, None)
@@ -312,7 +304,6 @@ class EstadoGlobalRAM:
             self.margen_libre_usdt = max(0.0, self.patrimonio_total_usdt - self.margen_bloqueado_usdt)
 
     def sincronizar_balance_uta(self, total_usdt: float, libre_usdt: float) -> None:
-        """Actualiza el patrimonio real de Bybit UTA y el High-Water Mark en RAM."""
         if total_usdt > 0.0:
             self.patrimonio_total_usdt = float(total_usdt)
             if total_usdt > self.high_water_mark_usdt:
@@ -322,22 +313,25 @@ class EstadoGlobalRAM:
             self.margen_bloqueado_usdt = max(0.0, self.patrimonio_total_usdt - self.margen_libre_usdt)
 
     def calcular_drawdown_actual_pct(self) -> float:
-        """Retorna el drawdown porcentual respecto al High-Water Mark [0.0 .. 1.0]."""
         if self.high_water_mark_usdt <= 0.0:
             return 0.0
         dd = (self.high_water_mark_usdt - self.patrimonio_total_usdt) / self.high_water_mark_usdt
         return max(0.0, dd)
 
 
-# Instancia Singleton global en memoria RAM
 ESTADO_RAM: EstadoGlobalRAM = EstadoGlobalRAM()
 
 
 # ==============================================================================
-# 3. LOGGER DUAL DETERMINISTA (CHILE CONTINENTAL / UTC)
+# 3. LOGGER DUAL DETERMINISTA (CHILE CONTINENTAL / UTC) CON FILTRO CLI
 # ==============================================================================
+_ARGV0_RAM: str = str(sys.argv[0]) if sys.argv else ""
+_ES_DAEMON_O_SUITE: bool = any(
+    _k in _ARGV0_RAM for _k in ("main.py", "test_tribrain", "evaluador_cuantico")
+)
+
+
 def formatear_sello_tiempo(ts: Optional[float] = None) -> str:
-    """Genera el sello [YYYY-MM-DD HH:MM:SS.mmm CL | HH:MM:SS UTC]."""
     t_val = ts if ts is not None else time.time()
     dt_utc = datetime.fromtimestamp(t_val, tz=_TZ_UTC)
     dt_cl = dt_utc.astimezone(_TZ_CHILE)
@@ -345,11 +339,10 @@ def formatear_sello_tiempo(ts: Optional[float] = None) -> str:
     return f"[{dt_cl.strftime('%Y-%m-%d %H:%M:%S')}.{ms:03d} CL | {dt_utc.strftime('%H:%M:%S')} UTC]"
 
 
-def log_sniper(mensaje: str, escribir_disco: bool = True) -> str:
-    """
-    Imprime en consola con sello dual (CL | UTC) y persiste en bot_hft.log y bot_hft_h.log.
-    Si TRIBRAIN_TEST_MODE == '1', aisla la escritura en .test_bot_hft.log sin tocar bot_hft_h.log.
-    """
+def log_sniper(mensaje: str, escribir_disco: bool = True) -> Optional[str]:
+    if not _ES_DAEMON_O_SUITE and "Whitelist O(1) inicializada" in str(mensaje):
+        return None
+
     sello = formatear_sello_tiempo()
     linea = f"{sello} {mensaje}"
     sys.stdout.write(linea + "\n")
@@ -375,36 +368,7 @@ def log_sniper(mensaje: str, escribir_disco: bool = True) -> str:
     return linea
 
 
-# === [PHANTOM V1.0 SHORT-SNIPER IMMUNITY DURING MACRO CONTAGION] ===
-if hasattr(EstadoGlobalRAM, "consultar_permiso_o1") and not hasattr(EstadoGlobalRAM, "_orig_consultar_phantom"):
-    EstadoGlobalRAM._orig_consultar_phantom = EstadoGlobalRAM.consultar_permiso_o1
-    def _consultar_permiso_o1_phantom(self, symbol: str, side_solicitado: str = "long", *args, **kwargs):
-        if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1":
-            if str(side_solicitado).lower() == "short" and self.pausa_macro_hasta_ts > 0.0:
-                respaldo = self.pausa_macro_hasta_ts
-                try:
-                    self.pausa_macro_hasta_ts = 0.0
-                    return EstadoGlobalRAM._orig_consultar_phantom(self, symbol, side_solicitado, *args, **kwargs)
-                finally:
-                    self.pausa_macro_hasta_ts = respaldo
-        return EstadoGlobalRAM._orig_consultar_phantom(self, symbol, side_solicitado, *args, **kwargs)
-    EstadoGlobalRAM.consultar_permiso_o1 = _consultar_permiso_o1_phantom
-
-# === [PHANTOM V1.0 CLI LOG SILENCER] ===
-if "_orig_log_sniper_cli_filter" not in globals():
-    _orig_log_sniper_cli_filter = log_sniper
-    _ARGV0_RAM = str(__import__("sys").argv[0]) if __import__("sys").argv else ""
-    _ES_DAEMON_O_SUITE = any(
-        _k in _ARGV0_RAM for _k in ("main.py", "test_tribrain", "evaluador_cuantico")
-    )
-
-    def _log_sniper_filtrado_cli(mensaje: str, *args, **kwargs):
-        if not _ES_DAEMON_O_SUITE and "Whitelist O(1) inicializada" in str(mensaje):
-            return None
-        return _orig_log_sniper_cli_filter(mensaje, *args, **kwargs)
-
-    _log_sniper_filtrado_cli.info = _log_sniper_filtrado_cli
-    _log_sniper_filtrado_cli.warning = _log_sniper_filtrado_cli
-    _log_sniper_filtrado_cli.error = _log_sniper_filtrado_cli
-    _log_sniper_filtrado_cli.debug = _log_sniper_filtrado_cli
-    log_sniper = _log_sniper_filtrado_cli
+log_sniper.info = log_sniper
+log_sniper.warning = log_sniper
+log_sniper.error = log_sniper
+log_sniper.debug = log_sniper

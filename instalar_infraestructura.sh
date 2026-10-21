@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # ARCHIVO #13: instalar_infraestructura.sh
-# SISTEMA: TRI-BRAIN-PHANTOM (God's Accomplice) V1.0 — ESTRATEGIA CHRONOS-TRIZ
+# SISTEMA: TRI-BRAIN-PHANTOM (God's Accomplice) V1.0 -- ESTRATEGIA CHRONOS-TRIZ
 # ==============================================================================
 set -euo pipefail
 
@@ -13,13 +13,13 @@ TIMER_FILE="/etc/systemd/system/${SERVICE_NAME}.timer"
 USER_NAME="$(whoami)"
 
 echo "=================================================================="
-echo "⚙️  INSTALANDO INFRAESTRUCTURA TRI-BRAIN-PHANTOM (God's Accomplice) V1.0"
+echo " [SETUP] INSTALANDO INFRAESTRUCTURA TRI-BRAIN-PHANTOM (God's Accomplice) V1.0"
 echo "   Repositorio : ${REPO_DIR}"
 echo "   Python VENV : ${PY_BIN}"
 echo "=================================================================="
 
 if [ ! -x "${PY_BIN}" ]; then
-    echo "❌ [ERROR] No se encontro el ejecutable Python en ${PY_BIN}"
+    echo " [ERROR] No se encontro el ejecutable Python en ${PY_BIN}"
     exit 1
 fi
 
@@ -63,7 +63,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable "${SERVICE_NAME}.timer"
 sudo systemctl restart "${SERVICE_NAME}.timer"
 
-echo "✅ [SYSTEMD OK] Timer ${SERVICE_NAME}.timer habilitado y activo:"
+echo " [SYSTEMD OK] Timer ${SERVICE_NAME}.timer habilitado y activo:"
 systemctl list-timers "${SERVICE_NAME}.timer" --no-pager || true
 
 python3 - "${REPO_DIR}" << 'PYEOF'
@@ -91,7 +91,7 @@ set +e 2>/dev/null || true
 
 tmuxro() {
     set +e
-    echo "🔒 Entrando a tmux en MODO SOLO LECTURA (-r). Para salir sin apagar el bot presiona: Ctrl+B y luego d"
+    echo " [READ-ONLY] Entrando a tmux en MODO SOLO LECTURA (-r). Para salir sin apagar el bot presiona: Ctrl+B y luego d"
     sleep 1
     command tmux attach -t demonio_hft -r || true
     return 0
@@ -108,7 +108,7 @@ verbot() {
     local SUBMODO="${2:-status}"
 
     echo "=========================================================================================="
-    echo -e " \033[1;38;2;255;255;255;48;2;105;48;195m 👁️ PHANTOM 3D \033[0m \033[1;38;2;0;240;255mPANEL FORENSE EN TIEMPO REAL — TRI-BRAIN-PHANTOM (God's Accomplice) V1.0\033[0m"
+    echo -e " \033[1;38;2;255;255;255;48;2;105;48;195m  PHANTOM 3D  \033[0m \033[1;38;2;0;240;255mPANEL FORENSE EN TIEMPO REAL -- TRI-BRAIN-PHANTOM (God's Accomplice) V1.0\033[0m"
     echo "=========================================================================================="
 
     if [ -f "${LOCK}" ]; then
@@ -117,12 +117,12 @@ verbot() {
         if [ -n "${PID}" ] && kill -0 "${PID}" 2>/dev/null; then
             local PS_INFO
             PS_INFO=$(ps -p "${PID}" -o pid=,etime=,rss=,%cpu= 2>/dev/null | awk '{printf "PID: %s | Uptime: %s | RAM: %.1f MB | CPU: %s%%", $1, $2, $3/1024, $4}' || true)
-            echo -e " \033[1;38;2;10;25;15;48;2;0;230;118m 🟢 ONLINE \033[0m \033[1;38;2;0;255;135mMOTOR EN VIVO -> ${PS_INFO}\033[0m"
+            echo -e " \033[1;38;2;10;25;15;48;2;0;230;118m  ONLINE  \033[0m \033[1;38;2;0;255;135mMOTOR EN VIVO -> ${PS_INFO}\033[0m"
         else
-            echo " 🔴 ALERTA: Archivo .tribrain.lock presente (PID ${PID}), pero el proceso no responde."
+            echo " [ALERTA] Archivo .tribrain.lock presente (PID ${PID}), pero el proceso no responde."
         fi
     else
-        echo " ⚪ MOTOR DETENIDO: No existe archivo .tribrain.lock activo."
+        echo " [STOP] MOTOR DETENIDO: No existe archivo .tribrain.lock activo."
     fi
 
     case "${MODO}" in
@@ -140,9 +140,9 @@ verbot() {
             if [ ! -f "${ARCHIVO_HIST}" ]; then
                 echo "Aun no existe bitacora de historial."
             elif [ "${SUBMODO}" = "trades" ]; then
-                echo " 🎯 FILTRO ACTIVO: MOSTRANDO UNICAMENTE DISPAROS, COSECHAS, TRINQUETES Y CIERRES"
+                echo " [TRADES] FILTRO ACTIVO: MOSTRANDO UNICAMENTE DISPAROS, COSECHAS, TRINQUETES Y CIERRES"
                 echo "------------------------------------------------------------------------------------------"
-                grep -h -E "INICIANDO CEREBRO|\[RADAR\].*APROBADO|Orden |Posición|Trinquete|Cosecha|CHAIN-JAIL|Trailing|MAKER-SCRATCH|MAKER_UNWIND|CIERRE|no llenada" "${LOG_H}" "${LOG}" 2>/dev/null | awk '!seen[$0]++' | tail -n 60 || true
+                grep -h -E "INICIANDO CEREBRO|\[RADAR\].*APROBADO|Orden |Posicion|Trinquete|Cosecha|PHANTOM 50/25/25|Trailing|MAKER-SCRATCH|MAKER_UNWIND|CIERRE|no llenada" "${LOG_H}" "${LOG}" 2>/dev/null | awk '!seen[$0]++' | tail -n 60 || true
                 echo "=========================================================================================="
             else
                 tail -n 60 "${ARCHIVO_HIST}" || true
@@ -158,16 +158,16 @@ verbot() {
             ;;
         *)
             "${PY}" -c "import sys; sys.path.insert(0, '${REPO}'); import gestor_posiciones as gp; gp.imprimir_status_cli_verbot()" || true
-            echo " 🛡️  MODO AISLADO ACTIVO: Presiona [Ctrl + C] para salir de la vista"
+            echo " [SAFE MODE] MODO AISLADO ACTIVO: Presiona [Ctrl + C] para salir de la vista"
             echo "    y volver al prompt SSH sin apagar el bot ni cerrar tu consola."
             echo "=========================================================================================="
             if [ -f "${LOG}" ]; then
-                (trap 'exit 0' INT TERM; tail -n 35 -f "${LOG}" || true) || true
+                (trap 'exit 0' INT TERM; tail -n 35 -f "${LOG}" | "${PY}" -u -c "import sys; sys.path.insert(0, '${REPO}'); import gestor_posiciones as gp; [print(gp.colorear_linea_log_mobaxterm(line), flush=True) for line in sys.stdin]" || true) || true
             else
                 echo "Aun no existe ${LOG}"
             fi
             echo ""
-            echo "✅ Vista en vivo cerrada de forma segura (El demonio V4.0 sigue operando en segundo plano)."
+            echo " [OK] Vista en vivo cerrada de forma segura (El demonio PHANTOM V1.0 sigue operando en segundo plano)."
             ;;
     esac
     return 0
@@ -177,9 +177,9 @@ verbot() {
 
 bloque_verbot = plantilla_raw.replace("__REPO_DIR__", repo_dir)
 rc_path.write_text(txt.rstrip() + "\n\n" + bloque_verbot, encoding="utf-8")
-print("✅ [VERBOT PHANTOM V1.0 OK] Comandos instalados en ~/.bashrc: verbot, verbot -s, verbot -x, verbot -x cerrar, verbot -h trades, verbot -q, verbot -t")
+print(" [VERBOT PHANTOM V1.0 OK] Comandos instalados en ~/.bashrc: verbot, verbot -s, verbot -x, verbot -x cerrar, verbot -h trades, verbot -q, verbot -t")
 PYEOF
 
 echo "=================================================================="
-echo "✅ INFRAESTRUCTURA TRI-BRAIN-PHANTOM (God's Accomplice) V1.0 INSTALADA"
+echo " [OK] INFRAESTRUCTURA TRI-BRAIN-PHANTOM (God's Accomplice) V1.0 INSTALADA"
 echo "=================================================================="

@@ -1,13 +1,13 @@
-# ⚡ TRI-BRAIN-PHANTOM (God's Accomplice) V1.0
+#  TRI-BRAIN-PHANTOM (God's Accomplice) V1.0
 
 **Sistema Cuantitativo de Ejecución Microestructural HFT Maker-First (`VERSION_SISTEMA = "4.0.0"`)**
-Estrategia Base: **CHRONOS-TRIZ** + **Escalera Convexa de 3 Tiradas (50% / 25% / 25% — Chain-Jail Biclase V4.0)** + **Enjambre Cognitivo Asíncrono Tri-Córtex $\mathcal{O}(1)$**.
+Estrategia Base: **CHRONOS-TRIZ** + **Escalera Convexa de 3 Tiradas (50% / 25% / 25% -- Chain-Jail Biclase V4.0)** + **Enjambre Cognitivo Asíncrono Tri-Córtex $\mathcal{O}(1)$**.
 
 ---
 
 ## 1. Novedades y Mejoras Estructurales en V4.0
 
-### 1.1. Arquitectura de Salida Convexa en 3 Tiradas (50% / 25% / 25% — Chain-Jail Biclase V4.0)
+### 1.1. Arquitectura de Salida Convexa en 3 Tiradas (50% / 25% / 25% -- Chain-Jail Biclase V4.0)
 Calibrada sobre las 3 Olas Microestructurales empíricas ($Q_{50}, Q_{80}, Q_{95}$) para maximizar la tasa de crecimiento geométrico de Kelly-Shannon ($g^*$):
 
 | Etapa / Eslabón | Condición de Activación | Acción Automática del Gestor | Protección y Piso SL |

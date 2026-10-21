@@ -1,8 +1,9 @@
 # ==============================================================================
-# TRI-BRAIN-SNIPER (EMPEROR TIME) V1.0 - ESTRATEGIA CHRONOS-TRIZ
-# Dependencias Oficiales de Produccion (Windows Dev & Linux Tokio HFT)
+# TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 -- ESTRATEGIA CHRONOS-TRIZ
+# Dependencias Oficiales de Produccion (Windows Dev & Linux Singapur HFT)
 # ==============================================================================
 ccxt>=4.4.0
 aiohttp>=3.9.0
 groq>=0.11.0
 python-dotenv>=1.0.0
+uvloop>=0.21.0; sys_platform != 'win32'

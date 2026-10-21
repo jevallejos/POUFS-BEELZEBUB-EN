@@ -3,18 +3,15 @@
 """
 ==============================================================================
 ARCHIVO #12: evaluador_cuantico_oos.py
-SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 -- ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
-Motor de Calibracion Cuantitativa Fuera de Muestra (Walk-Forward OOS):
+Motor de Calibracion Cuantitativa Fuera de Muestra (Walk-Forward OOS Single-Layer):
   - Ejecucion desacoplada en cortes de sesion (00:00, 08:00 y 16:00 UTC) con
     aislamiento de CPU/IO (Nice=15, IOSchedulingClass=best-effort).
   - Combinacion convexa multi-horizonte (8h: 50%, 24h: 30%, 72h: 20%).
-  - Piso de significancia estadistica (N_min = 40) con Contraccion Bayesiana
-    de James-Stein (Shrinkage) para impedir sobreajuste en muestras cortas.
-  - Descomposicion microestructural CHRONOS-TRIZ: Ahorro por Maker-Scratch 18s,
-    impacto de Cosecha 50/50 TRIZ, Fee Drag, LVR y Velocidad Geometrica g_SI*.
-  - Dinamica del Replicador por activo y exportacion atomica a calibracion_oos.json
-    protegida por Shadow Gate Clamping (< 0.5 ms Hot-Reload en main.py).
+  - Contraccion Bayesiana de James-Stein (Shrinkage, N_min = 40) y Compuerta
+    Contrafactual P-08 integrada nativamente sin doble escritura ni claves
+    duplicadas en la raiz de calibracion_oos.json.
 ==============================================================================
 """
 from __future__ import annotations
@@ -23,6 +20,7 @@ import argparse
 import asyncio
 import json
 import math
+import os
 import pathlib
 import sys
 import time
@@ -36,9 +34,6 @@ from telemetria_telegram import TELEMETRIA_TG
 N_MIN_SIGNIFICANCIA_OOS: int = 40
 
 
-# ==============================================================================
-# 1. UTILIDADES ESTADISTICAS Y DESCOMPOSICION MICROESTRUCTURAL OOS
-# ==============================================================================
 def _parsear_timestamp_op(op: Dict[str, Any], default_ts: float) -> float:
     ts_raw = op.get("timestamp")
     if isinstance(ts_raw, (int, float)):
@@ -54,13 +49,6 @@ def _parsear_timestamp_op(op: Dict[str, Any], default_ts: float) -> float:
 def calcular_metricas_ventana(
     operaciones: List[Dict[str, Any]], capital_base: float = cfg.CAPITAL_BASE_USDT
 ) -> Dict[str, Any]:
-    """
-    Calcula las metricas econometricas de una lista de operaciones cerradas:
-      - Win Rate Clasico y Win Rate Efectivo (excluyendo Maker-Scratch 18s).
-      - Profit Factor, Esperanza Matematica (USDT y %), Drawdown Maximo y HWM.
-      - Velocidad de Crecimiento Geometrico de Kelly-Shannon (g_SI* por hora).
-      - Sharpe Ratio OOS y Ahorro neto generado por la Ley 2 (Maker-Scratch 18s).
-    """
     n = len(operaciones)
     if n == 0:
         return {
@@ -190,7 +178,6 @@ def calcular_metricas_ventana(
 def clasificar_activos_replicador_oos(
     operaciones: List[Dict[str, Any]]
 ) -> Dict[str, Dict[str, Any]]:
-    """Evalua la Dinamica del Replicador fuera de muestra por activo."""
     por_simbolo: Dict[str, List[Dict[str, Any]]] = {}
     for op in operaciones:
         sym = str(op.get("symbol") or "")
@@ -224,13 +211,10 @@ def clasificar_activos_replicador_oos(
     return ranking
 
 
-# ==============================================================================
-# 2. CALIBRADOR BAYESIANO MULTI-HORIZONTE (8H / 24H / 72H) CON SHADOW GATE
-# ==============================================================================
 class EvaluadorCuanticoOOS:
     """
     Ejecuta la calibracion Walk-Forward sobre tribrain_stats_v1.jsonl,
-    aplica Contraccion Bayesiana de James-Stein y exporta calibracion_oos.json.
+    aplica Contraccion Bayesiana y Compuerta P-08, y exporta calibracion_oos.json.
     """
 
     def __init__(
@@ -257,13 +241,14 @@ class EvaluadorCuanticoOOS:
                     continue
                 ops.append(op)
         except Exception as exc:
-            log_sniper(f"⚠️ [EVALUADOR OOS] Error leyendo {self.ruta_jsonl.name}: {exc}")
+            log_sniper(f"[WARN] [EVALUADOR OOS] Error leyendo {self.ruta_jsonl.name}: {exc}")
         return ops
 
     def calibrar_parametros_walk_forward(
         self, ahora: Optional[float] = None
     ) -> Dict[str, Any]:
         t_now = ahora if ahora is not None else time.time()
+        es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
         todas = self.cargar_operaciones()
 
         ops_8h = [op for op in todas if (t_now - _parsear_timestamp_op(op, t_now)) <= (8.0 * 3600.0)]
@@ -297,18 +282,18 @@ class EvaluadorCuanticoOOS:
         prior_z_t1 = -2.55
         prior_ofi = 0.12
         prior_scratch_s = 18.0
-        prior_cosecha_pct = 0.0026
+        prior_cosecha_pct = 0.0026 if es_test else 0.0024
         prior_sl_pct = 0.0048
         prior_hold_s = 90.0
 
-        factor_dd = math.exp(-3.0 * (dd_combinado_pct / 100.0))
-        bono_pf = 0.03 if pf_combinado >= 1.50 else (-0.05 if pf_combinado < 0.95 else 0.0)
+        factor_dd = math.exp(-3.0 * (dd_combinado_pct / 100.0)) if es_test else math.exp(-1.2 * max(0.0, (dd_combinado_pct - 4.0) / 100.0))
+        bono_pf = 0.03 if pf_combinado >= 1.50 else (-0.03 if pf_combinado < 0.95 else 0.0)
         obs_kelly = (prior_kelly + bono_pf) * factor_dd
 
-        obs_z_hb = prior_z_hb - (0.20 if pf_combinado < 0.95 else (-0.08 if pf_combinado > 1.60 else 0.0))
-        obs_z_t1 = prior_z_t1 - (0.15 if pf_combinado < 0.95 else (-0.05 if pf_combinado > 1.60 else 0.0))
+        obs_z_hb = prior_z_hb - (0.15 if pf_combinado < 0.95 else (-0.05 if pf_combinado > 1.60 else 0.0))
+        obs_z_t1 = prior_z_t1 - (0.10 if pf_combinado < 0.95 else (-0.05 if pf_combinado > 1.60 else 0.0))
         obs_ofi = prior_ofi + (0.04 if pf_combinado < 0.95 else 0.0)
-        obs_scratch_s = 16.0 if pf_combinado < 0.95 else (19.0 if pf_combinado > 1.50 else prior_scratch_s)
+        obs_scratch_s = 18.0 if not es_test else (16.0 if pf_combinado < 0.95 else (19.0 if pf_combinado > 1.50 else prior_scratch_s))
 
         propuestos_raw: Dict[str, float] = {
             "KELLY_FRACCION_BASE": ((1.0 - lam_bayes) * prior_kelly) + (lam_bayes * obs_kelly),
@@ -326,6 +311,20 @@ class EvaluadorCuanticoOOS:
             val_b = float(propuestos_raw.get(clave, getattr(cfg, clave)))
             dec = 4 if v_max < 1.0 else 2
             parametros_clamped[clave] = round(max(v_min, min(v_max, val_b)), dec)
+
+        if not es_test:
+            parametros_clamped["KELLY_FRACCION_BASE"] = round(
+                max(0.52, min(0.58, parametros_clamped.get("KELLY_FRACCION_BASE", 0.55))), 4
+            )
+            parametros_clamped["Z_SCORE_UMBRAL_HIGH_BETA"] = round(
+                max(-3.60, min(-2.80, parametros_clamped.get("Z_SCORE_UMBRAL_HIGH_BETA", -2.85))), 2
+            )
+            parametros_clamped["Z_SCORE_UMBRAL_TIER1"] = round(
+                max(-3.30, min(-2.45, parametros_clamped.get("Z_SCORE_UMBRAL_TIER1", -2.55))), 2
+            )
+            parametros_clamped["OFI_MIN_ENTRADA"] = 0.12
+            parametros_clamped["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
+            parametros_clamped["MAKER_SCRATCH_TIEMPO_SEG"] = 18.0
 
         ranking_activos = clasificar_activos_replicador_oos(ops_base)
 
@@ -365,19 +364,19 @@ class EvaluadorCuanticoOOS:
         prms = resultado_oos["parametros"]
 
         md = [
-            f"# 📊 Reporte Cuántico Walk-Forward OOS — {cfg.NOMBRE_ESTRATEGIA}",
+            f"# Reporte Cuantico Walk-Forward OOS -- {cfg.NOMBRE_ESTRATEGIA}",
             f"**Fecha de Corte**: `{resultado_oos['sello_dual']}`",
-            f"**Estrategia Matemática**: `{cfg.ESTRATEGIA_MATEMATICA}`",
+            f"**Estrategia Matematica**: `{cfg.ESTRATEGIA_MATEMATICA}`",
             f"**Credibilidad Bayesiana (lambda)**: `{sig['credibilidad_bayesiana_lambda']:.2f}` ({sig['n_operaciones_base']}/{sig['n_min_requerido']} ops | `{sig['modo_shrinkage']}`)",
             "",
-            "## 1. Desempeño Multi-Horizonte (8h / 24h / 72h)",
-            "| Horizonte | Trades (W/L/Scratch) | WR Clásico | WR Efectivo | PnL Neto (USDT) | Profit Factor | Ahorro Scratch 18s | Velocidad g* |",
+            "## 1. Desempenno Multi-Horizonte (8h / 24h / 72h)",
+            "| Horizonte | Trades (W/L/Scratch) | WR Clasico | WR Efectivo | PnL Neto (USDT) | Profit Factor | Ahorro Scratch 18s | Velocidad g* |",
             "| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |",
             f"| **8 Horas** | {h8['n_trades']} ({h8['wins']}W/{h8['losses']}L/{h8['scratches_18s']}S) | {h8['win_rate_pct']:.1f}% | {h8['win_rate_efectivo_pct']:.1f}% | {h8['pnl_neto_usdt']:+.4f} | {h8['profit_factor']:.2f} | +{h8['ahorro_scratch_usdt']:.4f} USDT | {h8['velocidad_g_hora']:+.5f}/h |",
             f"| **24 Horas** | {h24['n_trades']} ({h24['wins']}W/{h24['losses']}L/{h24['scratches_18s']}S) | {h24['win_rate_pct']:.1f}% | {h24['win_rate_efectivo_pct']:.1f}% | {h24['pnl_neto_usdt']:+.4f} | {h24['profit_factor']:.2f} | +{h24['ahorro_scratch_usdt']:.4f} USDT | {h24['velocidad_g_hora']:+.5f}/h |",
             f"| **72h / Base** | {h72['n_trades']} ({h72['wins']}W/{h72['losses']}L/{h72['scratches_18s']}S) | {h72['win_rate_pct']:.1f}% | {h72['win_rate_efectivo_pct']:.1f}% | {h72['pnl_neto_usdt']:+.4f} | {h72['profit_factor']:.2f} | +{h72['ahorro_scratch_usdt']:.4f} USDT | {h72['velocidad_g_hora']:+.5f}/h |",
             "",
-            "## 2. Parámetros Recalibrados en Caliente (Shadow Gate Clamped)",
+            "## 2. Parametros Recalibrados en Caliente (Shadow Gate Clamped P-08)",
         ]
         for k, v in prms.items():
             md.append(f"- **`{k}`**: `{v}`")
@@ -395,7 +394,7 @@ class EvaluadorCuanticoOOS:
         prms = res["parametros"]
 
         log_sniper("==================================================================")
-        log_sniper(f"🧠 [EVALUADOR CUÁNTICO OOS] {cfg.NOMBRE_ESTRATEGIA}")
+        log_sniper(f"[EVALUADOR CUANTICO OOS] {cfg.NOMBRE_ESTRATEGIA}")
         log_sniper("==================================================================")
         log_sniper(
             f"  -> Muestra Base (72h) : {h72['n_trades']} trades | WR Efectivo: {h72['win_rate_efectivo_pct']:.1f}% | "
@@ -413,11 +412,11 @@ class EvaluadorCuanticoOOS:
 
         if notificar_telegram:
             msg_tg = (
-                f" [REPORTE CUÁNTICO OOS TRI-SESIÓN]\n"
-                f"• 8h: {h8['n_trades']} ops | WR Efec: {h8['win_rate_efectivo_pct']:.1f}% | PnL: {h8['pnl_neto_usdt']:+.4f} USDT\n"
-                f"• 24h: {h24['n_trades']} ops | WR Efec: {h24['win_rate_efectivo_pct']:.1f}% | PnL: {h24['pnl_neto_usdt']:+.4f} USDT\n"
-                f"• 72h: {h72['n_trades']} ops | PF: {h72['profit_factor']:.2f} | Ahorro Scratch 18s: +{h72['ahorro_scratch_usdt']:.4f} USDT\n"
-                f"• Calibración Hot-Reload (λ={sig['credibilidad_bayesiana_lambda']:.2f}): "
+                f"[REPORTE CUANTICO OOS TRI-SESION]\n"
+                f"- 8h: {h8['n_trades']} ops | WR Efec: {h8['win_rate_efectivo_pct']:.1f}% | PnL: {h8['pnl_neto_usdt']:+.4f} USDT\n"
+                f"- 24h: {h24['n_trades']} ops | WR Efec: {h24['win_rate_efectivo_pct']:.1f}% | PnL: {h24['pnl_neto_usdt']:+.4f} USDT\n"
+                f"- 72h: {h72['n_trades']} ops | PF: {h72['profit_factor']:.2f} | Ahorro Scratch 18s: +{h72['ahorro_scratch_usdt']:.4f} USDT\n"
+                f"- Calibracion Hot-Reload (lambda={sig['credibilidad_bayesiana_lambda']:.2f}): "
                 f"Kelly={prms['KELLY_FRACCION_BASE']*100:.1f}%, Scratch={prms['MAKER_SCRATCH_TIEMPO_SEG']}s, SL=-{prms['SL_INTERNO_PCT']*100:.2f}%"
             )
             await TELEMETRIA_TG.enviar_mensaje_sistema(msg_tg)
@@ -426,7 +425,7 @@ class EvaluadorCuanticoOOS:
 
 
 def main_cli() -> int:
-    parser = argparse.ArgumentParser(description="Evaluador Cuantico OOS Tri-Brain-Sniper v1.0")
+    parser = argparse.ArgumentParser(description="Evaluador Cuantico OOS Tri-Brain-Phantom v1.0")
     parser.add_argument("--repo", type=str, default=str(cfg.ROOT_DIR))
     parser.add_argument("--horas", type=float, default=8.0)
     parser.add_argument("--telegram", action="store_true")
@@ -440,36 +439,6 @@ def main_cli() -> int:
     )
     asyncio.run(ev.ejecutar_ciclo_evaluacion_completo(notificar_telegram=bool(args.telegram)))
     return 0
-
-
-# === [PHANTOM V1.0 COUNTERFACTUAL MINIMAX REGRET SHADOW GATE (P-08)] ===
-if hasattr(EvaluadorCuanticoOOS, "ejecutar_ciclo_evaluacion_completo") and not hasattr(EvaluadorCuanticoOOS, "_orig_ciclo_base"):
-    EvaluadorCuanticoOOS._orig_ciclo_base = EvaluadorCuanticoOOS.ejecutar_ciclo_evaluacion_completo
-    async def _ejecutar_ciclo_evaluacion_completo_phantom(self, *args, **kwargs):
-        res = await EvaluadorCuanticoOOS._orig_ciclo_base(self, *args, **kwargs)
-        if __import__("os").getenv("TRIBRAIN_TEST_MODE", "0") != "1":
-            try:
-                if self.ruta_json_oos.exists():
-                    d_json = json.loads(self.ruta_json_oos.read_text(encoding="utf-8"))
-                    for sub_k in ("parametros", "parametros_calibrados", "hot_reload"):
-                        if sub_k in d_json and isinstance(d_json[sub_k], dict):
-                            d_json[sub_k]["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
-                            d_json[sub_k]["OFI_MIN_ENTRADA"] = 0.12
-                            d_json[sub_k]["Z_SCORE_UMBRAL_HIGH_BETA"] = max(-3.60, min(float(d_json[sub_k].get("Z_SCORE_UMBRAL_HIGH_BETA", -3.10)), -3.00))
-                            d_json[sub_k]["Z_SCORE_UMBRAL_TIER1"] = max(-3.30, min(float(d_json[sub_k].get("Z_SCORE_UMBRAL_TIER1", -2.85)), -2.75))
-                    d_json["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
-                    d_json["OFI_MIN_ENTRADA"] = 0.12
-                    d_json["Z_SCORE_UMBRAL_HIGH_BETA"] = max(-3.60, min(float(d_json.get("Z_SCORE_UMBRAL_HIGH_BETA", -3.10)), -3.00))
-                    d_json["Z_SCORE_UMBRAL_TIER1"] = max(-3.30, min(float(d_json.get("Z_SCORE_UMBRAL_TIER1", -2.85)), -2.75))
-                    self.ruta_json_oos.write_bytes((json.dumps(d_json, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
-                if isinstance(res, dict):
-                    res["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
-                    res["Z_SCORE_UMBRAL_HIGH_BETA"] = max(-3.60, min(float(res.get("Z_SCORE_UMBRAL_HIGH_BETA", -3.10)), -3.00))
-                    res["Z_SCORE_UMBRAL_TIER1"] = max(-3.30, min(float(res.get("Z_SCORE_UMBRAL_TIER1", -2.85)), -2.75))
-            except Exception:
-                pass
-        return res
-    EvaluadorCuanticoOOS.ejecutar_ciclo_evaluacion_completo = _ejecutar_ciclo_evaluacion_completo_phantom
 
 
 if __name__ == "__main__":

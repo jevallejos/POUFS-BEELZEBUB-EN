@@ -3,16 +3,16 @@
 """
 ==============================================================================
 ARCHIVO #11: main.py
-SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 -- ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Cerebro Central Orquestador Asincrono (uvloop + Bybit UTA WebSocket L2):
   - Cerrojo fisico de instancia unica (.tribrain.lock / .tribrain_test.lock).
-  - Sanitizador pre-vuelo de calibracion_oos.json (P-08) y reconciliador
-    inteligente de arranque (ESCAPE_HUERFANA_BOOT / adopcion de posiciones).
+  - Sanitizador pre-vuelo de calibracion_oos.json (P-08) sin duplicar claves
+    en la raiz del JSON y reconciliador inteligente de arranque.
   - Orquestacion paralela sin bloqueos:
-      1. Streaming WebSocket L2 a 6.6 Hz (limit=25 en 7 Campeones + Centinela BTC).
+      1. Streaming WebSocket L2 a 6.6 Hz (7 Campeones + Centinela BTC).
       2. Vigilancia de posiciones CHRONOS-TRIZ (P-04, P-05, P-06).
-      3. Enjambre Tri-Cortex (Groq Regimen + Gemini Sizing + NVIDIA Forense).
+      3. Enjambre Tri-Cortex (Full-Groq LPU + Failover Multi-Cloud).
       4. Vigilante Hot-Reload OOS (< 0.5 ms) y telemetria periodica Caja Negra.
 ==============================================================================
 """
@@ -127,30 +127,33 @@ def _sanear_json_oos_disco_phantom() -> None:
         return
     try:
         d = json.loads(ruta_j.read_text(encoding="utf-8-sig"))
-        for sub_k in ("parametros", "parametros_calibrados", "hot_reload"):
-            if sub_k in d and isinstance(d[sub_k], dict):
-                d[sub_k]["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
-                d[sub_k]["OFI_MIN_ENTRADA"] = 0.12
-                d[sub_k]["Z_SCORE_UMBRAL_HIGH_BETA"] = max(
-                    -3.60, min(float(d[sub_k].get("Z_SCORE_UMBRAL_HIGH_BETA", -3.10)), -3.00)
-                )
-                d[sub_k]["Z_SCORE_UMBRAL_TIER1"] = max(
-                    -3.30, min(float(d[sub_k].get("Z_SCORE_UMBRAL_TIER1", -2.85)), -2.75)
-                )
-        d["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
-        d["OFI_MIN_ENTRADA"] = 0.12
-        d["Z_SCORE_UMBRAL_HIGH_BETA"] = max(
-            -3.60, min(float(d.get("Z_SCORE_UMBRAL_HIGH_BETA", -3.10)), -3.00)
-        )
-        d["Z_SCORE_UMBRAL_TIER1"] = max(
-            -3.30, min(float(d.get("Z_SCORE_UMBRAL_TIER1", -2.85)), -2.75)
-        )
+        if not isinstance(d, dict):
+            return
+        for k_raiz in (
+            "COSECHA_TRIZ_ACTIVACION_PCT",
+            "OFI_MIN_ENTRADA",
+            "Z_SCORE_UMBRAL_HIGH_BETA",
+            "Z_SCORE_UMBRAL_TIER1",
+        ):
+            d.pop(k_raiz, None)
+
+        prms = d.get("parametros")
+        if isinstance(prms, dict):
+            prms["KELLY_FRACCION_BASE"] = round(
+                max(0.52, min(0.58, float(prms.get("KELLY_FRACCION_BASE", 0.55)))), 4
+            )
+            prms["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
+            prms["OFI_MIN_ENTRADA"] = 0.12
+            prms["MAKER_SCRATCH_TIEMPO_SEG"] = 18.0
+            prms["Z_SCORE_UMBRAL_HIGH_BETA"] = round(
+                max(-3.60, min(-2.80, float(prms.get("Z_SCORE_UMBRAL_HIGH_BETA", -2.85)))), 2
+            )
+            prms["Z_SCORE_UMBRAL_TIER1"] = round(
+                max(-3.30, min(-2.45, float(prms.get("Z_SCORE_UMBRAL_TIER1", -2.55)))), 2
+            )
         ruta_j.write_bytes((json.dumps(d, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
     except Exception:
         pass
-
-
-_sanear_json_oos_disco_phantom()
 
 
 async def reconciliar_posiciones_arranque(exchange: Any) -> int:
@@ -169,19 +172,19 @@ async def reconciliar_posiciones_arranque(exchange: Any) -> int:
             ordenes = await exchange.fetch_open_orders(sym)
             if ordenes:
                 await exchange.cancel_all_orders(sym)
-                log_sniper(f"🧹 [RECONCILIADOR] {len(ordenes)} orden(es) colgada(s) cancelada(s) en {sym}.")
+                log_sniper(f"[RECONCILIADOR] {len(ordenes)} orden(es) colgada(s) cancelada(s) en {sym}.")
         except Exception:
             pass
 
     try:
         posiciones = await exchange.fetch_positions()
     except Exception as exc:
-        log_sniper(f"⚠️ [RECONCILIADOR] No se pudo consultar posiciones en arranque: {exc}")
+        log_sniper(f"[WARN] [RECONCILIADOR] No se pudo consultar posiciones en arranque: {exc}")
         return 0
 
     abiertas = [p for p in (posiciones or []) if float(p.get("contracts") or 0.0) > 0.0]
     if not abiertas:
-        log_sniper("[RECONCILIADOR] Sin posiciones huérfanas abiertas en Bybit. Margen 100% despejado.")
+        log_sniper("[RECONCILIADOR] Sin posiciones huerfanas abiertas en Bybit. Margen 100% despejado.")
         return 0
 
     for p in abiertas:
@@ -202,7 +205,7 @@ async def reconciliar_posiciones_arranque(exchange: Any) -> int:
         edad_min = edad_seg / 60.0
         if edad_seg >= cfg.TIEMPO_MAX_HOLD_SEG:
             log_sniper(
-                f"🧹 [RECONCILIADOR] Posición zombie huérfana detectada en {sym}: "
+                f"[RECONCILIADOR] Posicion zombie huerfana detectada en {sym}: "
                 f"{qty} contratos @ {ep} (edad {edad_min:.1f} min >= {cfg.TIEMPO_MAX_HOLD_SEG:.0f}s). "
                 f"Liquidando a mercado para liberar margen..."
             )
@@ -217,7 +220,7 @@ async def reconciliar_posiciones_arranque(exchange: Any) -> int:
                     if p_avg > 0.0:
                         exit_p = p_avg
             except Exception as exc:
-                log_sniper(f"⚠️ [RECONCILIADOR] Error cerrando zombie en {sym}: {exc}")
+                log_sniper(f"[WARN] [RECONCILIADOR] Error cerrando zombie en {sym}: {exc}")
                 continue
 
             pos_zombie = PosicionActiva(
@@ -253,11 +256,11 @@ async def reconciliar_posiciones_arranque(exchange: Any) -> int:
             ESTADO_RAM.slot_ocupado = True
             ESTADO_RAM.posiciones_activas[sym] = pos_viva
             log_sniper(
-                f"🛡️ [RECONCILIADOR] Posición reciente adoptada en {sym}: {qty} @ {ep} (edad {edad_seg:.0f}s)."
+                f"[RECONCILIADOR] Posicion reciente adoptada en {sym}: {qty} @ {ep} (edad {edad_seg:.0f}s)."
             )
             procesadas += 1
 
-    log_sniper(f"[RECONCILIADOR] Reconciliación de arranque completada: {procesadas} posición(es) procesada(s).")
+    log_sniper(f"[RECONCILIADOR] Reconciliacion de arranque completada: {procesadas} posicion(es) procesada(s).")
     return procesadas
 
 
@@ -307,7 +310,7 @@ class MotorTriBrainSniper:
             if total > 0.0:
                 ESTADO_RAM.sincronizar_balance_uta(total, libre)
         except Exception as exc:
-            log_sniper(f"⚠️ [MAIN] No se pudo sincronizar balance UTA: {exc}")
+            log_sniper(f"[WARN] [MAIN] No se pudo sincronizar balance UTA: {exc}")
 
     async def _vigilar_stream_simbolo(self, symbol: str) -> None:
         while self._running and self.exchange is not None:
@@ -332,7 +335,7 @@ class MotorTriBrainSniper:
                 res_oos = cfg.recargar_calibracion_oos_si_cambio()
                 if res_oos.get("recargado"):
                     log_sniper(
-                        f"🔄 [HOT-RELOAD OOS] Parámetros actualizados en caliente desde {cfg.ARCHIVO_CALIBRACION_OOS}: "
+                        f"[HOT-RELOAD OOS] Parametros actualizados en caliente desde {cfg.ARCHIVO_CALIBRACION_OOS}: "
                         f"{res_oos.get('aplicados')}"
                     )
                 ahora = time.time()
@@ -351,8 +354,8 @@ class MotorTriBrainSniper:
         log_sniper("==================================================================")
         log_sniper(f"INICIANDO CEREBRO CENTRAL {cfg.NOMBRE_ESTRATEGIA.upper()} [{cfg.ESTRATEGIA_MATEMATICA}]")
         log_sniper("==================================================================")
-        log_sniper(f"[MAIN] Bloqueo de instancia física adquirido exitosamente (PID {os.getpid()} | Loop: {loop_name}).")
-        log_sniper(f"[MAIN] Telemetría local con sellado de tiempo activa en: {cfg.ARCHIVO_LOG_SESION}")
+        log_sniper(f"[MAIN] Bloqueo de instancia fisica adquirido exitosamente (PID {os.getpid()} | Loop: {loop_name}).")
+        log_sniper(f"[MAIN] Telemetria local con sellado de tiempo activa en: {cfg.ARCHIVO_LOG_SESION}")
 
         if self.exchange is None:
             import ccxt.pro as ccxtpro
@@ -381,20 +384,20 @@ class MotorTriBrainSniper:
         nocional_k = round(margen_k * cfg.APALANCAMIENTO_BASE, 2)
 
         log_sniper(
-            f"[MAIN] Auditoría UTA USDT -> Total: {total_u:.4f} | Libre RAM: {libre_u:.4f} | "
+            f"[MAIN] Auditoria UTA USDT -> Total: {total_u:.4f} | Libre RAM: {libre_u:.4f} | "
             f"Bloqueado: {bloq_u:.4f} | Margen Kelly ({cfg.KELLY_FRACCION_BASE*100:.0f}%): "
             f"{margen_k:.2f} USDT (Nocional {cfg.APALANCAMIENTO_BASE}x: {nocional_k:.2f} USDT) [LISTO PARA DISPARAR]"
         )
 
         excluidos = auditar_y_filtrar_lotes_minimos(self.exchange, nocional_k)
         if excluidos:
-            log_sniper(f"[MAIN] Filtro de lote mínimo excluyó pares indivisibles: {', '.join(excluidos[:8])}")
+            log_sniper(f"[MAIN] Filtro de lote minimo excluyo pares indivisibles: {', '.join(excluidos[:8])}")
 
         log_sniper(
             f"[MAIN] Modo Paper: {cfg.MODO_PAPER} | Estrategia: {cfg.ESTRATEGIA_MATEMATICA} | "
             f"TTL Entrada: {cfg.TTL_ORDEN_ENTRADA_SEG}s (ReQuote={cfg.PERMITIR_REQUOTE}) | "
             f"Scratch: {cfg.MAKER_SCRATCH_TIEMPO_SEG:.0f}s | Cosecha 50% TRIZ: +{cfg.COSECHA_TRIZ_ACTIVACION_PCT*100:.2f}% | "
-            f"SL Interno: -{cfg.SL_INTERNO_PCT*100:.2f}% | Hold Máx: {cfg.TIEMPO_MAX_HOLD_SEG:.0f}s"
+            f"SL Interno: -{cfg.SL_INTERNO_PCT*100:.2f}% | Hold Max: {cfg.TIEMPO_MAX_HOLD_SEG:.0f}s"
         )
         log_sniper(f"[MAIN] Presas activas ({len(cfg.PARES_CAMPEONES_ALFA)} Campeones Alfa): {', '.join(cfg.PARES_CAMPEONES_ALFA)}")
 
@@ -402,11 +405,11 @@ class MotorTriBrainSniper:
         CAJA_NEGRA.imprimir_panel_caja_negra()
 
         await TELEMETRIA_TG.enviar_mensaje_sistema(
-            f"⚡ {cfg.NOMBRE_ESTRATEGIA}\n"
-            f"📐 Estrategia: {cfg.ESTRATEGIA_MATEMATICA}\n"
-            f"💰 Patrimonio UTA: {total_u:.4f} USDT (Libre: {libre_u:.4f} USDT)\n"
-            f"🎯 Campeones activos: {', '.join(p.split('/')[0] for p in cfg.PARES_CAMPEONES_ALFA)}\n"
-            f"🛡️ Geometría: TTL={cfg.TTL_ORDEN_ENTRADA_SEG}s | Scratch={cfg.MAKER_SCRATCH_TIEMPO_SEG:.0f}s | "
+            f"[BOOT] {cfg.NOMBRE_ESTRATEGIA}\n"
+            f"- Estrategia: {cfg.ESTRATEGIA_MATEMATICA}\n"
+            f"- Patrimonio UTA: {total_u:.4f} USDT (Libre: {libre_u:.4f} USDT)\n"
+            f"- Campeones activos: {', '.join(p.split('/')[0] for p in cfg.PARES_CAMPEONES_ALFA)}\n"
+            f"- Geometria: TTL={cfg.TTL_ORDEN_ENTRADA_SEG}s | Scratch={cfg.MAKER_SCRATCH_TIEMPO_SEG:.0f}s | "
             f"Cosecha 50%=+{cfg.COSECHA_TRIZ_ACTIVACION_PCT*100:.2f}% | SL=-{cfg.SL_INTERNO_PCT*100:.2f}%"
         )
 
@@ -437,14 +440,14 @@ class MotorTriBrainSniper:
 async def main_async() -> int:
     cerrojo = CerrojoInstanciaUnica()
     if not cerrojo.adquirir():
-        log_sniper("❌ [ABORTADO] Otra instancia de Tri-Brain-Sniper ya está en ejecución (.tribrain.lock activo).")
+        log_sniper("[ERROR] [ABORTADO] Otra instancia de Tri-Brain-Sniper ya esta en ejecucion (.tribrain.lock activo).")
         return 1
 
     motor = MotorTriBrainSniper()
     loop = asyncio.get_running_loop()
 
     def _solicitar_apagado() -> None:
-        log_sniper("🛑 [MAIN] Señal de apagado recibida. Cerrando conexiones limpiamente...")
+        log_sniper("[STOP] [MAIN] Sennal de apagado recibida. Cerrando conexiones limpiamente...")
         for task in asyncio.all_tasks(loop):
             task.cancel()
 

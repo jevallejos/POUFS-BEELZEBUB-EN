@@ -3,11 +3,11 @@
 """
 ==============================================================================
 ARCHIVO #06: stats_tracker.py
-SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 -- ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Motor Contable de Caja Negra (tribrain_stats_v1.jsonl), Paridad 1:1 Bybit UTA,
 Calculo de MAP, LVR (Milionis-Moallemi-Roughgarden), Velocidad Geometrica g*
-y Gancho de Respaldo Contable hacia Telegram.
+y Gancho de Respaldo Contable hacia Telegram (Single-Layer Nativo).
 ==============================================================================
 """
 from __future__ import annotations
@@ -52,8 +52,9 @@ class GestorCajaNegra:
 
     def auditar_y_desduplicar_jsonl(self) -> int:
         """
-        Inspecciona el archivo JSONL y elimina registros duplicados fantasma
-        (mismo symbol, side, entry_price y exit_price en <= 2 segundos).
+        Inspecciona el archivo JSONL, normaliza cualquier hold_seg > 86400s
+        y elimina registros duplicados fantasma (mismo symbol, side, entry_price
+        y exit_price en <= 2.5 segundos).
         """
         if not self.ruta_jsonl.exists():
             return 0
@@ -61,6 +62,7 @@ class GestorCajaNegra:
         lineas_limpias: List[str] = []
         vistos: List[tuple[str, str, float, float, float]] = []
         eliminados = 0
+        modificados_hold = 0
 
         try:
             for linea in self.ruta_jsonl.read_text(encoding="utf-8-sig").splitlines():
@@ -71,6 +73,10 @@ class GestorCajaNegra:
                     obj = json.loads(linea_str)
                 except Exception:
                     continue
+
+                if float(obj.get("hold_seg") or 0.0) > 86400.0:
+                    obj["hold_seg"] = 28.0
+                    modificados_hold += 1
 
                 sym = str(obj.get("symbol") or "")
                 side = str(obj.get("side") or "long")
@@ -95,14 +101,15 @@ class GestorCajaNegra:
                     vistos.append((sym, side, ep, xp, ts_epoch))
                     lineas_limpias.append(json.dumps(obj, ensure_ascii=False))
 
-            if eliminados > 0:
+            if eliminados > 0 or modificados_hold > 0:
                 contenido = ("\n".join(lineas_limpias) + "\n") if lineas_limpias else ""
                 self.ruta_jsonl.write_text(contenido, encoding="utf-8")
-                log_sniper(
-                    f"🧹 [CAJA NEGRA] Auditoría JSONL eliminó {eliminados} registro(s) duplicado(s) en {self.ruta_jsonl.name}."
-                )
+                if eliminados > 0:
+                    log_sniper(
+                        f"[CAJA NEGRA] Auditoria JSONL elimino {eliminados} registro(s) duplicado(s) en {self.ruta_jsonl.name}."
+                    )
         except Exception as exc:
-            log_sniper(f"⚠️ [CAJA NEGRA] Error auditando JSONL: {exc}")
+            log_sniper(f"[WARN] [CAJA NEGRA] Error auditando JSONL: {exc}")
 
         return eliminados
 
@@ -132,7 +139,10 @@ class GestorCajaNegra:
                 self.operaciones.append(op)
                 pnl_u = float(op.get("pnl_usdt") or 0.0)
                 motivo = str(op.get("motivo") or "")
-                map_u = float(op.get("map_usdt") or (float(op.get("qty") or 0.0) * float(op.get("entry_price") or 0.0)))
+                map_u = float(
+                    op.get("map_usdt")
+                    or (float(op.get("qty") or 0.0) * float(op.get("entry_price") or 0.0))
+                )
                 lvr_u = float(op.get("lvr_usdt") or 0.0)
 
                 self.trades_totales += 1
@@ -156,14 +166,12 @@ class GestorCajaNegra:
 
             self.map_promedio_usdt = (suma_map / self.trades_totales) if self.trades_totales > 0 else 0.0
         except Exception as exc:
-            log_sniper(f"⚠️ [CAJA NEGRA] Error cargando historial: {exc}")
+            log_sniper(f"[WARN] [CAJA NEGRA] Error cargando historial: {exc}")
+
+    cargar_historial = cargar_y_auditar_historial
 
     @staticmethod
     def calcular_lvr_operacion(map_usdt: float, volatilidad_local: float, hold_seg: float) -> float:
-        """
-        Aproxima la integral de seleccion adversa LVR (Milionis-Moallemi-Roughgarden, 2022):
-        LVR = (sigma^2 / 8) * MAP * (hold_seg / 3600).
-        """
         sigma = max(0.0005, float(volatilidad_local or 0.0020))
         t_horas = max(0.0, float(hold_seg)) / 3600.0
         return round(0.125 * (sigma ** 2) * float(map_usdt) * t_horas, 6)
@@ -175,10 +183,6 @@ class GestorCajaNegra:
         exit_price: float,
         es_maker: bool = True,
     ) -> float:
-        """
-        Contabiliza en la PosicionActiva el primer 50% cosechado bajo la Ley 3 de CHRONOS-TRIZ.
-        Retorna el PnL neto en USDT asegurado en este tramo parcial.
-        """
         qty_c = float(qty_cerrada)
         ep = float(pos.entry_price)
         xp = float(exit_price)
@@ -209,12 +213,6 @@ class GestorCajaNegra:
         es_salida_maker: bool = False,
         ahora: Optional[float] = None,
     ) -> Optional[RegistroOperacionCerrada]:
-        """
-        Registra el cierre definitivo de una PosicionActiva en tribrain_stats_v1.jsonl,
-        actualiza metricas acumuladas, imprime el panel de Caja Negra y dispara el
-        respaldo garantizado a Telegram.
-        Protegido por el cerrojo atomico pos.cerrada.
-        """
         if pos.cerrada:
             return None
         pos.cerrada = True
@@ -239,7 +237,6 @@ class GestorCajaNegra:
         fees_rem = fee_in_rem + fee_out_rem
         pnl_neto_rem = pnl_bruto_rem - fees_rem
 
-        # Consolidar con Cosecha 50% TRIZ previa si existio
         pnl_neto_total_usdt = round(float(pos.pnl_realizado_parcial_usdt) + pnl_neto_rem, 6)
         fees_totales_usdt = round(float(pos.fees_acumulados_usdt) + fees_rem, 6)
         map_usdt = round(qty_total_original * ep, 4)
@@ -267,14 +264,12 @@ class GestorCajaNegra:
             cosecha_triz_50=bool(pos.cosecha_50_ejecutada),
         )
 
-        # Persistir en disco (JSONL)
         try:
             with open(self.ruta_jsonl, "a", encoding="utf-8") as f_out:
                 f_out.write(json.dumps(registro.to_dict(), ensure_ascii=False) + "\n")
         except Exception as exc:
-            log_sniper(f"⚠️ [CAJA NEGRA] Error escribiendo en {self.ruta_jsonl.name}: {exc}")
+            log_sniper(f"[WARN] [CAJA NEGRA] Error escribiendo en {self.ruta_jsonl.name}: {exc}")
 
-        # Actualizar contadores en memoria
         prev_suma_map = self.map_promedio_usdt * self.trades_totales
         self.operaciones.append(registro.to_dict())
         self.trades_totales += 1
@@ -296,16 +291,14 @@ class GestorCajaNegra:
             self.mejor_trade_usdt = max(self.mejor_trade_usdt, pnl_neto_total_usdt)
             self.peor_trade_usdt = min(self.peor_trade_usdt, pnl_neto_total_usdt)
 
-        # Log de linea de cierre + Banner de Caja Negra
-        icono = "🟩" if pnl_neto_total_usdt >= 0.0 else ("🟨" if "SCRATCH" in str(motivo).upper() else "🔴")
+        icono = "[WIN]" if pnl_neto_total_usdt >= 0.0 else ("[SCRATCH]" if "SCRATCH" in str(motivo).upper() else "[LOSS]")
         lado_str = " SHORT" if pos.side == "short" else ""
         log_sniper(
             f"[FRANCOTIRADOR] {icono} CIERRE{lado_str} {pos.symbol} [{motivo}] "
-            f"{ep} → {xp} | {pnl_pct_neto:+.2f} % ({pnl_neto_total_usdt:+.4f} USDT) en {hold_seg:.0f}s"
+            f"{ep} -> {xp} | {pnl_pct_neto:+.2f} % ({pnl_neto_total_usdt:+.4f} USDT) en {hold_seg:.0f}s"
         )
         self.imprimir_panel_caja_negra()
 
-        # Gancho de Respaldo Contable 1:1 hacia Telegram (idempotente por 12s)
         await TELEMETRIA_TG.enviar_cierre_garantizado(
             symbol=pos.symbol,
             side=pos.side,
@@ -321,7 +314,6 @@ class GestorCajaNegra:
         return registro
 
     def calcular_velocidad_geometrica_g(self, ultimos_n: int = 20) -> float:
-        """Calcula la velocidad de crecimiento geometrico de Kelly-Shannon (g_SI*) sobre las ultimas N operaciones."""
         muestra = self.operaciones[-ultimos_n:] if self.operaciones else []
         if not muestra:
             return 0.0
@@ -334,7 +326,6 @@ class GestorCajaNegra:
         return (suma_log / (suma_t / 3600.0)) if suma_t > 0.0 else 0.0
 
     def imprimir_panel_caja_negra(self) -> None:
-        """Renderiza el cuadro ASCII de la Caja Negra con paridad 1:1 Bybit UTA."""
         wr = (self.wins / self.trades_totales * 100.0) if self.trades_totales > 0 else 0.0
         bal_contable = self.capital_base_usdt + self.pnl_total_usdt
         bal_real = ESTADO_RAM.patrimonio_total_usdt if ESTADO_RAM.patrimonio_total_usdt > 0 else bal_contable
@@ -351,35 +342,4 @@ class GestorCajaNegra:
             log_sniper(linea)
 
 
-# Instancia Singleton global de la Caja Negra
 CAJA_NEGRA: GestorCajaNegra = GestorCajaNegra()
-
-
-# === [PHANTOM V1.0 SANITIZE HOLD_SEG] ===
-def _sanear_jsonl_hold_seg_phantom() -> None:
-    import json as _json
-    ruta = cfg.ROOT_DIR / cfg.ARCHIVO_STATS_JSONL
-    if not ruta.exists():
-        return
-    lineas_out = []
-    modificado = False
-    for linea in ruta.read_text(encoding="utf-8", errors="ignore").splitlines():
-        if not linea.strip():
-            continue
-        try:
-            d = _json.loads(linea)
-            if float(d.get("hold_seg") or 0.0) > 86400.0:
-                d["hold_seg"] = 28.0
-                modificado = True
-            lineas_out.append(_json.dumps(d, ensure_ascii=False))
-        except Exception:
-            lineas_out.append(linea)
-    if modificado:
-        ruta.write_bytes(("\n".join(lineas_out) + "\n").encode("utf-8"))
-
-try:
-    _sanear_jsonl_hold_seg_phantom()
-    if "CAJA_NEGRA" in globals() and hasattr(CAJA_NEGRA, "cargar_historial"):
-        CAJA_NEGRA.cargar_historial()
-except Exception:
-    pass

@@ -3,13 +3,14 @@
 """
 ==============================================================================
 ARCHIVO #05: telemetria_telegram.py
-SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 — ESTRATEGIA CHRONOS-TRIZ
+SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 -- ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Motor Transaccional de Telemetria a Telegram con Apareamiento Estricto 1:1.
 Garantiza el envio 100% confiable de:
-  - Aperturas reales confirmadas en Bybit UTA (🎯).
-  - Cosecha Fraccionada 50/50 TRIZ (💎).
-  - Cierres en Ganancia (🟩), Evacuacion Maker-Scratch 18s (🟨) y Perdidas/SL (🔴).
+  - Aperturas reales confirmadas en Bybit UTA ([OPEN]).
+  - Cosecha Fraccionada 50/25/25 TRIZ ([DIAMOND]).
+  - Cierres en Ganancia ([WIN]), Evacuacion Maker-Scratch 18s ([SCRATCH]) y
+    Perdidas/SL ([LOSS]).
 ==============================================================================
 """
 from __future__ import annotations
@@ -27,7 +28,7 @@ from core_estado_ram import log_sniper
 
 @dataclass(slots=True)
 class AperturaPendienteRAM:
-    """Buffer en RAM de una orden Limit PostOnly esperando llenado en Bybit (TTL 2.2s)."""
+    """Buffer en RAM de una orden Limit PostOnly esperando llenado en Bybit."""
     symbol: str
     side: str
     qty: float
@@ -58,7 +59,6 @@ class GestorTelemetriaTelegram:
                 self.aperturas_pendientes.pop(sym, None)
 
     def _verificar_y_marcar_dedup(self, clave: str, ttl_seg: float = 12.0) -> bool:
-        """Retorna True si el evento NO ha sido enviado en los ultimos ttl_seg segundos."""
         ahora = time.time()
         self._limpiar_expirados(ahora, ttl_seg)
         if clave in self.cache_dedup:
@@ -76,10 +76,6 @@ class GestorTelemetriaTelegram:
         z_score: float = 0.0,
         ofi: float = 0.0,
     ) -> None:
-        """
-        Paso 1 del Apareamiento 1:1: Guarda la orden Limit PostOnly en RAM
-        sin notificar aun a Telegram hasta confirmar que Bybit la lleno.
-        """
         self.aperturas_pendientes[symbol] = AperturaPendienteRAM(
             symbol=symbol,
             side=side.lower(),
@@ -92,25 +88,16 @@ class GestorTelemetriaTelegram:
         )
 
     def descartar_apertura_no_llenada(self, symbol: str) -> bool:
-        """
-        Paso 2 del Apareamiento 1:1: Si la orden expira a los 2.2s sin llenarse,
-        se elimina silenciosamente del buffer en RAM sin emitir spam a Telegram.
-        """
         eliminado = self.aperturas_pendientes.pop(symbol, None)
         return eliminado is not None
 
     async def _despachar_http_telegram(self, texto: str, tipo_evento: str, symbol: str) -> bool:
-        """
-        Envia el mensaje a la API de Telegram con fallback automatico a texto plano
-        para evitar rechazos HTTP 400 por caracteres '_' en motivos de cierre.
-        En modo de pruebas (TRIBRAIN_TEST_MODE == '1'), almacena en buzon_test.
-        """
         mensaje_final = str(texto or "").strip()
         if not mensaje_final:
             return False
 
         if cfg.TITULO_TELEGRAM_CANONICO not in mensaje_final:
-            mensaje_final = f"{mensaje_final}\n⚙️ {cfg.TITULO_TELEGRAM_CANONICO}"
+            mensaje_final = f"{mensaje_final}\n[SYS] {cfg.TITULO_TELEGRAM_CANONICO}"
 
         if os.environ.get("TRIBRAIN_TEST_MODE") == "1":
             self.buzon_test.append({
@@ -130,18 +117,16 @@ class GestorTelemetriaTelegram:
         timeout = aiohttp.ClientTimeout(total=8.0)
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                # Envío directo sin parse_mode fragil para garantizar 100% de entrega en SL/Scratch
                 payload = {"chat_id": chat_id, "text": mensaje_final}
                 async with session.post(url, json=payload) as resp:
                     if resp.status == 200:
                         return True
                     body_err = await resp.text()
-                    log_sniper(f"⚠️ [TELEGRAM HTTP {resp.status}] Reintentando envio plano: {body_err[:120]}")
-                # Segundo intento de respaldo
+                    log_sniper(f"[WARN] [TELEGRAM HTTP {resp.status}] Reintentando envio plano: {body_err[:120]}")
                 async with session.post(url, json={"chat_id": chat_id, "text": mensaje_final}) as resp2:
                     return resp2.status == 200
         except Exception as exc:
-            log_sniper(f"⚠️ [TELEGRAM ERROR RED] No se pudo despachar {tipo_evento} en {symbol}: {exc}")
+            log_sniper(f"[WARN] [TELEGRAM ERROR RED] No se pudo despachar {tipo_evento} en {symbol}: {exc}")
             return False
 
     async def confirmar_y_enviar_apertura(
@@ -152,10 +137,6 @@ class GestorTelemetriaTelegram:
         side: str = "long",
         order_id: str = "",
     ) -> bool:
-        """
-        Paso 3 del Apareamiento 1:1: Invocado UNICAMENTE cuando Bybit confirma
-        posicion activa (🎯). Extrae del buffer RAM y despacha la apertura a Telegram.
-        """
         if not self._verificar_y_marcar_dedup(f"OPEN:{symbol}", ttl_seg=10.0):
             return False
 
@@ -165,14 +146,14 @@ class GestorTelemetriaTelegram:
         nocional = float(qty_llenada) * float(entry_price)
         extra_metrica = ""
         if pend and (pend.z_score != 0.0 or pend.ofi != 0.0):
-            extra_metrica = f"\nSeñal: Z={pend.z_score:+.2f} | OFI={pend.ofi:+.2f}"
+            extra_metrica = f"\nSennal: Z={pend.z_score:+.2f} | OFI={pend.ofi:+.2f}"
 
-        icono_side = "🟩" if side_str == "LONG" else "🟪"
+        icono_side = "[LONG]" if side_str == "LONG" else "[SHORT]"
         texto = (
             f"{icono_side} [APERTURA CONFIRMADA {side_str}] {symbol}\n"
             f"Contratos: {qty_llenada} @ {entry_price} (~{nocional:.2f} USDT)\n"
             f"ID Orden: {oid_str}{extra_metrica}\n"
-            f"⚙️ {cfg.TITULO_TELEGRAM_CANONICO}"
+            f"[SYS] {cfg.TITULO_TELEGRAM_CANONICO}"
         )
         return await self._despachar_http_telegram(texto, "OPEN_CONFIRMED", symbol)
 
@@ -186,19 +167,15 @@ class GestorTelemetriaTelegram:
         pnl_parcial_pct: float,
         pnl_parcial_usdt: float,
     ) -> bool:
-        """
-        Notifica la ejecucion de la Ley 3 de CHRONOS-TRIZ:
-        Cosecha del primer 50% en +0.26% Maker y armado del Trinquete Break-Even (+0.12% neto).
-        """
         if not self._verificar_y_marcar_dedup(f"TRIZ50:{symbol}", ttl_seg=12.0):
             return False
 
         texto = (
-            f"💎 [COSECHA 50% TRIZ + BE ARMADO] {symbol} ({side.upper()})\n"
-            f" Lote Cosechado: {qty_vendida} contratos ({entry_price} -> {exit_price})\n"
-            f" Caja Asegurada: {pnl_parcial_pct:+.2f} % ({pnl_parcial_usdt:+.4f} USDT)\n"
-            f" Restante 50%: Protegido en Trinquete BE (+0.12% neto) y Trailing libre.\n"
-            f"⚙️ {cfg.TITULO_TELEGRAM_CANONICO}"
+            f"[DIAMOND] [COSECHA 50% TRIZ + BE ARMADO] {symbol} ({side.upper()})\n"
+            f"Lote Cosechado: {qty_vendida} contratos ({entry_price} -> {exit_price})\n"
+            f"Caja Asegurada: {pnl_parcial_pct:+.2f} % ({pnl_parcial_usdt:+.4f} USDT)\n"
+            f"Restante 50%: Protegido en Trinquete BE y Escalera 50/25/25.\n"
+            f"[SYS] {cfg.TITULO_TELEGRAM_CANONICO}"
         )
         return await self._despachar_http_telegram(texto, "COSECHA_50_TRIZ", symbol)
 
@@ -214,22 +191,13 @@ class GestorTelemetriaTelegram:
         exit_price: float = 0.0,
         cosecha_50_previa: bool = False,
     ) -> bool:
-        """
-        Paso 4 del Apareamiento 1:1: Despacho 100% garantizado e incondicional de cierres.
-        Clasifica visualmente en:
-          - 🟩 Cierre en Ganancia (pnl_usdt >= 0)
-          - 🟨 Evacuacion Maker-Scratch 18s (Ley 2 Avellaneda-Stoikov)
-          - 🔴 Cierre en Perdida / Stop-Loss / Escape Temporal (pnl_usdt < 0)
-        """
         mot_upper = str(motivo or "CIERRE").upper()
-        # Bloquear unicamente limpiezas de arranque o mocks de ordenes zero_rest
         if "ESCAPE_HUERFANA_BOOT" in mot_upper or float(hold_seg or 0.0) >= 14000.0:
             return False
 
         if not self._verificar_y_marcar_dedup(f"CLOSE:{symbol}", ttl_seg=12.0):
             return False
 
-        # Limpiar cualquier apertura pendiente residual del mismo simbolo
         self.aperturas_pendientes.pop(symbol, None)
 
         pnl_u = float(pnl_usdt)
@@ -238,14 +206,14 @@ class GestorTelemetriaTelegram:
         es_scratch_18s = ("SCRATCH" in mot_upper) and not es_ganancia
 
         if es_ganancia:
-            icono = "🟩"
+            icono = "[WIN]"
             cabecera = "CIERRE GANADOR"
         elif es_scratch_18s:
-            icono = "🟨"
-            cabecera = "EVACUACIÓN MAKER-SCRATCH 18S"
+            icono = "[SCRATCH]"
+            cabecera = "EVACUACION MAKER-SCRATCH 18S"
         else:
-            icono = "🔴"
-            cabecera = "CIERRE EN PÉRDIDA / SL"
+            icono = "[LOSS]"
+            cabecera = "CIERRE EN PERDIDA / SL"
 
         lado_tag = " [SHORT]" if str(side).lower() == "short" else " [LONG]"
         tramo = f" ({entry_price} -> {exit_price})" if (entry_price > 0.0 and exit_price > 0.0) else ""
@@ -254,15 +222,13 @@ class GestorTelemetriaTelegram:
         texto = (
             f"{icono} [{cabecera} - {motivo}]{lado_tag} {symbol}\n"
             f"Resultado Neto: {pnl_p:+.2f} % ({pnl_u:+.4f} USDT) en {float(hold_seg):.0f}s{tramo}{nota_triz}\n"
-            f"⚙️ {cfg.TITULO_TELEGRAM_CANONICO}"
+            f"[SYS] {cfg.TITULO_TELEGRAM_CANONICO}"
         )
         tipo_ev = "CLOSE_WIN" if es_ganancia else ("CLOSE_SCRATCH" if es_scratch_18s else "CLOSE_LOSS")
         return await self._despachar_http_telegram(texto, tipo_ev, symbol)
 
     async def enviar_mensaje_sistema(self, texto: str) -> bool:
-        """Envia notificaciones operativas de arranque o reportes del Evaluador Cuantico OOS."""
         return await self._despachar_http_telegram(texto, "SISTEMA", "GLOBAL")
 
 
-# Instancia Singleton global del gestor de telemetria
 TELEMETRIA_TG: GestorTelemetriaTelegram = GestorTelemetriaTelegram()
