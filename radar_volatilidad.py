@@ -11,12 +11,12 @@ Radar Microestructural de Alta Frecuencia (6.6 Hz / 150 ms) en O(1) (< 25 us):
   - Exponente de Rugosidad de Hurst sobre ticks activos y Freno Direccional
     de Lyapunov en Pisos de Caida.
   - Interceptor Pre-Orden Single-Layer Nativo:
-      * P-01: Lead-Lag BTC Cross-Veto.
+      * P-01: Lead-Lag BTC Cross-Veto conjuntivo (requiere desplazamiento Z_BTC).
       * P-02: Techo Post-Impulso con Frenado Lyapunov + Confirmacion ML-OFI
-        (H <= 0.640 en LONG con I_Hawkes >= +0.05; H <= 0.585 en SHORT).
+        (H <= 0.640 en LONG con I_Hawkes >= -0.25; H <= 0.585 en SHORT).
       * P-03: Compuerta Asimetrica sobre min(EMA900, DeltaP) (-0.28% HB /
-        -0.20% T1 en LONG) y Escudo Fisico Anti-Short-Squeeze (Pendiente
-        EMA900 <= +0.12% + Escalera Anti-Reentrada STEP-LOCK de 600s).
+        -0.20% T1 en LONG), memoria Z de pump en SHORT y Escudo Fisico
+        Anti-Short-Squeeze (Slope EMA900 <= +0.12% + STEP-LOCK de 600s).
       * P-09: Enfriamiento Determinista Post-Reconexion WebSocket (4.00s).
 ==============================================================================
 """
@@ -387,7 +387,7 @@ class RadarVolatilidad:
         hawkes_val = float(tk_sym.hawkes_intensidad if tk_sym is not None else 0.0)
         lyap_val = float(tk_sym.lyapunov_acel_pct if tk_sym is not None else 0.0)
 
-        # P-01: Acoplamiento Lead-Lag y Veto Direccional con BTC/USDT:USDT
+        # P-01: Acoplamiento Lead-Lag y Veto Direccional Conjuntivo con BTC/USDT:USDT
         tk_btc = ESTADO_RAM.ticks_ram.get(cfg.SIMBOLO_CENTINELA_MACRO)
         ofi_btc = float(tk_btc.ofi_l1_l5 if (tk_btc and tk_btc.last > 0.0) else 0.0)
         z_btc = float(tk_btc.z_score if (tk_btc and tk_btc.last > 0.0) else 0.0)
@@ -395,13 +395,15 @@ class RadarVolatilidad:
         ofi_phantom = (0.75 * ofi_real + 0.25 * ofi_btc) if abs(ofi_btc) > 1e-6 else ofi_real
         senal["ofi_phantom"] = round(ofi_phantom, 4)
 
-        if side == "long" and (ofi_btc < -0.25 or z_btc < -1.80):
+        veto_btc_long = (ofi_btc < -0.35 and z_btc < -0.75) or (z_btc < -1.80)
+        if side == "long" and veto_btc_long:
             if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P01_L"), 0.0) >= 15.0:
                 _SILENCIO_LOG_PHANTOM[(sym, "P01_L")] = ahora_t
                 log_sniper(f"[PHANTOM P-01 BTC-VETO] {sym} [LONG] bloqueado ANTES de orden (BTC OFI={ofi_btc:+.2f}, Z_BTC={z_btc:+.2f}).")
             return False
 
-        if side == "short" and (ofi_btc > 0.28 or z_btc > 2.00):
+        veto_btc_short = (ofi_btc > 0.35 and z_btc > 0.75) or (z_btc > 2.00)
+        if side == "short" and veto_btc_short:
             if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P01_S"), 0.0) >= 15.0:
                 _SILENCIO_LOG_PHANTOM[(sym, "P01_S")] = ahora_t
                 log_sniper(f"[PHANTOM P-01 BTC-VETO] {sym} [SHORT] bloqueado ANTES de orden (BTC OFI={ofi_btc:+.2f}, Z_BTC={z_btc:+.2f}).")
@@ -417,12 +419,12 @@ class RadarVolatilidad:
                 umbral_ema_long = max(umbral_ema_long, -0.0018)
             umbral_z_long = -2.45 if es_tier1 else -2.80
 
-            # En LONG: Aprueba H <= 0.485 puro, o H <= 0.640 cuando concurre frenado de Lyapunov + confirmacion ML-OFI + I_Hawkes >= +0.05
+            # En LONG: Aprueba H <= 0.485 puro, o H <= 0.640 con frenado de Lyapunov + confirmacion ML-OFI + I_Hawkes >= -0.25
             absorcion_post_impulso_long = (
                 h_real <= 0.640
                 and z_real <= umbral_z_long
                 and ofi_real >= cfg.OFI_MIN_ENTRADA
-                and hawkes_val >= 0.05
+                and hawkes_val >= -0.25
                 and lyap_val >= cfg.LYAPUNOV_ACEL_MIN_PCT
             )
             if h_real > h_max_cfg and not absorcion_post_impulso_long:
@@ -458,12 +460,13 @@ class RadarVolatilidad:
 
             umbral_ema_short = 0.0032 if es_tier1 else 0.0042
             sobreext_eff = max(ema_rel, dp_rel)
-            if sobreext_eff < umbral_ema_short or ofi_real > -0.35 or z_real < 1.80:
+            z_short_eff = max(z_real, float(senal.get("z_score") or 0.0))
+            if sobreext_eff < umbral_ema_short or ofi_real > -0.35 or z_short_eff < 1.80:
                 if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_S"), 0.0) >= 12.0:
                     _SILENCIO_LOG_PHANTOM[(sym, "P03_S")] = ahora_t
                     log_sniper(
                         f"[PHANTOM P-03 SHORT] {sym} [SHORT] bloqueado ANTES de orden "
-                        f"(EMA900={ema_rel*100:+.2f}% < +{umbral_ema_short*100:.2f}% | Z={z_real:+.2f} | OFI={ofi_real:+.2f})."
+                        f"(EMA900={ema_rel*100:+.2f}% < +{umbral_ema_short*100:.2f}% | Z_eff={z_short_eff:+.2f} | OFI={ofi_real:+.2f})."
                     )
                 return False
 
@@ -495,7 +498,7 @@ class RadarVolatilidad:
                             )
                         return False
 
-            senal["z_score"] = round(z_real, 4)
+            senal["z_score"] = round(z_real if z_real >= 1.80 else z_short_eff, 4)
             if h_real > h_max_cfg:
                 senal["hurst"] = h_max_cfg
 
@@ -590,7 +593,7 @@ class RadarVolatilidad:
             vz.max_z_pump_short = (
                 max(vz.max_z_pump_short, abs(z_score), 4.00)
                 if es_test
-                else max(vz.max_z_pump_short, abs(z_score))
+                else max(vz.max_z_pump_short, abs(z_score), 2.80)
             )
             senal_short = await self._evaluar_gatillo_short_chronos(symbol, vz, tk, spread_ok, t_now)
             if senal_short is not None:
@@ -665,7 +668,7 @@ class RadarVolatilidad:
             return None
 
         dt_desde_toxico = (t_now - vz.ts_ultimo_pulso_toxico) if vz.ts_ultimo_pulso_toxico > 0.0 else 999.0
-        dt_min_req = cfg.HAWKES_ABSORCION_MIN_SEG if (es_test or tk.hawkes_intensidad < 0.05) else 0.0
+        dt_min_req = cfg.HAWKES_ABSORCION_MIN_SEG if (es_test or tk.hawkes_intensidad < -0.25) else 0.0
         if dt_desde_toxico < dt_min_req or tk.hawkes_intensidad < cfg.HAWKES_INTENSIDAD_MIN:
             self._log_alerta_throttled(
                 f"HAWKES:{symbol}",
@@ -761,9 +764,13 @@ class RadarVolatilidad:
                 else abs(tk.z_score)
             )
         else:
-            if tk.z_score < 1.80:
+            z_ref_short = (
+                max(tk.z_score, vz.max_z_pump_short, 3.50)
+                if sobreextendido_pump
+                else tk.z_score
+            )
+            if z_ref_short < 1.80:
                 return None
-            z_ref_short = max(tk.z_score, 3.50) if sobreextendido_pump else tk.z_score
 
         t0_ram = time.perf_counter()
         ok_ram, _, mult_gemini = ESTADO_RAM.consultar_permiso_o1(symbol, "short", z_ref_short, t_now)
@@ -777,7 +784,7 @@ class RadarVolatilidad:
             "bid": tk.bid,
             "ask": tk.ask,
             "last": tk.last,
-            "z_score": tk.z_score if not es_test else z_ref_short,
+            "z_score": z_ref_short,
             "ofi": tk.ofi_l1_l5,
             "hurst": tk.hurst,
             "volatilidad": tk.volatilidad_local,
