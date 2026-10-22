@@ -10,7 +10,8 @@ Guardian de Geometria de Pagos 10/10 (Single-Layer Nativo):
     con cerrojo atomico _cierre_en_curso para impedir que el Circuit Breaker
     de Contagio pise una salida Limit PostOnly en vuelo.
   - P-05: Rampa de Desvanecimiento Pasivo Pre-Escape Maker Unwind en [72s, 86s]
-    con reconciliacion contable exacta si se llena antes de los 90s.
+    con Re-Pegging Pasivo a los 1.80s y retencion Maker sin liquidacion Taker
+    prematura mientras resten mas de 6 segundos antes de los 90s (Gradiente #6a).
   - P-06: Escalera Convexa Biclase 50/25/25 (God's Accomplice Escalator) liberada:
       * Verificacion real de llenado en cosechas parciales (50% y 25%) antes
         de descontar contratos en CAJA_NEGRA (0 contabilidad fantasma).
@@ -360,6 +361,11 @@ class GestorPosiciones:
                         ):
                             t_wait = 0.0
                             rem_c = qty_cerrar
+                            repeg_ejecutado = False
+                            tick_s, _, _ = extraer_precision_y_minimos(
+                                self.exchange, symbol, pos.entry_price
+                            )
+
                             while t_wait < 4.20:
                                 await asyncio.sleep(0.60)
                                 t_wait += 0.60
@@ -375,6 +381,43 @@ class GestorPosiciones:
                                 except Exception:
                                     pass
 
+                                # Vector de Gradiente #6a: Re-Pegging Pasivo unico a los 1.80s al mejor bid/ask actual
+                                if not repeg_ejecutado and t_wait >= 1.80 and rem_c > 0.0:
+                                    repeg_ejecutado = True
+                                    tk_repeg = ESTADO_RAM.ticks_ram.get(symbol)
+                                    if tk_repeg is not None and tk_repeg.bid > 0.0 and tk_repeg.ask > 0.0:
+                                        px_nuevo = calcular_precio_salida_maker_seguro(
+                                            pos.side,
+                                            pos.entry_price,
+                                            tk_repeg.bid,
+                                            tk_repeg.ask,
+                                            tick_s,
+                                            permitir_scratch=True,
+                                        )
+                                        if abs(px_nuevo - precio_final) >= (0.5 * tick_s):
+                                            try:
+                                                ords_ab = await self.exchange.fetch_open_orders(symbol)
+                                                for o_ab in (ords_ab or []):
+                                                    await self.exchange.cancel_order(o_ab["id"], symbol)
+                                            except Exception:
+                                                pass
+                                            try:
+                                                ord_repeg = await self.exchange.create_order(
+                                                    symbol,
+                                                    "limit",
+                                                    side_close,
+                                                    rem_c,
+                                                    px_nuevo,
+                                                    {"timeInForce": "PostOnly", "reduceOnly": True},
+                                                )
+                                                if isinstance(ord_repeg, dict):
+                                                    p_rp = float(ord_repeg.get("average") or ord_repeg.get("price") or px_nuevo)
+                                                    if p_rp > 0.0:
+                                                        precio_final = p_rp
+                                                        pos.orden_salida_precio = p_rp
+                                            except Exception:
+                                                pass
+
                             if rem_c > 0.0:
                                 try:
                                     ords_ab = await self.exchange.fetch_open_orders(symbol)
@@ -382,6 +425,22 @@ class GestorPosiciones:
                                         await self.exchange.cancel_order(o_ab["id"], symbol)
                                 except Exception:
                                     pass
+
+                                # Vector de Gradiente #6a: Si es MAKER_UNWIND sin llenado parcial y aun restan > 6s
+                                # antes de los 90s, NO liquidar a mercado Taker; mantener en custodia Maker.
+                                edad_actual_pos = pos.edad_segundos(time.time())
+                                if (
+                                    motivo_final == "MAKER_UNWIND"
+                                    and rem_c >= (qty_cerrar - 1e-8)
+                                    and edad_actual_pos < (cfg.TIEMPO_MAX_HOLD_SEG - 6.0)
+                                ):
+                                    pos.pre_escape_72s_enviado = False
+                                    log_sniper(
+                                        f"[PHANTOM MAKER-HOLD P-05] {symbol} orden PostOnly no tomada en 4.2s "
+                                        f"(edad {edad_actual_pos:.1f}s < 84s): reteniendo en custodia Maker sin pagar fee Taker."
+                                    )
+                                    return False
+
                                 try:
                                     ord_rem = await self.exchange.create_order(
                                         symbol, "market", side_close, rem_c, None, {"reduceOnly": True}
@@ -413,6 +472,9 @@ class GestorPosiciones:
                             motivo_final = "SL_EXCHANGE"
                             fue_maker = False
                     elif fue_maker:
+                        if not es_test and motivo_final == "MAKER_UNWIND" and pos.edad_segundos(time.time()) < (cfg.TIEMPO_MAX_HOLD_SEG - 6.0):
+                            pos.pre_escape_72s_enviado = False
+                            return False
                         try:
                             orden_mkt = await self.exchange.create_order(
                                 symbol, "market", side_close, qty_cerrar, None, {"reduceOnly": True}
@@ -589,14 +651,15 @@ class GestorPosiciones:
                         f"[MAKER-SCRATCH 18s] {pos.symbol} Wald Scratch activado a los {edad_seg:.1f}s "
                         f"(PnL {pnl_bruto_pct*100:+.2f}%, OFI5s {tk.ofi_5s:+.2f}): evacuando en Limit PostOnly @ {precio_wald}."
                     )
-                    await self._ejecutar_cierre_definitivo(
+                    cerrado_w = await self._ejecutar_cierre_definitivo(
                         pos=pos,
                         precio_ejecucion=precio_wald,
                         motivo="MAKER_SCRATCH_18S",
                         es_maker=True,
                         ahora=t_now,
                     )
-                    return "MAKER_SCRATCH_18S"
+                    if cerrado_w:
+                        return "MAKER_SCRATCH_18S"
 
             # P-05: Rampa Pre-Escape Maker Unwind en [72.0s, 86.0s]
             if (
@@ -613,14 +676,15 @@ class GestorPosiciones:
                     f"[PHANTOM PRE-ESCAPE P-05] {pos.symbol} evacuacion pasiva PostOnly ejecutada a los "
                     f"{edad_seg:.1f}s @ {px_u} (PnL {pnl_bruto_pct*100:+.2f}%) ahorrando comision Taker 90s."
                 )
-                await self._ejecutar_cierre_definitivo(
+                cerrado_u = await self._ejecutar_cierre_definitivo(
                     pos=pos,
                     precio_ejecucion=px_u,
                     motivo="MAKER_UNWIND",
                     es_maker=True,
                     ahora=t_now,
                 )
-                return "MAKER_UNWIND"
+                if cerrado_u:
+                    return "MAKER_UNWIND"
 
             # P-06: Escalera Convexa Biclase 50/25/25 tras completar 1ra Cosecha
             if pos.cosecha_50_ejecutada:
@@ -689,14 +753,15 @@ class GestorPosiciones:
                     px_tp = calcular_precio_salida_maker_seguro(
                         pos.side, pos.entry_price, best_bid, best_ask, tick_size, permitir_scratch=False
                     )
-                    await self._ejecutar_cierre_definitivo(
+                    cerrado_tp = await self._ejecutar_cierre_definitivo(
                         pos=pos,
                         precio_ejecucion=px_tp,
                         motivo="CHAIN_JAIL_TP_MAX",
                         es_maker=True,
                         ahora=t_now,
                     )
-                    return "CHAIN_JAIL_TP_MAX"
+                    if cerrado_tp:
+                        return "CHAIN_JAIL_TP_MAX"
 
                 if esl_id > pos.eslabon_chain_jail:
                     pos.eslabon_chain_jail = esl_id
@@ -758,14 +823,15 @@ class GestorPosiciones:
                     pos.side, pos.entry_price, best_bid, best_ask, tick_size, permitir_scratch=False
                 )
                 motivo_r = "TRAILING_RATCHET_MAKER" if pos.trailing_activo else "TRINQUETE_RATCHET_MAKER"
-                await self._ejecutar_cierre_definitivo(
+                cerrado_r = await self._ejecutar_cierre_definitivo(
                     pos=pos,
                     precio_ejecucion=precio_ratchet,
                     motivo=motivo_r,
                     es_maker=True,
                     ahora=t_now,
                 )
-                return motivo_r
+                if cerrado_r:
+                    return motivo_r
 
         # Evaluacion Maker-Scratch a los 18s (Ley 2 Avellaneda-Stoikov)
         if edad_seg >= cfg.MAKER_SCRATCH_TIEMPO_SEG and not pos.scratch_18s_evaluado:
@@ -789,21 +855,30 @@ class GestorPosiciones:
                     f"[MAKER-SCRATCH 18s] {pos.symbol} sin rebote tras {edad_seg:.1f}s "
                     f"(PnL {pnl_bruto_pct*100:+.2f}%, OFI5s {tk.ofi_5s:+.2f}): evacuando en Limit PostOnly @ {precio_scratch}."
                 )
-                await self._ejecutar_cierre_definitivo(
+                cerrado_s = await self._ejecutar_cierre_definitivo(
                     pos=pos,
                     precio_ejecucion=precio_scratch,
                     motivo="MAKER_SCRATCH_18S",
                     es_maker=True,
                     ahora=t_now,
                 )
-                return "MAKER_SCRATCH_18S"
+                if cerrado_s:
+                    return "MAKER_SCRATCH_18S"
 
-        # Escudo Maker Fase 2 a los 32s: solo aplica si NO se ha ejecutado aun la 1ra cosecha del 50%
+        # Escudo Maker Fase 2 a los 32s: asegura Break-Even antes de cotizar salida pasiva
         if (
             not pos.cosecha_50_ejecutada
             and edad_seg >= cfg.ESCUDO_MAKER_FASE2_SEG
             and pnl_bruto_pct >= cfg.PISO_MAKER_BRUTO_MIN_PCT
         ):
+            if not es_test and not pos.trinquete_be_armado:
+                sl_int_be, sl_byb_be = calcular_piso_invariante_breakeven(
+                    pos.side, pos.entry_price, tick_size
+                )
+                pos.sl_interno_price = sl_int_be
+                pos.trinquete_be_armado = True
+                await self._ajustar_sl_servidor_bybit(pos, sl_byb_be)
+
             precio_fase2 = calcular_precio_salida_maker_seguro(
                 pos.side, pos.entry_price, best_bid, best_ask, tick_size, permitir_scratch=False
             )
@@ -811,14 +886,15 @@ class GestorPosiciones:
                 f"[FRANCOTIRADOR] [DIAMOND] {pos.symbol} Escudo Maker Fase 2 PostOnly ejecutado @ {precio_fase2} "
                 f"(PnL {pnl_bruto_pct*100:+.2f}%, edad {edad_seg:.0f}s)"
             )
-            await self._ejecutar_cierre_definitivo(
+            cerrado_f2 = await self._ejecutar_cierre_definitivo(
                 pos=pos,
                 precio_ejecucion=precio_fase2,
                 motivo="MAKER_UNWIND",
                 es_maker=True,
                 ahora=t_now,
             )
-            return "MAKER_UNWIND"
+            if cerrado_f2:
+                return "MAKER_UNWIND"
 
         limite_hold = (
             cfg.TIEMPO_MAX_HOLD_TRINQUETE_SEG

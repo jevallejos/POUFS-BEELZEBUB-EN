@@ -10,15 +10,16 @@ Radar Microestructural de Alta Frecuencia (6.6 Hz / 150 ms) en O(1) (< 25 us):
   - ML-OFI Multinivel L1-L5 (Cont-Kukanov-Stoikov) en bucle unico fusionado.
   - Exponente de Rugosidad de Hurst sobre ticks activos y Amortiguador Temporal
     de Choques Extremos de Lyapunov (4.50s post a_Lyap <= -0.25%).
-  - Interceptor Pre-Orden Single-Layer Nativo con Descenso de Gradiente:
+  - Interceptor Pre-Orden Single-Layer Nativo con Descenso de Gradiente V6:
       * P-01: Lead-Lag BTC Cross-Veto conjuntivo (requiere desplazamiento Z_BTC).
       * P-02: Acoplamiento Condicional H <-> Z en LONG (H <= 0.495 normal;
         H <= 0.530 exclusivamente en capitulacion extrema Z <= -8.00) y
-        H <= 0.540 en SHORT-SNIPER.
+        H <= 0.495 en Tier-1 SHORT / H <= 0.540 en High-Beta SHORT con
+        enfriamiento de 30.0s tras bloqueos de persistencia fractal.
       * P-03: Conjuncion estricta (AND) entre EMA900 y DeltaP en LONG + OFI
-        minimo biclase (0.17 High-Beta / 0.12 Tier-1), y exigencia de
-        sobreextension positiva sobre EMA900 en SHORT (+0.32% HB / +0.25% T1)
-        con enfriamiento de 45s post-ANTI-SQUEEZE.
+        minimo biclase (0.17 High-Beta / 0.12 Tier-1), y exigencia unificada de
+        sobreextension positiva sobre EMA900 en SHORT (>= +0.32%) con
+        enfriamiento de 45s post-ANTI-SQUEEZE.
       * P-09: Enfriamiento Determinista Post-Reconexion WebSocket (4.00s).
 ==============================================================================
 """
@@ -80,6 +81,7 @@ class VentanaZ:
         self.ts_ultimo_pulso_toxico: float = 0.0
         self.ts_ultimo_choque_lyapunov: float = 0.0
         self.ts_ultimo_anti_squeeze: float = 0.0
+        self.ts_ultimo_veto_hurst_short: float = 0.0
         self.ticks_ofi_long: int = 0
         self.ticks_ofi_short: int = 0
         self.prev_ofi_instantaneo: float = 0.0
@@ -302,7 +304,7 @@ class RadarVolatilidad:
     """
     Vigila en paralelo los 7 Campeones Alfa + Centinela Macro BTC a 6.6 Hz.
     Evalua las Leyes 1 y 4 de CHRONOS-TRIZ junto con el Interceptor Pre-Orden
-    Single-Layer (P-01, P-02, P-03, P-09) y los 5 Vectores de Gradiente.
+    Single-Layer (P-01, P-02, P-03, P-09) y los 6 Vectores de Gradiente.
     """
 
     def __init__(
@@ -379,7 +381,7 @@ class RadarVolatilidad:
         side = str(senal.get("side", "long")).lower()
         tk_sym = ESTADO_RAM.ticks_ram.get(sym)
 
-        # Vector de Gradiente #5: Veto total O(1) sobre INJ/USDT:USDT (1W/7L, -0.4761 USDT en N=83)
+        # Vector de Gradiente #5: Veto total O(1) sobre INJ/USDT:USDT (1W/7L, -0.4761 USDT)
         if sym == "INJ/USDT:USDT":
             if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "VETO_INJ_TOTAL"), 0.0) >= 30.0:
                 _SILENCIO_LOG_PHANTOM[(sym, "VETO_INJ_TOTAL")] = ahora_t
@@ -487,9 +489,12 @@ class RadarVolatilidad:
             if h_real > h_max_cfg:
                 senal["hurst"] = h_max_cfg
         else:
-            # Vector de Gradiente #5: En SHORT exige H <= 0.540 (conserva 5/5 Wins y filtra #76/#82)
-            h_max_short_prod = 0.540
+            # Vector de Gradiente #6b: En SHORT exige H <= 0.495 en Tier-1 y H <= 0.540 en High-Beta
+            # con enfriamiento de 30.0s tras cualquier bloqueo P-02 de persistencia fractal (filtra Trade #85)
+            h_max_short_prod = 0.495 if es_tier1 else 0.540
             if h_real > h_max_short_prod:
+                if vz_sym is not None:
+                    vz_sym.ts_ultimo_veto_hurst_short = ahora_t
                 if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P02_H_S"), 0.0) >= 10.0:
                     _SILENCIO_LOG_PHANTOM[(sym, "P02_H_S")] = ahora_t
                     log_sniper(
@@ -497,8 +502,21 @@ class RadarVolatilidad:
                     )
                 return False
 
-            # Vector de Gradiente #1: Prohibido vender en corto debajo de EMA900 (exige ema_rel >= +0.25% T1 / +0.32% HB)
-            umbral_ema_short = 0.0025 if es_tier1 else 0.0032
+            if (
+                vz_sym is not None
+                and vz_sym.ts_ultimo_veto_hurst_short > 0.0
+                and (ahora_t - vz_sym.ts_ultimo_veto_hurst_short) < 30.0
+            ):
+                rest_h = 30.0 - (ahora_t - vz_sym.ts_ultimo_veto_hurst_short)
+                if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P02_H_S_CD"), 0.0) >= 10.0:
+                    _SILENCIO_LOG_PHANTOM[(sym, "P02_H_S_CD")] = ahora_t
+                    log_sniper(
+                        f"[PHANTOM P-02 COOLDOWN] {sym} [SHORT] en enfriamiento post-Hurst alto ({rest_h:.1f}s restantes)."
+                    )
+                return False
+
+            # Vector de Gradiente #1 y #6b: Exigir sobreextension positiva >= +0.32% sobre EMA900 en todo SHORT
+            umbral_ema_short = 0.0032
             max_sobreext_pump = float(vz_sym.max_sobreextension_ema_pct if vz_sym is not None else 0.0)
             sobreext_eff = max(ema_rel, dp_rel, max_sobreext_pump) if ema_rel >= umbral_ema_short else ema_rel
             z_short_eff = max(z_real, float(senal.get("z_score") or 0.0))
@@ -667,7 +685,7 @@ class RadarVolatilidad:
         perm = ESTADO_RAM.permisos_ram.get(symbol)
         en_short_only = (
             (perm is not None and perm.modo_regimen == "SHORT_ONLY")
-            or (not es_test and en_pausa_contagio and ema_dist_pct >= 0.0025)
+            or (not es_test and en_pausa_contagio and ema_dist_pct >= 0.0032)
         )
         if (t_now < vz.vigilancia_short_hasta_ts) or en_short_only:
             senal_short = await self._evaluar_gatillo_short_chronos(symbol, vz, tk, spread_ok, t_now)
@@ -815,7 +833,7 @@ class RadarVolatilidad:
 
         es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
         perm = ESTADO_RAM.permisos_ram.get(symbol)
-        piso_ema_short_prod = 0.0025 if symbol in cfg.CLASE_TIER1_LIQUIDO else 0.0032
+        piso_ema_short_prod = 0.0032
 
         en_short_only = (
             (perm is not None and perm.modo_regimen == "SHORT_ONLY")
