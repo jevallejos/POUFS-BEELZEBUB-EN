@@ -6,23 +6,30 @@ ARCHIVO #05: telemetria_telegram.py
 SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 -- ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Motor Transaccional de Telemetria a Telegram con Apareamiento Estricto 1:1.
-Formato minimalista sin iconos con coloreado nativo en Telegram (language-diff):
-  - Lineas con '+' se renderizan en VERDE (Ganancias y Cosechas 50%).
-  - Lineas con '-' se renderizan en ROJO (Perdidas y Scratches).
+Formato clasico limpio con iconos simples de colores:
+  - Apertura confirmada : \U0001f7e9 ALERTA VERDE (PROD)
+  - Cosecha 50% TRIZ    : \U0001f48e [COSECHA 50% TRIZ]
+  - Cierre en Ganancia  : \U0001f7e9 [CIERRE ...]
+  - Cierre Scratch 18s  : \U0001f7e8 [CIERRE MAKER_SCRATCH_18S]
+  - Cierre en Perdida   : \U0001f534 [CIERRE ...]
 ==============================================================================
 """
 from __future__ import annotations
 
-import html
 import os
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import aiohttp
 
 import config_parametros as cfg
 from core_estado_ram import log_sniper
+
+ICONO_VERDE: str = "\U0001f7e9"
+ICONO_ROJO: str = "\U0001f534"
+ICONO_AMARILLO: str = "\U0001f7e8"
+ICONO_DIAMANTE: str = "\U0001f48e"
 
 
 @dataclass(slots=True)
@@ -41,7 +48,7 @@ class AperturaPendienteRAM:
 class GestorTelemetriaTelegram:
     """
     Cliente asincrono de notificaciones con protocolo de apareamiento 1:1,
-    deduplicacion idempotente por ventana temporal y formato minimalista en color.
+    deduplicacion idempotente por ventana temporal y formato clasico con iconos simples.
     """
 
     def __init__(self) -> None:
@@ -95,14 +102,14 @@ class GestorTelemetriaTelegram:
         if not mensaje_final:
             return False
 
-        if cfg.TITULO_TELEGRAM_CANONICO not in mensaje_final:
-            mensaje_final = f"{mensaje_final}\n{cfg.TITULO_TELEGRAM_CANONICO}"
-
         if os.environ.get("TRIBRAIN_TEST_MODE") == "1":
+            texto_test = mensaje_final
+            if cfg.TITULO_TELEGRAM_CANONICO not in texto_test:
+                texto_test = f"{texto_test}\n{cfg.TITULO_TELEGRAM_CANONICO}"
             self.buzon_test.append({
                 "tipo": tipo_evento,
                 "symbol": symbol,
-                "texto": mensaje_final,
+                "texto": texto_test,
                 "ts": time.time(),
             })
             return True
@@ -114,20 +121,14 @@ class GestorTelemetriaTelegram:
 
         url = f"https://api.telegram.org/bot{token}/sendMessage"
         timeout = aiohttp.ClientTimeout(total=8.0)
-        html_diff = f"<pre><code class=\"language-diff\">{html.escape(mensaje_final)}</code></pre>"
-
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                payload_color = {
-                    "chat_id": chat_id,
-                    "text": html_diff,
-                    "parse_mode": "HTML",
-                }
-                async with session.post(url, json=payload_color) as resp:
+                payload = {"chat_id": chat_id, "text": mensaje_final}
+                async with session.post(url, json=payload) as resp:
                     if resp.status == 200:
                         return True
                     body_err = await resp.text()
-                    log_sniper(f"[WARN] [TELEGRAM HTTP {resp.status}] Reintentando envio plano: {body_err[:120]}")
+                    log_sniper(f"[WARN] [TELEGRAM HTTP {resp.status}] Reintentando envio: {body_err[:120]}")
                 async with session.post(url, json={"chat_id": chat_id, "text": mensaje_final}) as resp2:
                     return resp2.status == 200
         except Exception as exc:
@@ -147,15 +148,14 @@ class GestorTelemetriaTelegram:
 
         pend = self.aperturas_pendientes.pop(symbol, None)
         side_str = (pend.side if pend else side).upper()
-        nocional = float(qty_llenada) * float(entry_price)
-        extra_metrica = ""
-        if pend and (pend.z_score != 0.0 or pend.ofi != 0.0):
-            extra_metrica = f" | Z={pend.z_score:+.2f} | OFI={pend.ofi:+.2f}"
+        oid_str = order_id or (pend.order_id if pend else "N/A")
+        lado_tag = f" [{side_str}]" if side_str == "SHORT" else ""
 
         texto = (
-            f"APERTURA {symbol} [{side_str}]\n"
-            f"Lote: {qty_llenada} @ {entry_price} (~{nocional:.2f} USDT){extra_metrica}\n"
-            f"{cfg.TITULO_TELEGRAM_CANONICO}"
+            f"{ICONO_VERDE} ALERTA VERDE (PROD):\n"
+            f"Orden Limit PostOnly en {symbol}{lado_tag}\n"
+            f"Precio: {entry_price}\n"
+            f"ID: {oid_str}"
         )
         return await self._despachar_http_telegram(texto, "OPEN_CONFIRMED", symbol)
 
@@ -172,10 +172,10 @@ class GestorTelemetriaTelegram:
         if not self._verificar_y_marcar_dedup(f"TRIZ50:{symbol}", ttl_seg=12.0):
             return False
 
+        lado_tag = " [SHORT]" if str(side).lower() == "short" else ""
         texto = (
-            f"+ COSECHA 50% {symbol} [{side.upper()}]\n"
-            f"+ PnL: {pnl_parcial_pct:+.2f} % ({pnl_parcial_usdt:+.4f} USDT) | {qty_vendida} @ {exit_price}\n"
-            f"{cfg.TITULO_TELEGRAM_CANONICO}"
+            f"{ICONO_DIAMANTE} [COSECHA 50% TRIZ]{lado_tag} {symbol}\n"
+            f"{pnl_parcial_pct:+.2f} % ({pnl_parcial_usdt:+.4f} USDT) | {qty_vendida} @ {exit_price}"
         )
         return await self._despachar_http_telegram(texto, "COSECHA_50_TRIZ", symbol)
 
@@ -205,20 +205,17 @@ class GestorTelemetriaTelegram:
         es_ganancia = pnl_u >= 0.0
         es_scratch_18s = ("SCRATCH" in mot_upper) and not es_ganancia
 
-        prefijo = "+" if es_ganancia else "-"
-        estado = "GANANCIA" if es_ganancia else "PERDIDA"
-        side_str = str(side).upper()
-        linea_precio = (
-            f"\n{prefijo} Precio: {entry_price} -> {exit_price}"
-            if (entry_price > 0.0 and exit_price > 0.0)
-            else ""
-        )
+        if es_ganancia:
+            icono = ICONO_VERDE
+        elif es_scratch_18s:
+            icono = ICONO_AMARILLO
+        else:
+            icono = ICONO_ROJO
 
+        lado_tag = " [SHORT]" if str(side).lower() == "short" else ""
         texto = (
-            f"{prefijo} {estado} {symbol} [{side_str}]\n"
-            f"{prefijo} PnL: {pnl_p:+.2f} % ({pnl_u:+.4f} USDT) | {float(hold_seg):.0f}s | {motivo}"
-            f"{linea_precio}\n"
-            f"{cfg.TITULO_TELEGRAM_CANONICO}"
+            f"{icono} [CIERRE {motivo}]{lado_tag} {symbol}\n"
+            f"{pnl_p:+.2f} % ({pnl_u:+.4f} USDT) en {float(hold_seg):.0f}s"
         )
         tipo_ev = "CLOSE_WIN" if es_ganancia else ("CLOSE_SCRATCH" if es_scratch_18s else "CLOSE_LOSS")
         return await self._despachar_http_telegram(texto, tipo_ev, symbol)
