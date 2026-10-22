@@ -6,15 +6,14 @@ ARCHIVO #05: telemetria_telegram.py
 SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 -- ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Motor Transaccional de Telemetria a Telegram con Apareamiento Estricto 1:1.
-Garantiza el envio 100% confiable de:
-  - Aperturas reales confirmadas en Bybit UTA ([OPEN]).
-  - Cosecha Fraccionada 50/25/25 TRIZ ([DIAMOND]).
-  - Cierres en Ganancia ([WIN]), Evacuacion Maker-Scratch 18s ([SCRATCH]) y
-    Perdidas/SL ([LOSS]).
+Formato minimalista sin iconos con coloreado nativo en Telegram (language-diff):
+  - Lineas con '+' se renderizan en VERDE (Ganancias y Cosechas 50%).
+  - Lineas con '-' se renderizan en ROJO (Perdidas y Scratches).
 ==============================================================================
 """
 from __future__ import annotations
 
+import html
 import os
 import time
 from dataclasses import dataclass, field
@@ -42,7 +41,7 @@ class AperturaPendienteRAM:
 class GestorTelemetriaTelegram:
     """
     Cliente asincrono de notificaciones con protocolo de apareamiento 1:1,
-    deduplicacion idempotente por ventana temporal y cobertura total de perdidas.
+    deduplicacion idempotente por ventana temporal y formato minimalista en color.
     """
 
     def __init__(self) -> None:
@@ -97,7 +96,7 @@ class GestorTelemetriaTelegram:
             return False
 
         if cfg.TITULO_TELEGRAM_CANONICO not in mensaje_final:
-            mensaje_final = f"{mensaje_final}\n[SYS] {cfg.TITULO_TELEGRAM_CANONICO}"
+            mensaje_final = f"{mensaje_final}\n{cfg.TITULO_TELEGRAM_CANONICO}"
 
         if os.environ.get("TRIBRAIN_TEST_MODE") == "1":
             self.buzon_test.append({
@@ -115,10 +114,16 @@ class GestorTelemetriaTelegram:
 
         url = f"https://api.telegram.org/bot{token}/sendMessage"
         timeout = aiohttp.ClientTimeout(total=8.0)
+        html_diff = f"<pre><code class=\"language-diff\">{html.escape(mensaje_final)}</code></pre>"
+
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                payload = {"chat_id": chat_id, "text": mensaje_final}
-                async with session.post(url, json=payload) as resp:
+                payload_color = {
+                    "chat_id": chat_id,
+                    "text": html_diff,
+                    "parse_mode": "HTML",
+                }
+                async with session.post(url, json=payload_color) as resp:
                     if resp.status == 200:
                         return True
                     body_err = await resp.text()
@@ -142,18 +147,15 @@ class GestorTelemetriaTelegram:
 
         pend = self.aperturas_pendientes.pop(symbol, None)
         side_str = (pend.side if pend else side).upper()
-        oid_str = order_id or (pend.order_id if pend else "N/A")
         nocional = float(qty_llenada) * float(entry_price)
         extra_metrica = ""
         if pend and (pend.z_score != 0.0 or pend.ofi != 0.0):
-            extra_metrica = f"\nSennal: Z={pend.z_score:+.2f} | OFI={pend.ofi:+.2f}"
+            extra_metrica = f" | Z={pend.z_score:+.2f} | OFI={pend.ofi:+.2f}"
 
-        icono_side = "[LONG]" if side_str == "LONG" else "[SHORT]"
         texto = (
-            f"{icono_side} [APERTURA CONFIRMADA {side_str}] {symbol}\n"
-            f"Contratos: {qty_llenada} @ {entry_price} (~{nocional:.2f} USDT)\n"
-            f"ID Orden: {oid_str}{extra_metrica}\n"
-            f"[SYS] {cfg.TITULO_TELEGRAM_CANONICO}"
+            f"APERTURA {symbol} [{side_str}]\n"
+            f"Lote: {qty_llenada} @ {entry_price} (~{nocional:.2f} USDT){extra_metrica}\n"
+            f"{cfg.TITULO_TELEGRAM_CANONICO}"
         )
         return await self._despachar_http_telegram(texto, "OPEN_CONFIRMED", symbol)
 
@@ -171,11 +173,9 @@ class GestorTelemetriaTelegram:
             return False
 
         texto = (
-            f"[DIAMOND] [COSECHA 50% TRIZ + BE ARMADO] {symbol} ({side.upper()})\n"
-            f"Lote Cosechado: {qty_vendida} contratos ({entry_price} -> {exit_price})\n"
-            f"Caja Asegurada: {pnl_parcial_pct:+.2f} % ({pnl_parcial_usdt:+.4f} USDT)\n"
-            f"Restante 50%: Protegido en Trinquete BE y Escalera 50/25/25.\n"
-            f"[SYS] {cfg.TITULO_TELEGRAM_CANONICO}"
+            f"+ COSECHA 50% {symbol} [{side.upper()}]\n"
+            f"+ PnL: {pnl_parcial_pct:+.2f} % ({pnl_parcial_usdt:+.4f} USDT) | {qty_vendida} @ {exit_price}\n"
+            f"{cfg.TITULO_TELEGRAM_CANONICO}"
         )
         return await self._despachar_http_telegram(texto, "COSECHA_50_TRIZ", symbol)
 
@@ -205,24 +205,20 @@ class GestorTelemetriaTelegram:
         es_ganancia = pnl_u >= 0.0
         es_scratch_18s = ("SCRATCH" in mot_upper) and not es_ganancia
 
-        if es_ganancia:
-            icono = "[WIN]"
-            cabecera = "CIERRE GANADOR"
-        elif es_scratch_18s:
-            icono = "[SCRATCH]"
-            cabecera = "EVACUACION MAKER-SCRATCH 18S"
-        else:
-            icono = "[LOSS]"
-            cabecera = "CIERRE EN PERDIDA / SL"
-
-        lado_tag = " [SHORT]" if str(side).lower() == "short" else " [LONG]"
-        tramo = f" ({entry_price} -> {exit_price})" if (entry_price > 0.0 and exit_price > 0.0) else ""
-        nota_triz = " | Cosecha 50% TRIZ incluida" if cosecha_50_previa else ""
+        prefijo = "+" if es_ganancia else "-"
+        estado = "GANANCIA" if es_ganancia else "PERDIDA"
+        side_str = str(side).upper()
+        linea_precio = (
+            f"\n{prefijo} Precio: {entry_price} -> {exit_price}"
+            if (entry_price > 0.0 and exit_price > 0.0)
+            else ""
+        )
 
         texto = (
-            f"{icono} [{cabecera} - {motivo}]{lado_tag} {symbol}\n"
-            f"Resultado Neto: {pnl_p:+.2f} % ({pnl_u:+.4f} USDT) en {float(hold_seg):.0f}s{tramo}{nota_triz}\n"
-            f"[SYS] {cfg.TITULO_TELEGRAM_CANONICO}"
+            f"{prefijo} {estado} {symbol} [{side_str}]\n"
+            f"{prefijo} PnL: {pnl_p:+.2f} % ({pnl_u:+.4f} USDT) | {float(hold_seg):.0f}s | {motivo}"
+            f"{linea_precio}\n"
+            f"{cfg.TITULO_TELEGRAM_CANONICO}"
         )
         tipo_ev = "CLOSE_WIN" if es_ganancia else ("CLOSE_SCRATCH" if es_scratch_18s else "CLOSE_LOSS")
         return await self._despachar_http_telegram(texto, tipo_ev, symbol)
