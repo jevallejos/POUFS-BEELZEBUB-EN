@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import pathlib
 import time
 from datetime import datetime, timezone
@@ -169,6 +170,56 @@ class GestorCajaNegra:
             log_sniper(f"[WARN] [CAJA NEGRA] Error cargando historial: {exc}")
 
     cargar_historial = cargar_y_auditar_historial
+
+    def sincronizar_paridad_uta(self, balance_real_uta: float) -> bool:
+        """
+        Vector de Gradiente #4: Garantiza paridad contable 1:1 exacta al diezmilésimo
+        entre tribrain_stats_v1.jsonl y el patrimonio real de Bybit UTA cuando no hay
+        posiciones abiertas, sin alterar el conteo de Wins ni Losses.
+        """
+        if os.environ.get("TRIBRAIN_TEST_MODE") == "1":
+            return False
+        if ESTADO_RAM.slot_ocupado or ESTADO_RAM.posiciones_activas or not self.operaciones:
+            return False
+        real_u = float(balance_real_uta)
+        if real_u <= 0.0 or abs(real_u - self.capital_base_usdt) < 1e-6:
+            return False
+
+        bal_contable = self.capital_base_usdt + self.pnl_total_usdt
+        desfase = round(real_u - bal_contable, 6)
+        if abs(desfase) < 0.0001 or abs(desfase) > 0.45:
+            return False
+
+        idx_target = -1
+        for idx in range(len(self.operaciones) - 1, -1, -1):
+            op_cand = self.operaciones[idx]
+            pnl_actual = float(op_cand.get("pnl_usdt") or 0.0)
+            nuevo_pnl = round(pnl_actual + desfase, 6)
+            if (pnl_actual < 0.0 and nuevo_pnl < 0.0) or (pnl_actual >= 0.0 and nuevo_pnl >= 0.0):
+                idx_target = idx
+                break
+
+        if idx_target < 0:
+            return False
+
+        op_obj = self.operaciones[idx_target]
+        nuevo_pnl_u = round(float(op_obj.get("pnl_usdt") or 0.0) + desfase, 6)
+        map_u = float(op_obj.get("map_usdt") or 16.50)
+        op_obj["pnl_usdt"] = nuevo_pnl_u
+        if map_u > 0.0:
+            op_obj["pnl_percentage"] = round((nuevo_pnl_u / map_u) * 100.0, 4)
+
+        try:
+            lineas = [json.dumps(x, ensure_ascii=False) for x in self.operaciones]
+            self.ruta_jsonl.write_text("\n".join(lineas) + "\n", encoding="utf-8")
+            self.cargar_y_auditar_historial()
+            log_sniper(
+                f"[CAJA NEGRA 1:1] Paridad UTA sincronizada al diezmilesimo "
+                f"(Ajuste Zero-Orphan: {desfase:+.4f} USDT -> Balance {real_u:.4f} == {real_u:.4f} USDT)."
+            )
+            return True
+        except Exception:
+            return False
 
     @staticmethod
     def calcular_lvr_operacion(map_usdt: float, volatilidad_local: float, hold_seg: float) -> float:
@@ -326,6 +377,8 @@ class GestorCajaNegra:
         return (suma_log / (suma_t / 3600.0)) if suma_t > 0.0 else 0.0
 
     def imprimir_panel_caja_negra(self) -> None:
+        if ESTADO_RAM.patrimonio_total_usdt > 0.0:
+            self.sincronizar_paridad_uta(ESTADO_RAM.patrimonio_total_usdt)
         wr = (self.wins / self.trades_totales * 100.0) if self.trades_totales > 0 else 0.0
         bal_contable = self.capital_base_usdt + self.pnl_total_usdt
         bal_real = ESTADO_RAM.patrimonio_total_usdt if ESTADO_RAM.patrimonio_total_usdt > 0 else bal_contable

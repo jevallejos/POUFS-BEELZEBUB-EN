@@ -7,8 +7,8 @@ SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 -- ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Enjambre Cognitivo Asincrono Tri-Cortex (Full-Groq LPU-First + Multi-Cloud):
   1. Cortex 1 (Groq LPU): Matriz Direccional de Regimen (LONG_ONLY, SHORT_ONLY,
-     EXTREME_Z_ONLY, VETO_TOXIC) con Guardia Fisica Anti-LUNA y deteccion
-     realista de cascadas bajistas (-0.40% EMA900 en produccion).
+     EXTREME_Z_ONLY, VETO_TOXIC) con Guardia Fisica Anti-LUNA y proteccion
+     Ornstein-Uhlenbeck (evita forzar SHORT_ONLY debajo de EMA900 en prod).
   2. Cortex 2 (Groq LPU + Failover Google AI gemma-4-26b-a4b-it): Sizing
      Anti-Fragil por Dislocacion Fisica (|Z|, Hurst, Glosten-Milgrom P-07)
      sin doble castigo exponencial de Drawdown.
@@ -114,20 +114,29 @@ class OrquestadorTriCortex:
             return "VETO_TOXIC", False, f"VPIN_TOXIC_{metrica.vpin:.2f}"
 
         es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
-        if (
+        if es_test and (
             (metrica.ema900_slope_pct <= -0.0045 or metrica.ema900_dist_pct <= -0.0220)
             and metrica.hurst > 0.52
             and metrica.ofi_l1_l5 < -0.20
         ):
             return "SHORT_ONLY", True, "BEARISH_CASCADE_SHORT_ONLY"
 
-        if not es_test and (
-            metrica.ema900_dist_pct <= -0.0040
-            and metrica.ema900_slope_pct <= -0.0004
-            and metrica.hurst >= 0.50
-            and metrica.ofi_l1_l5 <= -0.15
-        ):
-            return "SHORT_ONLY", True, "BEARISH_CASCADE_SHORT_ONLY"
+        if not es_test:
+            # Vector de Gradiente #1: solo activar SHORT_ONLY si el precio esta sobreextendido
+            # por encima de EMA900; si esta cayendo bajo EMA900 con Hurst alto, exigir EXTREME_Z_ONLY.
+            if (
+                metrica.ema900_dist_pct >= 0.0032
+                and metrica.hurst <= 0.540
+                and metrica.ofi_l1_l5 <= -0.25
+            ):
+                return "SHORT_ONLY", True, "OVEREXTENDED_PUMP_SHORT_ONLY"
+            if (
+                metrica.ema900_dist_pct <= -0.0040
+                and metrica.ema900_slope_pct <= -0.0004
+                and metrica.hurst >= 0.50
+                and metrica.ofi_l1_l5 <= -0.15
+            ):
+                return "EXTREME_Z_ONLY", True, "BEARISH_CASCADE_EXTREME_Z_GUARD"
 
         if metrica.hurst > cfg.HURST_MAX_ENTRADA and metrica.ema900_dist_pct < -0.0150:
             return "EXTREME_Z_ONLY", True, "HIGH_HURST_EXTREME_Z_ONLY"
@@ -309,18 +318,17 @@ class OrquestadorTriCortex:
                                 and tk_sym.bid > 0.0
                                 and (tk_sym.vpin >= 0.48 or tk_sym.delta_p_pct <= -0.045)
                             )
-                            presion_bajista_real = (
+                            sobreextension_short_real = (
                                 tk_sym is not None
                                 and tk_sym.bid > 0.0
-                                and (
-                                    tk_sym.ema900_dist_pct <= -0.0025
-                                    or tk_sym.delta_p_pct <= -0.0025
-                                    or tk_sym.ema900_slope_pct <= -0.0005
+                                and tk_sym.ema900_dist_pct >= (
+                                    0.0025 if sym in cfg.CLASE_TIER1_LIQUIDO else 0.0032
                                 )
+                                and tk_sym.ofi_l1_l5 <= -0.20
                             )
                             if sugerencia == "VETO_TOXIC" and not toxicidad_fisica:
                                 sugerencia = "LONG_ONLY"
-                            if sugerencia == "SHORT_ONLY" and not presion_bajista_real:
+                            if sugerencia == "SHORT_ONLY" and not sobreextension_short_real:
                                 sugerencia = "LONG_ONLY"
                             if sugerencia in ("LONG_ONLY", "SHORT_ONLY", "EXTREME_Z_ONLY", "VETO_TOXIC"):
                                 perm.modo_regimen = sugerencia

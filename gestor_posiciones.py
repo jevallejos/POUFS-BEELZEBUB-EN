@@ -14,10 +14,9 @@ Guardian de Geometria de Pagos 10/10 (Single-Layer Nativo):
   - P-06: Escalera Convexa Biclase 50/25/25 (God's Accomplice Escalator) liberada:
       * Verificacion real de llenado en cosechas parciales (50% y 25%) antes
         de descontar contratos en CAJA_NEGRA (0 contabilidad fantasma).
-      * Colchon de oxigeno en Break-Even (+0.05% neto durante los primeros 12s
-        post-cosecha en produccion) y desactivacion de ESCUDO_FASE2 (32s) /
-        TRINQUETE_RATCHET (+0.38%) tras la 1ra cosecha para permitir correr
-        hacia +0.48% (2da tirada) y los 6 eslabones del Ghost-Runner.
+      * Vector de Gradiente #4: Lectura exacta del precio de liquidacion Taker
+        en la Guardia Zero-Orphan (fetch_order + cruce L1) y sincronizacion
+        inmediata 1:1 con el saldo real de Bybit UTA.
   - Suite CLI verbot con renderizado ANSI 3D TrueColor y coloreador en vivo.
 ==============================================================================
 """
@@ -260,6 +259,46 @@ class GestorPosiciones:
 
         return filled, p_avg
 
+    async def _obtener_precio_real_orden_market(
+        self,
+        symbol: str,
+        side_close: str,
+        ord_mkt: Any,
+        precio_fallback: float,
+    ) -> float:
+        """
+        Vector de Gradiente #4: Recupera el precio real de ejecucion Taker
+        cuando Bybit V5 devuelve average=None en el primer milisegundo de create_order.
+        """
+        es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
+        if isinstance(ord_mkt, dict):
+            p_directo = float(ord_mkt.get("average") or ord_mkt.get("price") or 0.0)
+            if p_directo > 0.0:
+                return p_directo
+            oid = str(ord_mkt.get("id") or "")
+            if not es_test and oid and self.exchange is not None and hasattr(self.exchange, "fetch_order"):
+                await asyncio.sleep(0.12)
+                try:
+                    est = await self.exchange.fetch_order(oid, symbol, {"acknowledged": True})
+                    if isinstance(est, dict):
+                        p_fetch = float(est.get("average") or est.get("price") or 0.0)
+                        if p_fetch > 0.0:
+                            return p_fetch
+                except Exception:
+                    try:
+                        est2 = await self.exchange.fetch_order(oid, symbol)
+                        if isinstance(est2, dict):
+                            p_fetch2 = float(est2.get("average") or est2.get("price") or 0.0)
+                            if p_fetch2 > 0.0:
+                                return p_fetch2
+                    except Exception:
+                        pass
+
+        tk_now = ESTADO_RAM.ticks_ram.get(symbol)
+        if not es_test and tk_now is not None and tk_now.bid > 0.0 and tk_now.ask > 0.0:
+            return float(tk_now.bid if side_close == "sell" else tk_now.ask)
+        return float(precio_fallback)
+
     async def _ejecutar_cierre_definitivo(
         self,
         pos: PosicionActiva,
@@ -302,9 +341,14 @@ class GestorPosiciones:
                             {"reduceOnly": True},
                         )
                     if isinstance(orden, dict):
-                        p_avg = float(orden.get("average") or orden.get("price") or 0.0)
-                        if p_avg > 0.0:
-                            precio_final = p_avg
+                        if fue_maker:
+                            p_avg = float(orden.get("average") or orden.get("price") or 0.0)
+                            if p_avg > 0.0:
+                                precio_final = p_avg
+                        else:
+                            precio_final = await self._obtener_precio_real_orden_market(
+                                symbol, side_close, orden, precio_final
+                            )
 
                         st_ord = str(orden.get("status") or "").lower()
                         filled_ord = float(orden.get("filled") or 0.0)
@@ -343,13 +387,17 @@ class GestorPosiciones:
                                         symbol, "market", side_close, rem_c, None, {"reduceOnly": True}
                                     )
                                     fue_maker = False
-                                    if isinstance(ord_rem, dict):
-                                        p_rem = float(ord_rem.get("average") or ord_rem.get("price") or 0.0)
-                                        if p_rem > 0.0:
-                                            precio_final = p_rem
+                                    p_rem = await self._obtener_precio_real_orden_market(
+                                        symbol, side_close, ord_rem, precio_final
+                                    )
+                                    qty_maker_prev = max(0.0, qty_cerrar - rem_c)
+                                    if qty_maker_prev > 0.0 and p_rem > 0.0:
+                                        precio_final = ((qty_maker_prev * precio_final) + (rem_c * p_rem)) / qty_cerrar
+                                    elif p_rem > 0.0:
+                                        precio_final = p_rem
                                     log_sniper(
                                         f"[GUARDIA ZERO-ORPHAN PHANTOM] Remanente de {rem_c} contratos en {symbol} "
-                                        f"liquidado tras 4.2s con reduceOnly=True (0 contratos huerfanos)."
+                                        f"liquidado tras 4.2s @ {precio_final} con reduceOnly=True (0 contratos huerfanos)."
                                     )
                                 except Exception as exc_rem:
                                     if "110017" not in str(exc_rem):
@@ -370,10 +418,9 @@ class GestorPosiciones:
                                 symbol, "market", side_close, qty_cerrar, None, {"reduceOnly": True}
                             )
                             fue_maker = False
-                            if isinstance(orden_mkt, dict):
-                                p_avg = float(orden_mkt.get("average") or orden_mkt.get("price") or 0.0)
-                                if p_avg > 0.0:
-                                    precio_final = p_avg
+                            precio_final = await self._obtener_precio_real_orden_market(
+                                symbol, side_close, orden_mkt, precio_final
+                            )
                         except Exception as exc2:
                             if "110017" in str(exc2):
                                 if not es_test and (pos.pre_escape_72s_enviado or pos.scratch_18s_activo or motivo_final in ("MAKER_UNWIND", "MAKER_SCRATCH_18S")):
@@ -391,6 +438,19 @@ class GestorPosiciones:
             )
 
             ESTADO_RAM.liberar_margen_atomico(symbol)
+
+            # Vector de Gradiente #4: Sincronizacion inmediata de balance UTA post-cierre en produccion
+            if not es_test and self.exchange is not None and hasattr(self.exchange, "fetch_balance"):
+                try:
+                    bal_post = await self.exchange.fetch_balance()
+                    usdt_post = (bal_post or {}).get("USDT") or {}
+                    tot_u = float(usdt_post.get("total") or 0.0)
+                    lib_u = float(usdt_post.get("free") or tot_u)
+                    if tot_u > 0.0:
+                        ESTADO_RAM.sincronizar_balance_uta(tot_u, lib_u)
+                        CAJA_NEGRA.sincronizar_paridad_uta(tot_u)
+                except Exception:
+                    pass
 
             if registro is not None:
                 await ESCUDO_TRICORTEX.auditar_cierre_y_calibrar_umbral(
@@ -567,7 +627,6 @@ class GestorPosiciones:
                 edad_post_cosecha = max(0.0, t_now - pos.ts_cosecha_50) if pos.ts_cosecha_50 > 0.0 else 99.0
                 decimales = max(0, int(round(-math.log10(tick_size)))) if tick_size < 1.0 else 0
 
-                # Tras 12s post-cosecha o al tocar +0.36%, elevar el SL de +0.05% a +0.18% (Eslabon 0)
                 if (edad_post_cosecha >= 12.0 or pos.max_pnl_pct_alcanzado >= 0.0036) and pos.eslabon_chain_jail == 0:
                     piso_e0 = 0.0018
                     sl_e0 = round(
@@ -685,8 +744,6 @@ class GestorPosiciones:
                 f"[FRANCOTIRADOR] {pos.symbol} Trailing Stop activado (PnL {pnl_bruto_pct*100:+.2f}%)"
             )
 
-        # En produccion, una vez ejecutada la 1ra cosecha del 50%, la salida queda gobernada
-        # exclusivamente por la Escalera 50/25/25 (P-06), evitando cierres prematuros en +0.38%.
         if (es_test or not pos.cosecha_50_ejecutada) and pos.max_pnl_pct_alcanzado >= cfg.TRINQUETE_RATCHET_ACTIVACION_PCT:
             pos.trinquete_ratchet_activo = True
             retroceso = pos.max_pnl_pct_alcanzado - pnl_bruto_pct

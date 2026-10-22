@@ -8,16 +8,17 @@ SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 -- ESTRATEGIA CHRONOS-TRIZ
 Radar Microestructural de Alta Frecuencia (6.6 Hz / 150 ms) en O(1) (< 25 us):
   - Estimador VentanaZ Bipower con acumuladores incrementales O(1) y EMA900.
   - ML-OFI Multinivel L1-L5 (Cont-Kukanov-Stoikov) en bucle unico fusionado.
-  - Exponente de Rugosidad de Hurst sobre ticks activos y Freno Direccional
-    de Lyapunov en Pisos de Caida.
-  - Interceptor Pre-Orden Single-Layer Nativo:
+  - Exponente de Rugosidad de Hurst sobre ticks activos y Amortiguador Temporal
+    de Choques Extremos de Lyapunov (4.50s post a_Lyap <= -0.25%).
+  - Interceptor Pre-Orden Single-Layer Nativo con Descenso de Gradiente:
       * P-01: Lead-Lag BTC Cross-Veto conjuntivo (requiere desplazamiento Z_BTC).
-      * P-02: Acoplamiento Condicional H <-> Z en LONG (H <= 0.495 en caidas
-        normales Z > -4.20; H <= 0.620 exclusivamente en capitulacion profunda
-        Z <= -4.20, Desc <= -0.38% e I_Hawkes > 0.0) y H <= 0.625 en SHORT.
-      * P-03: Memoria de sobreextension de pico en SHORT, caza de rebotes
-        debiles en cascadas bajistas (SHORT_ONLY / Pausa Contagio) y Escudo
-        Fisico Anti-Squeeze (Slope EMA900 <= +0.12% + STEP-LOCK de 600s).
+      * P-02: Acoplamiento Condicional H <-> Z en LONG (H <= 0.495 normal;
+        H <= 0.530 exclusivamente en capitulacion extrema Z <= -8.00) y
+        H <= 0.540 en SHORT-SNIPER.
+      * P-03: Conjuncion estricta (AND) entre EMA900 y DeltaP en LONG + OFI
+        minimo biclase (0.17 High-Beta / 0.12 Tier-1), y exigencia de
+        sobreextension positiva sobre EMA900 en SHORT (+0.32% HB / +0.25% T1)
+        con enfriamiento de 45s post-ANTI-SQUEEZE.
       * P-09: Enfriamiento Determinista Post-Reconexion WebSocket (4.00s).
 ==============================================================================
 """
@@ -77,6 +78,8 @@ class VentanaZ:
         self.hawkes_intensidad: float = 0.0
         self.ts_ultimo_tick: float = 0.0
         self.ts_ultimo_pulso_toxico: float = 0.0
+        self.ts_ultimo_choque_lyapunov: float = 0.0
+        self.ts_ultimo_anti_squeeze: float = 0.0
         self.ticks_ofi_long: int = 0
         self.ticks_ofi_short: int = 0
         self.prev_ofi_instantaneo: float = 0.0
@@ -237,6 +240,10 @@ class VentanaZ:
         acel_bruta = v1 - v0
         acel_pct = max(0.0, acel_bruta) if v1 >= 0.0 else acel_bruta
 
+        # Vector de Gradiente #3: Registrar timestamp de cualquier choque violento <= -0.25%
+        if acel_bruta <= -0.0025:
+            self.ts_ultimo_choque_lyapunov = self.ts_ultimo_tick if self.ts_ultimo_tick > 0.0 else time.time()
+
         if os.environ.get("TRIBRAIN_TEST_MODE") != "1":
             n_d1 = len(self._act_d1_sq)
             n_d4 = len(self._act_d4_sq)
@@ -295,7 +302,7 @@ class RadarVolatilidad:
     """
     Vigila en paralelo los 7 Campeones Alfa + Centinela Macro BTC a 6.6 Hz.
     Evalua las Leyes 1 y 4 de CHRONOS-TRIZ junto con el Interceptor Pre-Orden
-    Single-Layer (P-01, P-02, P-03, P-09) y el Escudo Anti-Short-Squeeze.
+    Single-Layer (P-01, P-02, P-03, P-09) y los 5 Vectores de Gradiente.
     """
 
     def __init__(
@@ -372,11 +379,13 @@ class RadarVolatilidad:
         side = str(senal.get("side", "long")).lower()
         tk_sym = ESTADO_RAM.ticks_ram.get(sym)
 
-        # Veto Selectivo O(1) sobre INJ/USDT:USDT [LONG] (0W/4L)
-        if sym == "INJ/USDT:USDT" and side == "long":
-            if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "VETO_INJ_LONG"), 0.0) >= 30.0:
-                _SILENCIO_LOG_PHANTOM[(sym, "VETO_INJ_LONG")] = ahora_t
-                log_sniper("[PHANTOM VETO SELECTIVO] INJ/USDT:USDT [LONG] bloqueado por estadistica OOS (0W/4L). Solo SHORT habilitado en INJ.")
+        # Vector de Gradiente #5: Veto total O(1) sobre INJ/USDT:USDT (1W/7L, -0.4761 USDT en N=83)
+        if sym == "INJ/USDT:USDT":
+            if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "VETO_INJ_TOTAL"), 0.0) >= 30.0:
+                _SILENCIO_LOG_PHANTOM[(sym, "VETO_INJ_TOTAL")] = ahora_t
+                log_sniper(
+                    f"[PHANTOM VETO SELECTIVO] {sym} [{side.upper()}] bloqueado por estadistica OOS (1W/7L, -0.4761 USDT)."
+                )
             return False
 
         h_real = float(senal.get("hurst") if senal.get("hurst") is not None else (tk_sym.hurst if tk_sym else 0.45))
@@ -412,23 +421,48 @@ class RadarVolatilidad:
 
         h_max_cfg = float(getattr(cfg, "HURST_MAX_ENTRADA", 0.485))
         es_tier1 = sym in cfg.CLASE_TIER1_LIQUIDO
+        vz_sym = self.ventanas.get(sym)
 
         if side == "long":
-            descuento_eff = min(ema_rel, dp_rel)
-            umbral_ema_long = -0.0020 if es_tier1 else -0.0028
-            if z_real <= -4.50:
-                umbral_ema_long = max(umbral_ema_long, -0.0018)
+            # Vector de Gradiente #3: Amortiguador de estabilizacion de 4.5s tras choque de Lyapunov <= -0.25%
+            dt_choque_lyap = (
+                (ahora_t - vz_sym.ts_ultimo_choque_lyapunov)
+                if (vz_sym is not None and vz_sym.ts_ultimo_choque_lyapunov > 0.0)
+                else 999.0
+            )
+            if dt_choque_lyap < 4.50:
+                if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_LYAP_BUF"), 0.0) >= 8.0:
+                    _SILENCIO_LOG_PHANTOM[(sym, "P03_LYAP_BUF")] = ahora_t
+                    log_sniper(
+                        f"[PHANTOM P-03 LYAPUNOV-BUFFER] {sym} [LONG] bloqueado ANTES de orden "
+                        f"(Choque Lyapunov hace {dt_choque_lyap:.2f}s < 4.50s de estabilizacion)."
+                    )
+                return False
+
+            # Vector de Gradiente #2: Conjuncion estricta (AND) de descuento en EMA900 y DeltaP + OFI biclase
+            umbral_ema_long = -0.0018 if es_tier1 else -0.0025
             umbral_z_long = -2.45 if es_tier1 else -2.80
+            ofi_min_long = 0.12 if es_tier1 else 0.17
+
+            if ofi_real < ofi_min_long:
+                if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_OFI_L"), 0.0) >= 10.0:
+                    _SILENCIO_LOG_PHANTOM[(sym, "P03_OFI_L")] = ahora_t
+                    log_sniper(
+                        f"[PHANTOM P-03 OFI-LONG] {sym} [LONG] bloqueado ANTES de orden "
+                        f"(OFI={ofi_real:+.2f} < +{ofi_min_long:.2f} requerido en su clase)."
+                    )
+                return False
 
             # Acoplamiento Condicional H <-> Z en LONG:
-            # 1) Caidas normales (Z > -4.20): exige H <= 0.495.
-            # 2) Capitulacion profunda (Z <= -4.20 y descuento_eff <= -0.38% con I_Hawkes > 0.0): permite H en (0.495, 0.620].
+            # 1) Caidas normales: exige H <= 0.495.
+            # 2) Capitulacion extrema (Z <= -8.00 y ambos descuentos <= -0.50% con I_Hawkes > 0.0): permite H <= 0.530.
             h_puro_long = 0.495
             absorcion_capitulacion_profunda_long = (
-                h_real <= 0.620
-                and z_real <= -4.20
-                and descuento_eff <= -0.0038
-                and ofi_real >= cfg.OFI_MIN_ENTRADA
+                h_real <= 0.530
+                and z_real <= -8.00
+                and ema_rel <= -0.0050
+                and dp_rel <= -0.0050
+                and ofi_real >= ofi_min_long
                 and hawkes_val > 0.0
                 and lyap_val >= cfg.LYAPUNOV_ACEL_MIN_PCT
             )
@@ -437,24 +471,24 @@ class RadarVolatilidad:
                     _SILENCIO_LOG_PHANTOM[(sym, "P02_H_L")] = ahora_t
                     log_sniper(
                         f"[PHANTOM P-02 PRE-ORDEN] {sym} [LONG] bloqueado ANTES de enviar orden "
-                        f"(H={h_real:.3f} > {h_puro_long:.3f} sin capitulacion profunda Z={z_real:+.2f}, Desc={descuento_eff*100:+.2f}%, I_Hawkes={hawkes_val:+.2f})."
+                        f"(H={h_real:.3f} > {h_puro_long:.3f} sin capitulacion extrema Z={z_real:+.2f}, EMA={ema_rel*100:+.2f}%, DP={dp_rel*100:+.2f}%)."
                     )
                 return False
 
-            if descuento_eff > umbral_ema_long or z_real > umbral_z_long:
+            if ema_rel > umbral_ema_long or dp_rel > umbral_ema_long or z_real > umbral_z_long:
                 if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_L"), 0.0) >= 12.0:
                     _SILENCIO_LOG_PHANTOM[(sym, "P03_L")] = ahora_t
                     log_sniper(
-                        f"[PHANTOM P-03 EMA900] {sym} [LONG] bloqueado ANTES de orden "
-                        f"(Desc={descuento_eff*100:+.2f}% > {umbral_ema_long*100:+.2f}% | Z={z_real:+.2f})."
+                        f"[PHANTOM P-03 EMA900-AND] {sym} [LONG] bloqueado ANTES de orden "
+                        f"(EMA900={ema_rel*100:+.2f}%, DP={dp_rel*100:+.2f}% > {umbral_ema_long*100:+.2f}% | Z={z_real:+.2f})."
                     )
                 return False
 
             if h_real > h_max_cfg:
                 senal["hurst"] = h_max_cfg
         else:
-            # En SHORT: Permite H <= 0.625 con frenado de Lyapunov y confirmacion ML-OFI, manteniendo intactos ANTI-SQUEEZE y STEP-LOCK
-            h_max_short_prod = 0.625
+            # Vector de Gradiente #5: En SHORT exige H <= 0.540 (conserva 5/5 Wins y filtra #76/#82)
+            h_max_short_prod = 0.540
             if h_real > h_max_short_prod:
                 if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P02_H_S"), 0.0) >= 10.0:
                     _SILENCIO_LOG_PHANTOM[(sym, "P02_H_S")] = ahora_t
@@ -463,53 +497,47 @@ class RadarVolatilidad:
                     )
                 return False
 
-            perm_sym = ESTADO_RAM.permisos_ram.get(sym)
-            en_cascada_short = (
-                (perm_sym is not None and perm_sym.modo_regimen == "SHORT_ONLY")
-                or (ahora_t < ESTADO_RAM.pausa_macro_hasta_ts)
-                or (ema_slope <= -0.0005 and ema_rel <= -0.0025)
-            )
-
-            vz_sym = self.ventanas.get(sym)
+            # Vector de Gradiente #1: Prohibido vender en corto debajo de EMA900 (exige ema_rel >= +0.25% T1 / +0.32% HB)
+            umbral_ema_short = 0.0025 if es_tier1 else 0.0032
             max_sobreext_pump = float(vz_sym.max_sobreextension_ema_pct if vz_sym is not None else 0.0)
-            umbral_ema_short = 0.0032 if es_tier1 else 0.0042
-            sobreext_eff = (
-                max(ema_rel, dp_rel, max_sobreext_pump)
-                if ema_rel >= 0.0032
-                else max(ema_rel, dp_rel)
-            )
+            sobreext_eff = max(ema_rel, dp_rel, max_sobreext_pump) if ema_rel >= umbral_ema_short else ema_rel
             z_short_eff = max(z_real, float(senal.get("z_score") or 0.0))
 
-            rebote_bajista_valido = (
-                en_cascada_short
-                and ema_rel >= -0.0065
-                and (dp_rel >= 0.0015 or z_short_eff >= 1.40)
-                and ofi_real <= -0.35
-            )
             pump_sobreextendido_valido = (
-                sobreext_eff >= umbral_ema_short
+                ema_rel >= umbral_ema_short
+                and sobreext_eff >= umbral_ema_short
                 and ofi_real <= -0.35
                 and z_short_eff >= 1.80
             )
 
-            if not (pump_sobreextendido_valido or rebote_bajista_valido):
+            if not pump_sobreextendido_valido:
                 if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_S"), 0.0) >= 12.0:
                     _SILENCIO_LOG_PHANTOM[(sym, "P03_S")] = ahora_t
                     log_sniper(
                         f"[PHANTOM P-03 SHORT] {sym} [SHORT] bloqueado ANTES de orden "
-                        f"(EMA900={ema_rel*100:+.2f}% | SobreextEff={sobreext_eff*100:+.2f}% < +{umbral_ema_short*100:.2f}% | Z_eff={z_short_eff:+.2f} | OFI={ofi_real:+.2f})."
+                        f"(EMA900={ema_rel*100:+.2f}% < +{umbral_ema_short*100:.2f}% | Z_eff={z_short_eff:+.2f} | OFI={ofi_real:+.2f})."
                     )
                 return False
 
-            # Escudo Fisico Anti-Short-Squeeze 1: Bloquear si la pendiente EMA900 expande al alza (> +0.12%)
+            # Escudo Fisico Anti-Short-Squeeze 1 + Cooldown de 45s (erradica Trade #78)
             if vz_sym is not None and len(vz_sym.precios) >= 10:
                 p_now = vz_sym.precios[-1]
                 max_ventana = max(vz_sym.precios)
-                if ema_slope > 0.0012 or (ema_slope > 0.0005 and p_now >= (max_ventana * 0.9980)):
+                en_expansion_alcista = (
+                    ema_slope > 0.0012
+                    or (ema_slope > 0.0005 and p_now >= (max_ventana * 0.9980))
+                    or (ema_rel >= 0.0095 and ema_slope > 0.0004)
+                )
+                if en_expansion_alcista:
+                    vz_sym.ts_ultimo_anti_squeeze = ahora_t
+                if en_expansion_alcista or (
+                    vz_sym.ts_ultimo_anti_squeeze > 0.0
+                    and (ahora_t - vz_sym.ts_ultimo_anti_squeeze) < 45.0
+                ):
                     if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_SQZ"), 0.0) >= 12.0:
                         _SILENCIO_LOG_PHANTOM[(sym, "P03_SQZ")] = ahora_t
                         log_sniper(
-                            f"[PHANTOM ANTI-SQUEEZE] {sym} [SHORT] bloqueado: rally alcista en expansion "
+                            f"[PHANTOM ANTI-SQUEEZE] {sym} [SHORT] bloqueado: rally alcista en expansion o enfriamiento 45s "
                             f"(Slope EMA900={ema_slope*100:+.2f}% | Precio={p_now})."
                         )
                     return False
@@ -578,6 +606,9 @@ class RadarVolatilidad:
         ema900, ema_dist_pct, ema_slope_pct = vz.obtener_metricas_ema900()
         spread_ok, spread_pct = verificar_friccion_spread(best_bid, best_ask)
 
+        if not es_test and ema_dist_pct >= 0.0095 and ema_slope_pct > 0.0004:
+            vz.ts_ultimo_anti_squeeze = t_now
+
         tk = ESTADO_RAM.ticks_ram.get(symbol)
         if tk is None:
             tk = MetricaTick(symbol=symbol)
@@ -636,8 +667,7 @@ class RadarVolatilidad:
         perm = ESTADO_RAM.permisos_ram.get(symbol)
         en_short_only = (
             (perm is not None and perm.modo_regimen == "SHORT_ONLY")
-            or (not es_test and en_pausa_contagio)
-            or (not es_test and ema_slope_pct <= -0.0005 and ema_dist_pct <= -0.0025)
+            or (not es_test and en_pausa_contagio and ema_dist_pct >= 0.0025)
         )
         if (t_now < vz.vigilancia_short_hasta_ts) or en_short_only:
             senal_short = await self._evaluar_gatillo_short_chronos(symbol, vz, tk, spread_ok, t_now)
@@ -673,10 +703,18 @@ class RadarVolatilidad:
 
         es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
         es_z_extremo = tk.z_score <= -4.50
-        if tk.delta_p_pct > caida_min_req and not es_z_extremo:
-            return None
-        if tk.ema900_dist_pct > ema_dist_req and not es_z_extremo:
-            return None
+        if es_test:
+            if tk.delta_p_pct > caida_min_req and not es_z_extremo:
+                return None
+            if tk.ema900_dist_pct > ema_dist_req and not es_z_extremo:
+                return None
+        else:
+            # Vector de Gradiente #2: Conjuncion estricta sin exencion por es_z_extremo
+            piso_desc = -0.0018 if symbol in cfg.CLASE_TIER1_LIQUIDO else -0.0025
+            if tk.delta_p_pct > min(caida_min_req, piso_desc):
+                return None
+            if tk.ema900_dist_pct > min(ema_dist_req, piso_desc):
+                return None
 
         if not spread_ok:
             self._log_alerta_throttled(
@@ -692,8 +730,7 @@ class RadarVolatilidad:
             )
             return None
 
-        # En produccion permitimos que H <= 0.620 pase a _validar_filtros_phantom_pre_orden (donde exige Z <= -4.20 si H > 0.495)
-        h_techo_radar = cfg.HURST_MAX_ENTRADA if es_test else 0.620
+        h_techo_radar = cfg.HURST_MAX_ENTRADA if es_test else 0.530
         if tk.hurst > h_techo_radar and not (es_test and es_z_extremo):
             self._log_alerta_throttled(
                 f"HURST:{symbol}",
@@ -778,18 +815,19 @@ class RadarVolatilidad:
 
         es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
         perm = ESTADO_RAM.permisos_ram.get(symbol)
+        piso_ema_short_prod = 0.0025 if symbol in cfg.CLASE_TIER1_LIQUIDO else 0.0032
+
         en_short_only = (
             (perm is not None and perm.modo_regimen == "SHORT_ONLY")
             or (not es_test and t_now < ESTADO_RAM.pausa_macro_hasta_ts)
-            or (not es_test and tk.ema900_slope_pct <= -0.0005 and tk.ema900_dist_pct <= -0.0025)
         )
 
-        sobreextendido_pump = (t_now < vz.vigilancia_short_hasta_ts) and (tk.ema900_dist_pct >= 0.0032)
-        piso_rebote_ema = cfg.SHORT_REBOTE_DEBIL_MIN_EMA_PCT if es_test else -0.0065
+        sobreextendido_pump = (t_now < vz.vigilancia_short_hasta_ts) and (tk.ema900_dist_pct >= piso_ema_short_prod)
+        piso_rebote_ema = cfg.SHORT_REBOTE_DEBIL_MIN_EMA_PCT if es_test else piso_ema_short_prod
         rebote_en_tendencia_bajista = (
             en_short_only
             and (tk.ema900_dist_pct >= piso_rebote_ema)
-            and (es_test or tk.delta_p_pct >= 0.0015 or tk.z_score >= 1.40)
+            and (es_test or tk.delta_p_pct >= 0.0015 or tk.z_score >= 1.80)
         )
 
         if not (sobreextendido_pump or rebote_en_tendencia_bajista):
