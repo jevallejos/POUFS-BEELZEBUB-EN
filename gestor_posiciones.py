@@ -6,7 +6,9 @@ ARCHIVO #10: gestor_posiciones.py
 SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 -- ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Guardian de Geometria de Pagos 10/10 (Single-Layer Nativo):
-  - P-04: Test Secuencial Continuo de Wald (Continuous Phantom Scratch) en [18s, 72s).
+  - P-04: Test Secuencial Continuo de Wald (Continuous Phantom Scratch) en [18s, 72s)
+    con cerrojo atomico _cierre_en_curso para impedir que el Circuit Breaker
+    de Contagio pise una salida Limit PostOnly en vuelo.
   - P-05: Rampa de Desvanecimiento Pasivo Pre-Escape Maker Unwind en [72s, 86s]
     con reconciliacion contable exacta si se llena antes de los 90s.
   - P-06: Escalera Convexa Biclase 50/25/25 (God's Accomplice Escalator) liberada:
@@ -266,140 +268,142 @@ class GestorPosiciones:
         es_maker: bool,
         ahora: float,
     ) -> bool:
-        if pos.cerrada:
+        if pos.cerrada or getattr(pos, "_cierre_en_curso", False):
             return False
 
-        symbol = pos.symbol
-        side_close = "sell" if pos.side == "long" else "buy"
-        qty_cerrar = float(pos.qty_actual if pos.qty_actual > 0.0 else pos.qty_inicial)
-        precio_final = float(precio_ejecucion)
-        motivo_final = str(motivo)
-        fue_maker = bool(es_maker)
-        es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
+        pos._cierre_en_curso = True
+        try:
+            symbol = pos.symbol
+            side_close = "sell" if pos.side == "long" else "buy"
+            qty_cerrar = float(pos.qty_actual if pos.qty_actual > 0.0 else pos.qty_inicial)
+            precio_final = float(precio_ejecucion)
+            motivo_final = str(motivo)
+            fue_maker = bool(es_maker)
+            es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
 
-        if self.exchange is not None and qty_cerrar > 0.0:
-            try:
-                if fue_maker:
-                    orden = await self.exchange.create_order(
-                        symbol,
-                        "limit",
-                        side_close,
-                        qty_cerrar,
-                        precio_final,
-                        {"timeInForce": "PostOnly", "reduceOnly": True},
-                    )
-                else:
-                    orden = await self.exchange.create_order(
-                        symbol,
-                        "market",
-                        side_close,
-                        qty_cerrar,
-                        None,
-                        {"reduceOnly": True},
-                    )
-                if isinstance(orden, dict):
-                    p_avg = float(orden.get("average") or orden.get("price") or 0.0)
-                    if p_avg > 0.0:
-                        precio_final = p_avg
-
-                    st_ord = str(orden.get("status") or "").lower()
-                    filled_ord = float(orden.get("filled") or 0.0)
-                    if (
-                        not es_test
-                        and fue_maker
-                        and (st_ord not in ("closed",) or filled_ord < qty_cerrar)
-                        and hasattr(self.exchange, "fetch_positions")
-                    ):
-                        t_wait = 0.0
-                        rem_c = qty_cerrar
-                        while t_wait < 4.20:
-                            await asyncio.sleep(0.60)
-                            t_wait += 0.60
-                            try:
-                                pos_bybit = await self.exchange.fetch_positions([symbol])
-                                rem_c = 0.0
-                                for pb in (pos_bybit or []):
-                                    if str(pb.get("symbol") or "") == symbol:
-                                        rem_c = abs(float(pb.get("contracts") or (pb.get("info") or {}).get("size") or 0.0))
-                                        break
-                                if rem_c <= 0.0:
-                                    break
-                            except Exception:
-                                pass
-
-                        if rem_c > 0.0:
-                            try:
-                                ords_ab = await self.exchange.fetch_open_orders(symbol)
-                                for o_ab in (ords_ab or []):
-                                    await self.exchange.cancel_order(o_ab["id"], symbol)
-                            except Exception:
-                                pass
-                            try:
-                                ord_rem = await self.exchange.create_order(
-                                    symbol, "market", side_close, rem_c, None, {"reduceOnly": True}
-                                )
-                                fue_maker = False
-                                if isinstance(ord_rem, dict):
-                                    p_rem = float(ord_rem.get("average") or ord_rem.get("price") or 0.0)
-                                    if p_rem > 0.0:
-                                        precio_final = p_rem
-                                log_sniper(
-                                    f"[GUARDIA ZERO-ORPHAN PHANTOM] Remanente de {rem_c} contratos en {symbol} "
-                                    f"liquidado tras 4.2s con reduceOnly=True (0 contratos huerfanos)."
-                                )
-                            except Exception as exc_rem:
-                                if "110017" not in str(exc_rem):
-                                    fue_maker = False
-            except Exception as exc:
-                err_str = str(exc)
-                if "110017" in err_str or "reduce-only" in err_str.lower() or "zero position" in err_str.lower():
-                    if not es_test and (pos.pre_escape_72s_enviado or motivo_final == "MAKER_UNWIND"):
-                        motivo_final = "MAKER_UNWIND"
-                        fue_maker = True
-                        if pos.orden_salida_precio > 0.0:
-                            precio_final = pos.orden_salida_precio
-                    else:
-                        motivo_final = "SL_EXCHANGE"
-                        fue_maker = False
-                elif fue_maker:
-                    try:
-                        orden_mkt = await self.exchange.create_order(
-                            symbol, "market", side_close, qty_cerrar, None, {"reduceOnly": True}
+            if self.exchange is not None and qty_cerrar > 0.0:
+                try:
+                    if fue_maker:
+                        orden = await self.exchange.create_order(
+                            symbol,
+                            "limit",
+                            side_close,
+                            qty_cerrar,
+                            precio_final,
+                            {"timeInForce": "PostOnly", "reduceOnly": True},
                         )
-                        fue_maker = False
-                        if isinstance(orden_mkt, dict):
-                            p_avg = float(orden_mkt.get("average") or orden_mkt.get("price") or 0.0)
-                            if p_avg > 0.0:
-                                precio_final = p_avg
-                    except Exception as exc2:
-                        if "110017" in str(exc2):
-                            if not es_test and (pos.pre_escape_72s_enviado or motivo_final == "MAKER_UNWIND"):
-                                motivo_final = "MAKER_UNWIND"
-                                fue_maker = True
-                            else:
-                                motivo_final = "SL_EXCHANGE"
-                                fue_maker = False
+                    else:
+                        orden = await self.exchange.create_order(
+                            symbol,
+                            "market",
+                            side_close,
+                            qty_cerrar,
+                            None,
+                            {"reduceOnly": True},
+                        )
+                    if isinstance(orden, dict):
+                        p_avg = float(orden.get("average") or orden.get("price") or 0.0)
+                        if p_avg > 0.0:
+                            precio_final = p_avg
 
-        registro = await CAJA_NEGRA.registrar_cierre_posicion(
-            pos=pos,
-            exit_price=precio_final,
-            motivo=motivo_final,
-            es_salida_maker=fue_maker,
-            ahora=ahora,
-        )
+                        st_ord = str(orden.get("status") or "").lower()
+                        filled_ord = float(orden.get("filled") or 0.0)
+                        if (
+                            not es_test
+                            and fue_maker
+                            and (st_ord not in ("closed",) or filled_ord < qty_cerrar)
+                            and hasattr(self.exchange, "fetch_positions")
+                        ):
+                            t_wait = 0.0
+                            rem_c = qty_cerrar
+                            while t_wait < 4.20:
+                                await asyncio.sleep(0.60)
+                                t_wait += 0.60
+                                try:
+                                    pos_bybit = await self.exchange.fetch_positions([symbol])
+                                    rem_c = 0.0
+                                    for pb in (pos_bybit or []):
+                                        if str(pb.get("symbol") or "") == symbol:
+                                            rem_c = abs(float(pb.get("contracts") or (pb.get("info") or {}).get("size") or 0.0))
+                                            break
+                                    if rem_c <= 0.0:
+                                        break
+                                except Exception:
+                                    pass
 
-        ESTADO_RAM.liberar_margen_atomico(symbol)
+                            if rem_c > 0.0:
+                                try:
+                                    ords_ab = await self.exchange.fetch_open_orders(symbol)
+                                    for o_ab in (ords_ab or []):
+                                        await self.exchange.cancel_order(o_ab["id"], symbol)
+                                except Exception:
+                                    pass
+                                try:
+                                    ord_rem = await self.exchange.create_order(
+                                        symbol, "market", side_close, rem_c, None, {"reduceOnly": True}
+                                    )
+                                    fue_maker = False
+                                    if isinstance(ord_rem, dict):
+                                        p_rem = float(ord_rem.get("average") or ord_rem.get("price") or 0.0)
+                                        if p_rem > 0.0:
+                                            precio_final = p_rem
+                                    log_sniper(
+                                        f"[GUARDIA ZERO-ORPHAN PHANTOM] Remanente de {rem_c} contratos en {symbol} "
+                                        f"liquidado tras 4.2s con reduceOnly=True (0 contratos huerfanos)."
+                                    )
+                                except Exception as exc_rem:
+                                    if "110017" not in str(exc_rem):
+                                        fue_maker = False
+                except Exception as exc:
+                    err_str = str(exc)
+                    if "110017" in err_str or "reduce-only" in err_str.lower() or "zero position" in err_str.lower():
+                        if not es_test and (pos.pre_escape_72s_enviado or pos.scratch_18s_activo or motivo_final in ("MAKER_UNWIND", "MAKER_SCRATCH_18S")):
+                            fue_maker = True
+                            if pos.orden_salida_precio > 0.0:
+                                precio_final = pos.orden_salida_precio
+                        else:
+                            motivo_final = "SL_EXCHANGE"
+                            fue_maker = False
+                    elif fue_maker:
+                        try:
+                            orden_mkt = await self.exchange.create_order(
+                                symbol, "market", side_close, qty_cerrar, None, {"reduceOnly": True}
+                            )
+                            fue_maker = False
+                            if isinstance(orden_mkt, dict):
+                                p_avg = float(orden_mkt.get("average") or orden_mkt.get("price") or 0.0)
+                                if p_avg > 0.0:
+                                    precio_final = p_avg
+                        except Exception as exc2:
+                            if "110017" in str(exc2):
+                                if not es_test and (pos.pre_escape_72s_enviado or pos.scratch_18s_activo or motivo_final in ("MAKER_UNWIND", "MAKER_SCRATCH_18S")):
+                                    fue_maker = True
+                                else:
+                                    motivo_final = "SL_EXCHANGE"
+                                    fue_maker = False
 
-        if registro is not None:
-            await ESCUDO_TRICORTEX.auditar_cierre_y_calibrar_umbral(
-                symbol=symbol,
-                pnl_usdt=registro.pnl_usdt,
-                motivo=motivo_final,
-                side=pos.side,
+            registro = await CAJA_NEGRA.registrar_cierre_posicion(
+                pos=pos,
                 exit_price=precio_final,
+                motivo=motivo_final,
+                es_salida_maker=fue_maker,
+                ahora=ahora,
             )
-            return True
-        return False
+
+            ESTADO_RAM.liberar_margen_atomico(symbol)
+
+            if registro is not None:
+                await ESCUDO_TRICORTEX.auditar_cierre_y_calibrar_umbral(
+                    symbol=symbol,
+                    pnl_usdt=registro.pnl_usdt,
+                    motivo=motivo_final,
+                    side=pos.side,
+                    exit_price=precio_final,
+                )
+                return True
+            return False
+        finally:
+            pos._cierre_en_curso = False
 
     async def _ejecutar_cosecha_50_triz(
         self,
@@ -488,7 +492,7 @@ class GestorPosiciones:
         pos: PosicionActiva,
         ahora: Optional[float] = None,
     ) -> Optional[str]:
-        if pos.cerrada:
+        if pos.cerrada or getattr(pos, "_cierre_en_curso", False):
             return None
 
         t_now = ahora if ahora is not None else time.time()
@@ -515,10 +519,12 @@ class GestorPosiciones:
                     pos.scratch_18s_evaluado = False
                 flujo_contra = (tk.ofi_5s < -0.10) if pos.side == "long" else (tk.ofi_5s > 0.10)
                 if edad_seg >= 28.0 and pnl_bruto_pct <= -0.0018 and flujo_contra:
-                    pos.scratch_18s_evaluado = False
+                    pos.scratch_18s_evaluado = True
+                    pos.scratch_18s_activo = True
                     precio_wald = calcular_precio_salida_maker_seguro(
                         pos.side, pos.entry_price, best_bid, best_ask, tick_size, permitir_scratch=True
                     )
+                    pos.orden_salida_precio = precio_wald
                     log_sniper(
                         f"[MAKER-SCRATCH 18s] {pos.symbol} Wald Scratch activado a los {edad_seg:.1f}s "
                         f"(PnL {pnl_bruto_pct*100:+.2f}%, OFI5s {tk.ofi_5s:+.2f}): evacuando en Limit PostOnly @ {precio_wald}."
@@ -721,6 +727,7 @@ class GestorPosiciones:
                 precio_scratch = calcular_precio_salida_maker_seguro(
                     pos.side, pos.entry_price, best_bid, best_ask, tick_size, permitir_scratch=True
                 )
+                pos.orden_salida_precio = precio_scratch
                 log_sniper(
                     f"[MAKER-SCRATCH 18s] {pos.symbol} sin rebote tras {edad_seg:.1f}s "
                     f"(PnL {pnl_bruto_pct*100:+.2f}%, OFI5s {tk.ofi_5s:+.2f}): evacuando en Limit PostOnly @ {precio_scratch}."
@@ -782,9 +789,9 @@ class GestorPosiciones:
         ahora = time.time()
         es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
         for sym, pos in list(ESTADO_RAM.posiciones_activas.items()):
-            if pos.cerrada:
+            if pos.cerrada or getattr(pos, "_cierre_en_curso", False):
                 continue
-            if not es_test and pos.side == "short":
+            if not es_test and (pos.side == "short" or pos.scratch_18s_activo or pos.pre_escape_72s_enviado):
                 continue
             tk = ESTADO_RAM.ticks_ram.get(sym)
             precio_ref = (tk.bid if pos.side == "long" else tk.ask) if tk and tk.bid > 0 else pos.entry_price

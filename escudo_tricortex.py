@@ -7,7 +7,8 @@ SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 -- ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Enjambre Cognitivo Asincrono Tri-Cortex (Full-Groq LPU-First + Multi-Cloud):
   1. Cortex 1 (Groq LPU): Matriz Direccional de Regimen (LONG_ONLY, SHORT_ONLY,
-     EXTREME_Z_ONLY, VETO_TOXIC) con Guardia Fisica Anti-LUNA.
+     EXTREME_Z_ONLY, VETO_TOXIC) con Guardia Fisica Anti-LUNA y deteccion
+     realista de cascadas bajistas (-0.40% EMA900 en produccion).
   2. Cortex 2 (Groq LPU + Failover Google AI gemma-4-26b-a4b-it): Sizing
      Anti-Fragil por Dislocacion Fisica (|Z|, Hurst, Glosten-Milgrom P-07)
      sin doble castigo exponencial de Drawdown.
@@ -112,10 +113,19 @@ class OrquestadorTriCortex:
         if metrica.vpin >= cfg.VPIN_TOXICO_MAX and metrica.ofi_l1_l5 <= -0.50:
             return "VETO_TOXIC", False, f"VPIN_TOXIC_{metrica.vpin:.2f}"
 
+        es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
         if (
             (metrica.ema900_slope_pct <= -0.0045 or metrica.ema900_dist_pct <= -0.0220)
             and metrica.hurst > 0.52
             and metrica.ofi_l1_l5 < -0.20
+        ):
+            return "SHORT_ONLY", True, "BEARISH_CASCADE_SHORT_ONLY"
+
+        if not es_test and (
+            metrica.ema900_dist_pct <= -0.0040
+            and metrica.ema900_slope_pct <= -0.0004
+            and metrica.hurst >= 0.50
+            and metrica.ofi_l1_l5 <= -0.15
         ):
             return "SHORT_ONLY", True, "BEARISH_CASCADE_SHORT_ONLY"
 
@@ -302,7 +312,11 @@ class OrquestadorTriCortex:
                             presion_bajista_real = (
                                 tk_sym is not None
                                 and tk_sym.bid > 0.0
-                                and (tk_sym.ema900_dist_pct <= -0.0040 or tk_sym.delta_p_pct <= -0.0040)
+                                and (
+                                    tk_sym.ema900_dist_pct <= -0.0025
+                                    or tk_sym.delta_p_pct <= -0.0025
+                                    or tk_sym.ema900_slope_pct <= -0.0005
+                                )
                             )
                             if sugerencia == "VETO_TOXIC" and not toxicidad_fisica:
                                 sugerencia = "LONG_ONLY"

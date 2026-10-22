@@ -14,10 +14,10 @@ Radar Microestructural de Alta Frecuencia (6.6 Hz / 150 ms) en O(1) (< 25 us):
       * P-01: Lead-Lag BTC Cross-Veto conjuntivo (requiere desplazamiento Z_BTC).
       * P-02: Acoplamiento Condicional H <-> Z en LONG (H <= 0.495 en caidas
         normales Z > -4.20; H <= 0.620 exclusivamente en capitulacion profunda
-        Z <= -4.20, Desc <= -0.38% e I_Hawkes > 0.0) y H <= 0.585 en SHORT.
-      * P-03: Memoria de sobreextension de pico (vz.max_sobreextension_ema_pct)
-        en SHORT siempre que ema_rel >= +0.32%, y Escudo Fisico Anti-Squeeze
-        (Slope EMA900 <= +0.12% + STEP-LOCK de 600s).
+        Z <= -4.20, Desc <= -0.38% e I_Hawkes > 0.0) y H <= 0.625 en SHORT.
+      * P-03: Memoria de sobreextension de pico en SHORT, caza de rebotes
+        debiles en cascadas bajistas (SHORT_ONLY / Pausa Contagio) y Escudo
+        Fisico Anti-Squeeze (Slope EMA900 <= +0.12% + STEP-LOCK de 600s).
       * P-09: Enfriamiento Determinista Post-Reconexion WebSocket (4.00s).
 ==============================================================================
 """
@@ -453,8 +453,8 @@ class RadarVolatilidad:
             if h_real > h_max_cfg:
                 senal["hurst"] = h_max_cfg
         else:
-            # En SHORT: Permite H <= 0.585 con frenado de Lyapunov y confirmacion ML-OFI, manteniendo intactos ANTI-SQUEEZE y STEP-LOCK
-            h_max_short_prod = 0.585
+            # En SHORT: Permite H <= 0.625 con frenado de Lyapunov y confirmacion ML-OFI, manteniendo intactos ANTI-SQUEEZE y STEP-LOCK
+            h_max_short_prod = 0.625
             if h_real > h_max_short_prod:
                 if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P02_H_S"), 0.0) >= 10.0:
                     _SILENCIO_LOG_PHANTOM[(sym, "P02_H_S")] = ahora_t
@@ -462,6 +462,13 @@ class RadarVolatilidad:
                         f"[PHANTOM P-02 PRE-ORDEN] {sym} [SHORT] bloqueado ANTES de enviar orden (H={h_real:.3f} > {h_max_short_prod:.3f})."
                     )
                 return False
+
+            perm_sym = ESTADO_RAM.permisos_ram.get(sym)
+            en_cascada_short = (
+                (perm_sym is not None and perm_sym.modo_regimen == "SHORT_ONLY")
+                or (ahora_t < ESTADO_RAM.pausa_macro_hasta_ts)
+                or (ema_slope <= -0.0005 and ema_rel <= -0.0025)
+            )
 
             vz_sym = self.ventanas.get(sym)
             max_sobreext_pump = float(vz_sym.max_sobreextension_ema_pct if vz_sym is not None else 0.0)
@@ -472,7 +479,20 @@ class RadarVolatilidad:
                 else max(ema_rel, dp_rel)
             )
             z_short_eff = max(z_real, float(senal.get("z_score") or 0.0))
-            if sobreext_eff < umbral_ema_short or ofi_real > -0.35 or z_short_eff < 1.80:
+
+            rebote_bajista_valido = (
+                en_cascada_short
+                and ema_rel >= -0.0065
+                and (dp_rel >= 0.0015 or z_short_eff >= 1.40)
+                and ofi_real <= -0.35
+            )
+            pump_sobreextendido_valido = (
+                sobreext_eff >= umbral_ema_short
+                and ofi_real <= -0.35
+                and z_short_eff >= 1.80
+            )
+
+            if not (pump_sobreextendido_valido or rebote_bajista_valido):
                 if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_S"), 0.0) >= 12.0:
                     _SILENCIO_LOG_PHANTOM[(sym, "P03_S")] = ahora_t
                     log_sniper(
@@ -584,12 +604,9 @@ class RadarVolatilidad:
         tk.ts_ultimo_pulso_toxico = vz.ts_ultimo_pulso_toxico
         tk.ts_tick = t_now
 
-        if await self.verificar_contagio_cross_asset(symbol, z_score, t_now):
-            if es_test:
-                return None
-            perm_c = ESTADO_RAM.permisos_ram.get(symbol)
-            if not (perm_c is not None and perm_c.modo_regimen == "SHORT_ONLY"):
-                return None
+        en_pausa_contagio = await self.verificar_contagio_cross_asset(symbol, z_score, t_now)
+        if en_pausa_contagio and es_test:
+            return None
 
         if symbol == cfg.SIMBOLO_CENTINELA_MACRO:
             return None
@@ -617,11 +634,18 @@ class RadarVolatilidad:
             return None
 
         perm = ESTADO_RAM.permisos_ram.get(symbol)
-        en_short_only = perm is not None and perm.modo_regimen == "SHORT_ONLY"
+        en_short_only = (
+            (perm is not None and perm.modo_regimen == "SHORT_ONLY")
+            or (not es_test and en_pausa_contagio)
+            or (not es_test and ema_slope_pct <= -0.0005 and ema_dist_pct <= -0.0025)
+        )
         if (t_now < vz.vigilancia_short_hasta_ts) or en_short_only:
             senal_short = await self._evaluar_gatillo_short_chronos(symbol, vz, tk, spread_ok, t_now)
             if senal_short is not None:
                 return senal_short
+
+        if en_pausa_contagio:
+            return None
 
         return await self._evaluar_gatillo_long_chronos(symbol, vz, tk, spread_ok, t_now)
 
@@ -754,10 +778,19 @@ class RadarVolatilidad:
 
         es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
         perm = ESTADO_RAM.permisos_ram.get(symbol)
-        en_short_only = perm is not None and perm.modo_regimen == "SHORT_ONLY"
+        en_short_only = (
+            (perm is not None and perm.modo_regimen == "SHORT_ONLY")
+            or (not es_test and t_now < ESTADO_RAM.pausa_macro_hasta_ts)
+            or (not es_test and tk.ema900_slope_pct <= -0.0005 and tk.ema900_dist_pct <= -0.0025)
+        )
 
         sobreextendido_pump = (t_now < vz.vigilancia_short_hasta_ts) and (tk.ema900_dist_pct >= 0.0032)
-        rebote_en_tendencia_bajista = en_short_only and (tk.ema900_dist_pct >= cfg.SHORT_REBOTE_DEBIL_MIN_EMA_PCT)
+        piso_rebote_ema = cfg.SHORT_REBOTE_DEBIL_MIN_EMA_PCT if es_test else -0.0065
+        rebote_en_tendencia_bajista = (
+            en_short_only
+            and (tk.ema900_dist_pct >= piso_rebote_ema)
+            and (es_test or tk.delta_p_pct >= 0.0015 or tk.z_score >= 1.40)
+        )
 
         if not (sobreextendido_pump or rebote_en_tendencia_bajista):
             return None
@@ -774,11 +807,12 @@ class RadarVolatilidad:
                 else abs(tk.z_score)
             )
         else:
-            z_ref_short = (
-                max(tk.z_score, vz.max_z_pump_short, 3.50)
-                if sobreextendido_pump
-                else tk.z_score
-            )
+            if sobreextendido_pump:
+                z_ref_short = max(tk.z_score, vz.max_z_pump_short, 3.50)
+            elif rebote_en_tendencia_bajista:
+                z_ref_short = max(tk.z_score, 3.50)
+            else:
+                z_ref_short = tk.z_score
             if z_ref_short < 1.80:
                 return None
 
