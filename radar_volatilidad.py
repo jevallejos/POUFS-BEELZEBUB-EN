@@ -10,17 +10,11 @@ Radar Microestructural de Alta Frecuencia (6.6 Hz / 150 ms) en O(1) (< 25 us):
   - ML-OFI Multinivel L1-L5 (Cont-Kukanov-Stoikov) en bucle unico fusionado.
   - Exponente de Rugosidad de Hurst sobre ticks activos y Amortiguador Temporal
     de Choques Extremos de Lyapunov (4.50s post a_Lyap <= -0.25%).
-  - Interceptor Pre-Orden Single-Layer Nativo con Descenso de Gradiente V6:
-      * P-01: Lead-Lag BTC Cross-Veto conjuntivo (requiere desplazamiento Z_BTC).
-      * P-02: Acoplamiento Condicional H <-> Z en LONG (H <= 0.495 normal;
-        H <= 0.530 exclusivamente en capitulacion extrema Z <= -8.00) y
-        H <= 0.495 en Tier-1 SHORT / H <= 0.540 en High-Beta SHORT con
-        enfriamiento de 30.0s tras bloqueos de persistencia fractal.
-      * P-03: Conjuncion estricta (AND) entre EMA900 y DeltaP en LONG + OFI
-        minimo biclase (0.17 High-Beta / 0.12 Tier-1), y exigencia unificada de
-        sobreextension positiva sobre EMA900 en SHORT (>= +0.32%) con
-        enfriamiento de 45s post-ANTI-SQUEEZE.
-      * P-09: Enfriamiento Determinista Post-Reconexion WebSocket (4.00s).
+  - Modulador Horario Bimodal O(1) (Modo Bunker V6 vs Modo Caza Elastica L7):
+      * Ventanas Criticas (Bunker): 06:45-10:30 UTC (Londres + Funding 08:00),
+        12:30-16:45 UTC (NYSE + Funding 16:00) y 23:30-00:45 UTC (Funding 00:00).
+      * Ventanas Limpias (Caza Elastica L7): 00:45-06:45 UTC (Asia Pura),
+        10:30-12:30 UTC y 16:45-23:30 UTC (Tarde NY).
 ==============================================================================
 """
 from __future__ import annotations
@@ -43,6 +37,24 @@ _INV_LN4: float = 1.0 / math.log(4.0)
 _ULTIMO_TS_LIBRO_PHANTOM: Dict[str, float] = {}
 _COOLDOWN_WS_PHANTOM: Dict[str, float] = {}
 _SILENCIO_LOG_PHANTOM: Dict[Tuple[str, str], float] = {}
+
+
+def _es_ventana_critica_bunker_utc(ahora_t: float) -> Tuple[bool, str]:
+    """
+    Evalua en O(1) (< 0.05 us) si el instante actual cae dentro de una de las
+    3 ventanas criticas de aperturas/cierres bursatiles o cortes de Funding Rate:
+      1) 06:45 - 10:30 UTC (03:45 - 07:30 CL): Apertura Londres + Funding 08:00 UTC.
+      2) 12:30 - 16:45 UTC (09:30 - 13:45 CL): Apertura Wall Street + Funding 16:00 UTC.
+      3) 23:30 - 00:45 UTC (20:30 - 21:45 CL): Cierre Diario + Funding 00:00 UTC.
+    """
+    min_utc = (float(ahora_t) % 86400.0) / 60.0
+    if 405.0 <= min_utc < 630.0:
+        return True, "BUNKER_LONDRES_FUNDING08"
+    if 750.0 <= min_utc < 1005.0:
+        return True, "BUNKER_WALLSTREET_FUNDING16"
+    if min_utc >= 1410.0 or min_utc < 45.0:
+        return True, "BUNKER_CIERRE_DIARIO_FUNDING00"
+    return False, "CAZA_ELASTICA_L7"
 
 
 class VentanaZ:
@@ -304,7 +316,7 @@ class RadarVolatilidad:
     """
     Vigila en paralelo los 7 Campeones Alfa + Centinela Macro BTC a 6.6 Hz.
     Evalua las Leyes 1 y 4 de CHRONOS-TRIZ junto con el Interceptor Pre-Orden
-    Single-Layer (P-01, P-02, P-03, P-09) y los 6 Vectores de Gradiente.
+    Single-Layer (P-01, P-02, P-03, P-09) y el Modulador Horario Bimodal L7.
     """
 
     def __init__(
@@ -381,7 +393,7 @@ class RadarVolatilidad:
         side = str(senal.get("side", "long")).lower()
         tk_sym = ESTADO_RAM.ticks_ram.get(sym)
 
-        # Vector de Gradiente #5: Veto total O(1) sobre INJ/USDT:USDT (1W/7L, -0.4761 USDT)
+        # Vector de Gradiente #5 (Invariante 24/7): Veto total O(1) sobre INJ/USDT:USDT (1W/7L, -0.4761 USDT)
         if sym == "INJ/USDT:USDT":
             if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "VETO_INJ_TOTAL"), 0.0) >= 30.0:
                 _SILENCIO_LOG_PHANTOM[(sym, "VETO_INJ_TOTAL")] = ahora_t
@@ -389,6 +401,8 @@ class RadarVolatilidad:
                     f"[PHANTOM VETO SELECTIVO] {sym} [{side.upper()}] bloqueado por estadistica OOS (1W/7L, -0.4761 USDT)."
                 )
             return False
+
+        en_bunker, tag_horario = _es_ventana_critica_bunker_utc(ahora_t)
 
         h_real = float(senal.get("hurst") if senal.get("hurst") is not None else (tk_sym.hurst if tk_sym else 0.45))
         z_real = float(tk_sym.z_score if tk_sym is not None else (senal.get("z_score") or 0.0))
@@ -399,7 +413,7 @@ class RadarVolatilidad:
         hawkes_val = float(tk_sym.hawkes_intensidad if tk_sym is not None else 0.0)
         lyap_val = float(tk_sym.lyapunov_acel_pct if tk_sym is not None else 0.0)
 
-        # P-01: Acoplamiento Lead-Lag y Veto Direccional Conjuntivo con BTC/USDT:USDT
+        # P-01 (Invariante 24/7): Acoplamiento Lead-Lag y Veto Direccional Conjuntivo con BTC/USDT:USDT
         tk_btc = ESTADO_RAM.ticks_ram.get(cfg.SIMBOLO_CENTINELA_MACRO)
         ofi_btc = float(tk_btc.ofi_l1_l5 if (tk_btc and tk_btc.last > 0.0) else 0.0)
         z_btc = float(tk_btc.z_score if (tk_btc and tk_btc.last > 0.0) else 0.0)
@@ -426,7 +440,7 @@ class RadarVolatilidad:
         vz_sym = self.ventanas.get(sym)
 
         if side == "long":
-            # Vector de Gradiente #3: Amortiguador de estabilizacion de 4.5s tras choque de Lyapunov <= -0.25%
+            # Vector de Gradiente #3 (Invariante 24/7): Amortiguador de 4.5s tras choque de Lyapunov <= -0.25%
             dt_choque_lyap = (
                 (ahora_t - vz_sym.ts_ultimo_choque_lyapunov)
                 if (vz_sym is not None and vz_sym.ts_ultimo_choque_lyapunov > 0.0)
@@ -441,39 +455,53 @@ class RadarVolatilidad:
                     )
                 return False
 
-            # Vector de Gradiente #2: Conjuncion estricta (AND) de descuento en EMA900 y DeltaP + OFI biclase
+            # Vector de Gradiente #2 + Modulador L7: Conjuncion estricta (AND) EMA900 y DeltaP 24/7,
+            # con OFI 0.17 en Modo Bunker y 0.14 en Modo Caza Elastica
             umbral_ema_long = -0.0018 if es_tier1 else -0.0025
             umbral_z_long = -2.45 if es_tier1 else -2.80
-            ofi_min_long = 0.12 if es_tier1 else 0.17
+            ofi_min_long = 0.12 if es_tier1 else (0.17 if en_bunker else 0.14)
 
             if ofi_real < ofi_min_long:
                 if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_OFI_L"), 0.0) >= 10.0:
                     _SILENCIO_LOG_PHANTOM[(sym, "P03_OFI_L")] = ahora_t
                     log_sniper(
                         f"[PHANTOM P-03 OFI-LONG] {sym} [LONG] bloqueado ANTES de orden "
-                        f"(OFI={ofi_real:+.2f} < +{ofi_min_long:.2f} requerido en su clase)."
+                        f"(OFI={ofi_real:+.2f} < +{ofi_min_long:.2f} en {tag_horario})."
                     )
                 return False
 
-            # Acoplamiento Condicional H <-> Z en LONG:
-            # 1) Caidas normales: exige H <= 0.495.
-            # 2) Capitulacion extrema (Z <= -8.00 y ambos descuentos <= -0.50% con I_Hawkes > 0.0): permite H <= 0.530.
+            # Acoplamiento Condicional H <-> Z en LONG modulado por Regimen Horario (L7):
+            # - En Modo Bunker: exige H <= 0.495 (o H <= 0.530 solo en capitulacion Z <= -8.00).
+            # - En Modo Caza Elastica: permite H <= 0.555 cuando ya concurren doble descuento AND,
+            #   Z <= -3.15, I_Hawkes > -0.05 y frenado de Lyapunov.
             h_puro_long = 0.495
-            absorcion_capitulacion_profunda_long = (
-                h_real <= 0.530
-                and z_real <= -8.00
-                and ema_rel <= -0.0050
-                and dp_rel <= -0.0050
-                and ofi_real >= ofi_min_long
-                and hawkes_val > 0.0
-                and lyap_val >= cfg.LYAPUNOV_ACEL_MIN_PCT
-            )
+            if en_bunker:
+                absorcion_capitulacion_profunda_long = (
+                    h_real <= 0.530
+                    and z_real <= -8.00
+                    and ema_rel <= -0.0050
+                    and dp_rel <= -0.0050
+                    and ofi_real >= ofi_min_long
+                    and hawkes_val > 0.0
+                    and lyap_val >= cfg.LYAPUNOV_ACEL_MIN_PCT
+                )
+            else:
+                absorcion_capitulacion_profunda_long = (
+                    h_real <= 0.555
+                    and z_real <= -3.15
+                    and ema_rel <= umbral_ema_long
+                    and dp_rel <= umbral_ema_long
+                    and ofi_real >= ofi_min_long
+                    and hawkes_val > -0.05
+                    and lyap_val >= cfg.LYAPUNOV_ACEL_MIN_PCT
+                )
+
             if h_real > h_puro_long and not absorcion_capitulacion_profunda_long:
                 if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P02_H_L"), 0.0) >= 10.0:
                     _SILENCIO_LOG_PHANTOM[(sym, "P02_H_L")] = ahora_t
                     log_sniper(
-                        f"[PHANTOM P-02 PRE-ORDEN] {sym} [LONG] bloqueado ANTES de enviar orden "
-                        f"(H={h_real:.3f} > {h_puro_long:.3f} sin capitulacion extrema Z={z_real:+.2f}, EMA={ema_rel*100:+.2f}%, DP={dp_rel*100:+.2f}%)."
+                        f"[PHANTOM P-02 PRE-ORDEN] {sym} [LONG] bloqueado ANTES de enviar orden en {tag_horario} "
+                        f"(H={h_real:.3f} > {h_puro_long:.3f} | Z={z_real:+.2f}, EMA={ema_rel*100:+.2f}%, DP={dp_rel*100:+.2f}%)."
                     )
                 return False
 
@@ -489,37 +517,46 @@ class RadarVolatilidad:
             if h_real > h_max_cfg:
                 senal["hurst"] = h_max_cfg
         else:
-            # Vector de Gradiente #6b: En SHORT exige H <= 0.495 en Tier-1 y H <= 0.540 en High-Beta
-            # con enfriamiento de 30.0s tras cualquier bloqueo P-02 de persistencia fractal (filtra Trade #85)
-            h_max_short_prod = 0.495 if es_tier1 else 0.540
+            # Vector de Gradiente #1 y #6b (Invariante 24/7): Sobreextension >= +0.32% sobre EMA900
+            umbral_ema_short = 0.0032
+            max_sobreext_pump = float(vz_sym.max_sobreextension_ema_pct if vz_sym is not None else 0.0)
+            sobreext_eff = max(ema_rel, dp_rel, max_sobreext_pump) if ema_rel >= umbral_ema_short else ema_rel
+            z_short_eff = max(z_real, float(senal.get("z_score") or 0.0))
+
+            # Vector de Gradiente #6b + Modulador L7 en SHORT:
+            # - En Modo Bunker: H <= 0.495 (Tier-1) / 0.540 (High-Beta), cooldown 30s.
+            # - En Modo Caza Elastica: H <= 0.535 (Tier-1) / 0.675 en techos de Pump (sobreext_eff >= +0.42%)
+            #   o 0.560 normal, cooldown 15s.
+            if en_bunker:
+                h_max_short_prod = 0.495 if es_tier1 else 0.540
+                cd_hurst_short = 30.0
+            else:
+                h_max_short_prod = 0.535 if es_tier1 else (0.675 if sobreext_eff >= 0.0042 else 0.560)
+                cd_hurst_short = 15.0
+
             if h_real > h_max_short_prod:
                 if vz_sym is not None:
                     vz_sym.ts_ultimo_veto_hurst_short = ahora_t
                 if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P02_H_S"), 0.0) >= 10.0:
                     _SILENCIO_LOG_PHANTOM[(sym, "P02_H_S")] = ahora_t
                     log_sniper(
-                        f"[PHANTOM P-02 PRE-ORDEN] {sym} [SHORT] bloqueado ANTES de enviar orden (H={h_real:.3f} > {h_max_short_prod:.3f})."
+                        f"[PHANTOM P-02 PRE-ORDEN] {sym} [SHORT] bloqueado ANTES de enviar orden en {tag_horario} "
+                        f"(H={h_real:.3f} > {h_max_short_prod:.3f})."
                     )
                 return False
 
             if (
                 vz_sym is not None
                 and vz_sym.ts_ultimo_veto_hurst_short > 0.0
-                and (ahora_t - vz_sym.ts_ultimo_veto_hurst_short) < 30.0
+                and (ahora_t - vz_sym.ts_ultimo_veto_hurst_short) < cd_hurst_short
             ):
-                rest_h = 30.0 - (ahora_t - vz_sym.ts_ultimo_veto_hurst_short)
+                rest_h = cd_hurst_short - (ahora_t - vz_sym.ts_ultimo_veto_hurst_short)
                 if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P02_H_S_CD"), 0.0) >= 10.0:
                     _SILENCIO_LOG_PHANTOM[(sym, "P02_H_S_CD")] = ahora_t
                     log_sniper(
                         f"[PHANTOM P-02 COOLDOWN] {sym} [SHORT] en enfriamiento post-Hurst alto ({rest_h:.1f}s restantes)."
                     )
                 return False
-
-            # Vector de Gradiente #1 y #6b: Exigir sobreextension positiva >= +0.32% sobre EMA900 en todo SHORT
-            umbral_ema_short = 0.0032
-            max_sobreext_pump = float(vz_sym.max_sobreextension_ema_pct if vz_sym is not None else 0.0)
-            sobreext_eff = max(ema_rel, dp_rel, max_sobreext_pump) if ema_rel >= umbral_ema_short else ema_rel
-            z_short_eff = max(z_real, float(senal.get("z_score") or 0.0))
 
             pump_sobreextendido_valido = (
                 ema_rel >= umbral_ema_short
@@ -537,7 +574,7 @@ class RadarVolatilidad:
                     )
                 return False
 
-            # Escudo Fisico Anti-Short-Squeeze 1 + Cooldown de 45s (erradica Trade #78)
+            # Escudo Fisico Anti-Short-Squeeze 1 + Cooldown adaptativo (45s en Bunker / 18s en Caza Elastica con liberacion de giro)
             if vz_sym is not None and len(vz_sym.precios) >= 10:
                 p_now = vz_sym.precios[-1]
                 max_ventana = max(vz_sym.precios)
@@ -548,19 +585,30 @@ class RadarVolatilidad:
                 )
                 if en_expansion_alcista:
                     vz_sym.ts_ultimo_anti_squeeze = ahora_t
+
+                cd_sqz = 45.0 if en_bunker else 18.0
+                giro_techo_confirmado = (
+                    not en_bunker
+                    and not en_expansion_alcista
+                    and p_now <= (max_ventana * 0.9988)
+                    and lyap_val <= cfg.SHORT_LYAPUNOV_ACEL_MAX_PCT
+                    and ofi_real <= -0.35
+                )
+
                 if en_expansion_alcista or (
                     vz_sym.ts_ultimo_anti_squeeze > 0.0
-                    and (ahora_t - vz_sym.ts_ultimo_anti_squeeze) < 45.0
+                    and (ahora_t - vz_sym.ts_ultimo_anti_squeeze) < cd_sqz
+                    and not giro_techo_confirmado
                 ):
                     if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_SQZ"), 0.0) >= 12.0:
                         _SILENCIO_LOG_PHANTOM[(sym, "P03_SQZ")] = ahora_t
                         log_sniper(
-                            f"[PHANTOM ANTI-SQUEEZE] {sym} [SHORT] bloqueado: rally alcista en expansion o enfriamiento 45s "
+                            f"[PHANTOM ANTI-SQUEEZE] {sym} [SHORT] bloqueado: rally alcista en expansion o enfriamiento {cd_sqz:.0f}s "
                             f"(Slope EMA900={ema_slope*100:+.2f}% | Precio={p_now})."
                         )
                     return False
 
-            # Escudo Fisico Anti-Short-Squeeze 2: Escalera Anti-Reentrada tras SL en SHORT (600s)
+            # Escudo Fisico Anti-Short-Squeeze 2 (Invariante 24/7): Escalera Anti-Reentrada tras SL en SHORT (600s)
             sl_prev_info = ESTADO_RAM.ultimo_sl_short_precio.get(sym)
             if sl_prev_info is not None:
                 px_sl_prev, ts_sl_prev = sl_prev_info
@@ -669,7 +717,7 @@ class RadarVolatilidad:
             vz.max_z_pump_short = (
                 max(vz.max_z_pump_short, abs(z_score), 4.00)
                 if es_test
-                else max(vz.max_z_pump_short, abs(z_score), 2.80)
+                else max(vz.max_z_pump_short, abs(z_score), 3.50)
             )
             senal_short = await self._evaluar_gatillo_short_chronos(symbol, vz, tk, spread_ok, t_now)
             if senal_short is not None:
@@ -727,7 +775,7 @@ class RadarVolatilidad:
             if tk.ema900_dist_pct > ema_dist_req and not es_z_extremo:
                 return None
         else:
-            # Vector de Gradiente #2: Conjuncion estricta sin exencion por es_z_extremo
+            # Vector de Gradiente #2 (Invariante 24/7): Conjuncion estricta sin exencion por es_z_extremo
             piso_desc = -0.0018 if symbol in cfg.CLASE_TIER1_LIQUIDO else -0.0025
             if tk.delta_p_pct > min(caida_min_req, piso_desc):
                 return None
@@ -748,7 +796,8 @@ class RadarVolatilidad:
             )
             return None
 
-        h_techo_radar = cfg.HURST_MAX_ENTRADA if es_test else 0.530
+        en_bunker, _ = _es_ventana_critica_bunker_utc(t_now)
+        h_techo_radar = cfg.HURST_MAX_ENTRADA if es_test else (0.530 if en_bunker else 0.555)
         if tk.hurst > h_techo_radar and not (es_test and es_z_extremo):
             self._log_alerta_throttled(
                 f"HURST:{symbol}",
