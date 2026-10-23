@@ -13,7 +13,8 @@ Enjambre Cognitivo Asincrono Tri-Cortex (Full-Groq LPU-First + Multi-Cloud):
      Anti-Fragil por Dislocacion Fisica (|Z|, Hurst, Glosten-Milgrom P-07)
      sin doble castigo exponencial de Drawdown.
   3. Cortex 3 (Groq LPU + Failover NVIDIA NIM): Auditoria Forense Post-Loss
-     y registro de barrera anti-reentrada en Short-Squeeze.
+     y registro universal de barrera espacial anti-reentrada (SCAR-LOCK-11c)
+     en toda salida SHORT negativa (incluyendo MAKER_SCRATCH_18S y MAKER_UNWIND).
 ==============================================================================
 """
 from __future__ import annotations
@@ -122,19 +123,20 @@ class OrquestadorTriCortex:
             return "SHORT_ONLY", True, "BEARISH_CASCADE_SHORT_ONLY"
 
         if not es_test:
-            # Vector de Gradiente #1: solo activar SHORT_ONLY si el precio esta sobreextendido
-            # por encima de EMA900; si esta cayendo bajo EMA900 con Hurst alto, exigir EXTREME_Z_ONLY.
+            # SCAR-LOCK-01 + SCAR-LOCK-11: solo activar SHORT_ONLY si el precio esta genuinamente
+            # sobreextendido sobre EMA900; si cae bajo -0.35% con Hurst >= 0.495, exigir EXTREME_Z_ONLY.
+            piso_short_reg = 0.0028 if metrica.symbol in cfg.CLASE_TIER1_LIQUIDO else 0.0036
             if (
-                metrica.ema900_dist_pct >= 0.0032
-                and metrica.hurst <= 0.540
-                and metrica.ofi_l1_l5 <= -0.25
+                metrica.ema900_dist_pct >= piso_short_reg
+                and metrica.hurst <= 0.535
+                and metrica.ofi_l1_l5 <= -0.28
             ):
                 return "SHORT_ONLY", True, "OVEREXTENDED_PUMP_SHORT_ONLY"
             if (
-                metrica.ema900_dist_pct <= -0.0040
-                and metrica.ema900_slope_pct <= -0.0004
-                and metrica.hurst >= 0.50
-                and metrica.ofi_l1_l5 <= -0.15
+                metrica.ema900_dist_pct <= -0.0035
+                and metrica.ema900_slope_pct <= -0.0003
+                and metrica.hurst >= 0.495
+                and metrica.ofi_l1_l5 <= -0.12
             ):
                 return "EXTREME_Z_ONLY", True, "BEARISH_CASCADE_EXTREME_Z_GUARD"
 
@@ -322,9 +324,9 @@ class OrquestadorTriCortex:
                                 tk_sym is not None
                                 and tk_sym.bid > 0.0
                                 and tk_sym.ema900_dist_pct >= (
-                                    0.0025 if sym in cfg.CLASE_TIER1_LIQUIDO else 0.0032
+                                    0.0028 if sym in cfg.CLASE_TIER1_LIQUIDO else 0.0036
                                 )
-                                and tk_sym.ofi_l1_l5 <= -0.20
+                                and tk_sym.ofi_l1_l5 <= -0.25
                             )
                             if sugerencia == "VETO_TOXIC" and not toxicidad_fisica:
                                 sugerencia = "LONG_ONLY"
@@ -485,9 +487,16 @@ class OrquestadorTriCortex:
                 ESTADO_RAM.ultimo_sl_short_precio.pop(symbol, None)
             return cfg.COOLDOWN_POST_CIERRE_WIN_SEG
 
+        # SCAR-LOCK-11c: Sellar barrera espacial ultimo_sl_short_precio en TODA salida SHORT
+        # negativa (incluyendo MAKER_SCRATCH_18S y MAKER_UNWIND) antes de cualquier retorno.
+        side_norm = str(side).lower()
+        if side_norm == "short" and exit_price > 0.0:
+            ESTADO_RAM.ultimo_sl_short_precio[symbol] = (float(exit_price), time.time())
+
+        es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
         mot_up = str(motivo or "").upper()
         if "SCRATCH" in mot_up:
-            duracion = 120.0
+            duracion = 180.0 if (not es_test and side_norm == "short") else 120.0
             ESTADO_RAM.aplicar_cuarentena(symbol, duracion, "COOLDOWN_MAKER_SCRATCH_18S")
             if perm is not None:
                 perm.caida_min_override_pct = round(base_caida * 1.12, 5)
@@ -498,10 +507,7 @@ class OrquestadorTriCortex:
         if perm is not None:
             perm.caida_min_override_pct = round(base_caida * 1.22, 5)
 
-        if str(side).lower() == "short" and exit_price > 0.0:
-            ESTADO_RAM.ultimo_sl_short_precio[symbol] = (float(exit_price), time.time())
-
-        if os.environ.get("TRIBRAIN_TEST_MODE") != "1" and (cfg.GROQ_API_KEY or cfg.NVIDIA_API_KEY):
+        if not es_test and (cfg.GROQ_API_KEY or cfg.NVIDIA_API_KEY):
             asyncio.create_task(self._consultar_forense_nvidia_async(symbol, pnl_usdt, motivo))
 
         return duracion_sl

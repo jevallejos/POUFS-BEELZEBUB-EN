@@ -10,7 +10,7 @@ Radar Microestructural de Alta Frecuencia (6.6 Hz / 150 ms) en O(1) (< 25 us):
   - ML-OFI Multinivel L1-L5 (Cont-Kukanov-Stoikov) en bucle unico fusionado.
   - Exponente de Rugosidad de Hurst sobre ticks activos y Amortiguador Temporal
     de Choques Extremos de Lyapunov (SCAR-LOCK-03 + SCAR-LOCK-09 Biclase).
-  - Banda Elastica Continua Horaria-Bipower (Gradiente L8..L10):
+  - Banda Elastica Continua Horaria-Bipower (Gradiente L8..L12 - CHRONOS-TRIZ V2.0):
       * Calcula en O(1) el Percentil Intradia P_dia(t, sigma_BV) combinando la
         curva estacional armonica de 24h UTC (Funding 00/08/16, Asia Midday,
         Londres y Wall Street NYSE) con la volatilidad Bipower en vivo.
@@ -22,6 +22,9 @@ Radar Microestructural de Alta Frecuencia (6.6 Hz / 150 ms) en O(1) (< 25 us):
         escalado por severidad (|a| >= 0.35%) y espera de 3.60s post-replica.
       * SCAR-LOCK-10: Piso positivo de absorcion de Hawkes (I_Hawkes >= +0.05) y
         filtro de ruptura fresca de EMA900 cuando H_t > 0.485.
+      * SCAR-LOCK-11: Banda elastica de sobreextension EMA900 en SHORT acoplada
+        a P_dia y H_t, filtro de ignicion (|Z| >= 8.0) y STEP-LOCK de 1800s.
+      * SCAR-LOCK-12a: Especializacion de descuento profundo en Tier-1 LONG.
 ==============================================================================
 """
 from __future__ import annotations
@@ -366,7 +369,7 @@ class RadarVolatilidad:
     """
     Vigila en paralelo los 7 Campeones Alfa + Centinela Macro BTC a 6.6 Hz.
     Evalua las Leyes 1 y 4 de CHRONOS-TRIZ junto con el Interceptor Pre-Orden
-    Single-Layer (P-01, P-02, P-03, P-09) y las Cicatrices SCAR-LOCK-00..10.
+    Single-Layer (P-01, P-02, P-03, P-09) y las Cicatrices SCAR-LOCK-00..12.
     """
 
     def __init__(
@@ -522,12 +525,12 @@ class RadarVolatilidad:
                     )
                 return False
 
-            # Banda Elastica L8 en LONG: Descuento y OFI escalan continuamente con P_dia y madurez post-boot
-            base_ema_long = -0.0018 if es_tier1 else -0.0025
+            # SCAR-LOCK-12a + Banda Elastica L8 en LONG: Especializacion Biclase Tier-1 vs High-Beta
+            base_ema_long = -(0.0028 + (0.0008 * p_dia)) if es_tier1 else -0.0025
             umbral_ema_long = base_ema_long * (1.0 + (0.50 * mu_boot))
-            umbral_z_long = -2.45 if es_tier1 else -2.80
+            umbral_z_long = -3.35 if es_tier1 else -2.80
             ofi_min_long = (
-                0.12
+                min(0.20, max(0.14, 0.14 + (0.04 * p_dia)))
                 if es_tier1
                 else min(0.18, max(0.13, 0.13 + (0.045 * p_dia) + (0.08 * mu_boot)))
             )
@@ -541,8 +544,9 @@ class RadarVolatilidad:
                     )
                 return False
 
-            # SCAR-LOCK-10: Piso positivo de absorcion de Hawkes (I_Hawkes >= +0.05)
-            hawkes_req_long = (0.05 + (0.10 * p_dia)) if h_real > h_max_cfg else 0.05
+            # SCAR-LOCK-10 + SCAR-LOCK-12a: Piso positivo de absorcion de Hawkes
+            hawkes_base_long = (0.05 + (0.10 * p_dia)) if h_real > h_max_cfg else 0.05
+            hawkes_req_long = max(0.12, hawkes_base_long) if es_tier1 else hawkes_base_long
             if hawkes_val < hawkes_req_long:
                 if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_HAWKES_L"), 0.0) >= 10.0:
                     _SILENCIO_LOG_PHANTOM[(sym, "P03_HAWKES_L")] = ahora_t
@@ -552,11 +556,21 @@ class RadarVolatilidad:
                     )
                 return False
 
-            # Banda Elastica de Hurst en LONG acoplada a P_dia y al estiramiento |Z| + SCAR-LOCK-10
-            h_elastico_long = min(
+            # Banda Elastica de Hurst en LONG acoplada a P_dia y al estiramiento |Z| + SCAR-LOCK-10/12a
+            h_elastico_raw = min(
                 0.565,
                 max(0.485, 0.558 - (0.068 * p_dia) + (0.012 * max(0.0, abs(z_real) - 3.15))),
             )
+            h_elastico_long = min(0.465, h_elastico_raw) if es_tier1 else h_elastico_raw
+            if es_tier1 and h_real > h_elastico_long:
+                if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P02_H_T1"), 0.0) >= 10.0:
+                    _SILENCIO_LOG_PHANTOM[(sym, "P02_H_T1")] = ahora_t
+                    log_sniper(
+                        f"[PHANTOM P-02 TIER1-LONG] {sym} [LONG] bloqueado ANTES de orden en {tag_percentil} "
+                        f"(H={h_real:.3f} > {h_elastico_long:.3f} para activo Tier-1)."
+                    )
+                return False
+
             z_req_cap_long = -(3.05 + (1.15 * p_dia))
             ema_req_hurst_alto = min(umbral_ema_long, -0.0055)
 
@@ -591,7 +605,7 @@ class RadarVolatilidad:
 
             senal["hurst_max_elastico"] = round(max(h_max_cfg, h_elastico_long), 4)
         else:
-            # Directriz #1, #2 y #3 (Gradiente L8 en SHORT):
+            # Directriz #1, #2, #3 y #4 (SCAR-LOCK-08 + SCAR-LOCK-11 en SHORT):
             # 1) Verificar si existe memoria espacial de un ANTI-SQUEEZE reciente (< 180s)
             p_now_short = float(tk_sym.last if tk_sym is not None else (senal.get("last") or 0.0))
             dt_sqz_prev = (
@@ -602,14 +616,33 @@ class RadarVolatilidad:
             px_sqz_prev = float(vz_sym.px_ultimo_anti_squeeze if (vz_sym is not None and dt_sqz_prev < 180.0) else 0.0)
             sobre_px_squeeze = (px_sqz_prev > 0.0) and (p_now_short >= (px_sqz_prev * 0.9992))
 
-            base_ema_short = 0.0045 if sobre_px_squeeze else 0.0032
+            # SCAR-LOCK-11: Banda Elastica Acotada Inferiormente de Sobreextension EMA900 en SHORT
+            prima_h_short = 0.0010 if h_real >= 0.480 else 0.0
+            prima_sqz_short = 0.0010 if sobre_px_squeeze else 0.0
+            base_ema_short = min(
+                0.0068,
+                max(
+                    0.0032,
+                    0.0032 + (0.0012 * p_dia) + prima_h_short + prima_sqz_short,
+                ),
+            )
             umbral_ema_short = base_ema_short * (1.0 + (0.65 * mu_boot))
             max_sobreext_pump = float(vz_sym.max_sobreextension_ema_pct if vz_sym is not None else 0.0)
             sobreext_eff = max(ema_rel, dp_rel, max_sobreext_pump) if ema_rel >= umbral_ema_short else ema_rel
             z_short_eff = max(z_real, float(senal.get("z_score") or 0.0))
 
+            # SCAR-LOCK-11b: Filtro de Ignicion Explosiva (|Z| >= 8.0 con H >= 0.480 exige frenado fuerte de Lyapunov)
+            if z_short_eff >= 8.0 and h_real >= 0.480 and lyap_val > -0.00080 and ema_rel < 0.0058:
+                if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_IGN_S"), 0.0) >= 10.0:
+                    _SILENCIO_LOG_PHANTOM[(sym, "P03_IGN_S")] = ahora_t
+                    log_sniper(
+                        f"[PHANTOM P-03 IGNICION-SHORT] {sym} [SHORT] bloqueado ANTES de orden en {tag_percentil} "
+                        f"(Z={z_short_eff:+.2f}, H={h_real:.2f}, a_Lyap={lyap_val*100:+.4f}% > -0.0800% con EMA900={ema_rel*100:+.2f}%)."
+                    )
+                return False
+
             # Banda Elastica de Hurst en SHORT acoplada a P_dia y sobreextension del pump
-            h_base_short = 0.538 if es_tier1 else (0.675 if sobreext_eff >= 0.0042 else 0.565)
+            h_base_short = 0.538 if es_tier1 else (0.675 if sobreext_eff >= 0.0045 else 0.565)
             h_max_short_prod = max(0.490, min(0.675, h_base_short - (0.045 * p_dia)))
             cd_hurst_short = 14.0 + (18.0 * p_dia)
 
@@ -701,17 +734,17 @@ class RadarVolatilidad:
                         )
                     return False
 
-            # Escudo Fisico Anti-Short-Squeeze 2 (Invariante 24/7): Escalera Anti-Reentrada tras SL en SHORT (600s)
+            # SCAR-LOCK-11c: Escalera Anti-Reentrada tras Cierre Negativo en SHORT extendida a 1800s (30 min)
             sl_prev_info = ESTADO_RAM.ultimo_sl_short_precio.get(sym)
             if sl_prev_info is not None:
                 px_sl_prev, ts_sl_prev = sl_prev_info
-                if (ahora_t - ts_sl_prev) < 600.0 and tk_sym is not None:
-                    if tk_sym.last >= (px_sl_prev * 0.9985) and ema_slope >= 0.0:
+                if (ahora_t - ts_sl_prev) < 1800.0 and tk_sym is not None:
+                    if tk_sym.last >= (px_sl_prev * 0.9985) and ema_slope >= -0.0002:
                         if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_STEP_SL"), 0.0) >= 15.0:
                             _SILENCIO_LOG_PHANTOM[(sym, "P03_STEP_SL")] = ahora_t
                             log_sniper(
-                                f"[PHANTOM ANTI-SQUEEZE STEP-LOCK] {sym} [SHORT] bloqueado tras SL previo @ {px_sl_prev} "
-                                f"(Precio actual {tk_sym.last} en estructura alcista)."
+                                f"[PHANTOM ANTI-SQUEEZE STEP-LOCK] {sym} [SHORT] bloqueado tras salida negativa previa @ {px_sl_prev} "
+                                f"(Precio actual {tk_sym.last} en estructura alcista 1800s)."
                             )
                         return False
 
@@ -872,7 +905,7 @@ class RadarVolatilidad:
             if tk.ema900_dist_pct > ema_dist_req and not es_z_extremo:
                 return None
         else:
-            piso_desc = -0.0018 if symbol in cfg.CLASE_TIER1_LIQUIDO else -0.0025
+            piso_desc = -0.0028 if symbol in cfg.CLASE_TIER1_LIQUIDO else -0.0025
             if tk.delta_p_pct > min(caida_min_req, piso_desc):
                 return None
             if tk.ema900_dist_pct > min(ema_dist_req, piso_desc):
@@ -896,10 +929,11 @@ class RadarVolatilidad:
             h_techo_radar = cfg.HURST_MAX_ENTRADA
         else:
             p_dia, _ = _calcular_percentil_elastico_intradia(t_now, tk.volatilidad_local)
-            h_techo_radar = min(
+            h_techo_raw = min(
                 0.565,
                 max(0.485, 0.558 - (0.068 * p_dia) + (0.012 * max(0.0, abs(tk.z_score) - 3.15))),
             )
+            h_techo_radar = min(0.465, h_techo_raw) if symbol in cfg.CLASE_TIER1_LIQUIDO else h_techo_raw
 
         if tk.hurst > h_techo_radar and not (es_test and es_z_extremo):
             self._log_alerta_throttled(

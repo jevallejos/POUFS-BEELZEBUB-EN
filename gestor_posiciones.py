@@ -5,21 +5,23 @@
 ARCHIVO #10: gestor_posiciones.py
 SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 -- ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
-Guardian de Geometria de Pagos 10/10 (Single-Layer Nativo):
+Guardian de Geometria de Pagos 10/10 (Single-Layer Nativo - CHRONOS-TRIZ V2.0):
   - P-04: Test Secuencial Continuo de Wald (Continuous Phantom Scratch) en [18s, 72s)
     con cerrojo atomico _cierre_en_curso para impedir que el Circuit Breaker
     de Contagio pise una salida Limit PostOnly en vuelo.
-  - P-05: Rampa de Desvanecimiento Pasivo Pre-Escape Maker Unwind en [72s, 86s]
-    con Re-Pegging Pasivo a los 1.80s y retencion Maker sin liquidacion Taker
-    prematura mientras resten mas de 6 segundos antes de los 90s (Gradiente #6a).
-  - P-06: Escalera Convexa Biclase 50/25/25 (God's Accomplice Escalator) liberada:
-      * Verificacion real de llenado en cosechas parciales (50% y 25%) antes
-        de descontar contratos en CAJA_NEGRA (0 contabilidad fantasma).
-      * Piso Break-Even post-cosecha elevado en produccion a +0.085% interno /
-        +0.060% Bybit para cubrir el 100% de la comision combinada Maker+Taker.
+  - P-05 y P-05b (SCAR-LOCK-12b):
+      * Early Stagnation Maker Unwind a los 45.0s para posiciones estancadas
+        que nunca superaron +0.08% de ganancia maxima (max_pnl_pct < 0.0008).
+      * Rampa Pre-Escape Maker Unwind en [72s, 86s] con Re-Pegging Pasivo a los
+        1.80s y retencion MAKER-HOLD < 84s sin liquidacion Taker prematura.
+  - P-06 y SCAR-LOCK-12b (Asymmetric Maker-First Harvest):
+      * En impulsos moderados (|OFI| < 0.65 o edad >= 25s), ejecuta Full-Maker
+        Harvest del 100% en Limit PostOnly asegurando tarifa Maker (0.020%).
+      * En impulsos explosivos (|OFI| >= 0.65 y edad < 25s), activa la Escalera
+        50/25/25 con piso Break-Even en +0.085% y salida TRINQUETE_BE_MAKER
+        priorizando Limit PostOnly antes de usar orden Market Taker.
       * Vector de Gradiente #4: Lectura exacta del precio de liquidacion Taker
-        en la Guardia Zero-Orphan (fetch_order + cruce L1) y sincronizacion
-        inmediata 1:1 con el saldo real de Bybit UTA.
+        y sincronizacion inmediata 1:1 con el saldo real de Bybit UTA.
   - Suite CLI verbot con renderizado ANSI 3D TrueColor y coloreador en vivo.
 ==============================================================================
 """
@@ -161,8 +163,9 @@ def calcular_eslabon_chain_jail(pnl_max_pct: float, es_tier1: bool = False) -> T
 class GestorPosiciones:
     """
     Gobierna el ciclo de vida de cada PosicionActiva en memoria RAM a 6.6 Hz.
-    Ejecuta la Escalera 50/25/25 (P-06), el Continuous Wald Scratch (P-04),
-    el Pre-Escape Maker Unwind (P-05) y la Guardia Zero-Orphan de 4.20s.
+    Ejecuta el Full-Maker Harvest / Escalera 50/25/25 (P-06 / SCAR-LOCK-12b),
+    el Continuous Wald Scratch (P-04), el Early Stagnation Unwind a los 45s (P-05b),
+    el Pre-Escape Maker Unwind a los 72s (P-05) y la Guardia Zero-Orphan de 4.20s.
     """
 
     def __init__(self, exchange: Any = None) -> None:
@@ -466,7 +469,7 @@ class GestorPosiciones:
                 except Exception as exc:
                     err_str = str(exc)
                     if "110017" in err_str or "reduce-only" in err_str.lower() or "zero position" in err_str.lower():
-                        if not es_test and (pos.pre_escape_72s_enviado or pos.scratch_18s_activo or motivo_final in ("MAKER_UNWIND", "MAKER_SCRATCH_18S")):
+                        if not es_test and (pos.pre_escape_72s_enviado or pos.scratch_18s_activo or motivo_final in ("MAKER_UNWIND", "MAKER_SCRATCH_18S", "TRINQUETE_BE_MAKER")):
                             fue_maker = True
                             if pos.orden_salida_precio > 0.0:
                                 precio_final = pos.orden_salida_precio
@@ -487,7 +490,7 @@ class GestorPosiciones:
                             )
                         except Exception as exc2:
                             if "110017" in str(exc2):
-                                if not es_test and (pos.pre_escape_72s_enviado or pos.scratch_18s_activo or motivo_final in ("MAKER_UNWIND", "MAKER_SCRATCH_18S")):
+                                if not es_test and (pos.pre_escape_72s_enviado or pos.scratch_18s_activo or motivo_final in ("MAKER_UNWIND", "MAKER_SCRATCH_18S", "TRINQUETE_BE_MAKER")):
                                     fue_maker = True
                                 else:
                                     motivo_final = "SL_EXCHANGE"
@@ -663,6 +666,35 @@ class GestorPosiciones:
                     if cerrado_w:
                         return "MAKER_SCRATCH_18S"
 
+            # P-05b (SCAR-LOCK-12b): Early Stagnation Maker Unwind a los 45.0s para posiciones muertas
+            flujo_estancado = (tk.ofi_5s <= 0.05) if pos.side == "long" else (tk.ofi_5s >= -0.05)
+            if (
+                not pos.cosecha_50_ejecutada
+                and 45.0 <= edad_seg < 72.0
+                and pos.max_pnl_pct_alcanzado < 0.0008
+                and -0.0018 <= pnl_bruto_pct < 0.0008
+                and flujo_estancado
+            ):
+                px_e45 = calcular_precio_salida_maker_seguro(
+                    pos.side, pos.entry_price, best_bid, best_ask, tick_size, permitir_scratch=True
+                )
+                pos.pre_escape_72s_enviado = True
+                pos.orden_salida_precio = px_e45
+                log_sniper(
+                    f"[PHANTOM EARLY-UNWIND 45S] {pos.symbol} estancado sin impulso tras {edad_seg:.1f}s "
+                    f"(MaxPnL {pos.max_pnl_pct_alcanzado*100:+.2f}%, PnL {pnl_bruto_pct*100:+.2f}%, OFI5s {tk.ofi_5s:+.2f}): "
+                    f"evacuando en Limit PostOnly @ {px_e45}."
+                )
+                cerrado_e45 = await self._ejecutar_cierre_definitivo(
+                    pos=pos,
+                    precio_ejecucion=px_e45,
+                    motivo="MAKER_UNWIND",
+                    es_maker=True,
+                    ahora=t_now,
+                )
+                if cerrado_e45:
+                    return "MAKER_UNWIND"
+
             # P-05: Rampa Pre-Escape Maker Unwind en [72.0s, 86.0s]
             if (
                 not pos.cosecha_50_ejecutada
@@ -783,27 +815,77 @@ class GestorPosiciones:
                         f"(Max PnL {pos.max_pnl_pct_alcanzado*100:+.2f}% -> Piso SL +{piso_sl*100:.2f}%)"
                     )
 
-        # Barrera de Stop-Loss Interno / Break-Even
+        # Barrera de Stop-Loss Interno / Break-Even (SCAR-LOCK-12b: BE prioriza Limit PostOnly en prod)
         sl_tocado = (
             (pos.side == "long" and precio_marca <= pos.sl_interno_price)
             or (pos.side == "short" and precio_marca >= pos.sl_interno_price)
         )
         if sl_tocado and pos.sl_interno_price > 0.0:
             motivo_sl = "TRINQUETE_BE_MAKER" if pos.trinquete_be_armado else "SL_INTERNO_CHRONOS"
+            usar_maker_be = bool(
+                not es_test
+                and pos.trinquete_be_armado
+                and pnl_bruto_pct >= -0.0005
+            )
+            px_cierre_sl = (
+                calcular_precio_salida_maker_seguro(
+                    pos.side, pos.entry_price, best_bid, best_ask, tick_size, permitir_scratch=True
+                )
+                if usar_maker_be
+                else precio_marca
+            )
+            if usar_maker_be:
+                pos.orden_salida_precio = px_cierre_sl
             await self._ejecutar_cierre_definitivo(
                 pos=pos,
-                precio_ejecucion=precio_marca,
+                precio_ejecucion=px_cierre_sl,
                 motivo=motivo_sl,
-                es_maker=False,
+                es_maker=usar_maker_be,
                 ahora=t_now,
             )
             return motivo_sl
 
-        # 1ra Tirada (50% del lote en +0.24% prod / +0.26% test)
+        # Cosecha en +0.24% prod / +0.26% test (SCAR-LOCK-12b: 100% Full-Maker en impulsos moderados)
         if pnl_bruto_pct >= cfg.COSECHA_TRIZ_ACTIVACION_PCT and not pos.cosecha_50_ejecutada:
-            await self._ejecutar_cosecha_50_triz(
-                pos, best_bid, best_ask, tick_size, step_qty, min_qty, ahora=t_now
+            impulso_explosivo = (
+                es_test
+                or (abs(tk.ofi_l1_l5) >= 0.65 and abs(tk.ofi_5s) >= 0.45 and edad_seg < 25.0)
+                or (pnl_bruto_pct >= 0.0042)
             )
+            if not impulso_explosivo:
+                if not pos.trinquete_be_armado:
+                    sl_int_be, sl_byb_be = calcular_piso_invariante_breakeven(
+                        pos.side, pos.entry_price, tick_size
+                    )
+                    pos.sl_interno_price = sl_int_be
+                    pos.trinquete_be_armado = True
+                    log_sniper(
+                        f"[FRANCOTIRADOR] [SHIELD] {pos.symbol} Trinquete Break-Even armado: "
+                        f"SL {sl_int_be} (PnL {pnl_bruto_pct*100:+.2f}%)"
+                    )
+                    await self._ajustar_sl_servidor_bybit(pos, sl_byb_be)
+
+                px_full_maker = calcular_precio_salida_maker_seguro(
+                    pos.side, pos.entry_price, best_bid, best_ask, tick_size, permitir_scratch=False
+                )
+                pos.orden_salida_precio = px_full_maker
+                log_sniper(
+                    f"[FRANCOTIRADOR] [DIAMOND] {pos.symbol} Full-Maker Harvest 100% PostOnly ejecutado @ {px_full_maker} "
+                    f"(PnL {pnl_bruto_pct*100:+.2f}%, OFI={tk.ofi_l1_l5:+.2f}, edad {edad_seg:.0f}s)"
+                )
+                cerrado_full = await self._ejecutar_cierre_definitivo(
+                    pos=pos,
+                    precio_ejecucion=px_full_maker,
+                    motivo="MAKER_UNWIND",
+                    es_maker=True,
+                    ahora=t_now,
+                )
+                if cerrado_full:
+                    return "MAKER_UNWIND"
+            else:
+                await self._ejecutar_cosecha_50_triz(
+                    pos, best_bid, best_ask, tick_size, step_qty, min_qty, ahora=t_now
+                )
 
         if pnl_bruto_pct >= cfg.TRAILING_ACTIVACION_PCT and not pos.trailing_activo:
             pos.trailing_activo = True
@@ -971,7 +1053,7 @@ def colorear_linea_log_mobaxterm(linea: str) -> str:
         return f"\033[1;38;2;255;75;95m{s}{RST}"
     if "[RADAR]" in s and "APROBADO" in s:
         return f"\033[1;38;2;0;240;255m{s}{RST}"
-    if "Cosecha" in s or "PHANTOM 50/25/25" in s or "Posicion" in s:
+    if "Cosecha" in s or "Full-Maker" in s or "PHANTOM 50/25/25" in s or "Posicion" in s:
         return f"\033[1;38;2;215;120;255m{s}{RST}"
     if "TRI-CORTEX" in s or "HOT-RELOAD" in s:
         return f"\033[1;38;2;130;190;255m{s}{RST}"
