@@ -20,9 +20,8 @@ Guardian de Geometria de Pagos 10/10 (Single-Layer Nativo - CHRONOS-TRIZ V2.0):
       * En impulsos explosivos (|OFI| >= 0.65 y edad < 25s), activa la Escalera
         50/25/25 con piso Break-Even en +0.085% y salida TRINQUETE_BE_MAKER
         priorizando Limit PostOnly antes de usar orden Market Taker.
-      * Vector de Gradiente #4: Lectura exacta del precio de liquidacion Taker
-        y sincronizacion inmediata 1:1 con el saldo real de Bybit UTA.
-  - Suite CLI verbot con renderizado ANSI 3D TrueColor y coloreador en vivo.
+      * Muestreo intratrade a 6.6 Hz (MFE, MAE y snapshots a 18s y 45s) y
+        panel visualizador del Baul Cognitivo Forense IA en verbot -s.
 ==============================================================================
 """
 from __future__ import annotations
@@ -631,8 +630,8 @@ class GestorPosiciones:
         best_ask = tk.ask
         precio_marca = best_bid if pos.side == "long" else best_ask
         pnl_bruto_pct = pos.calcular_pnl_bruto_pct(precio_marca)
-        pos.max_pnl_pct_alcanzado = max(pos.max_pnl_pct_alcanzado, pnl_bruto_pct)
         edad_seg = pos.edad_segundos(t_now)
+        pos.actualizar_anatomia_intratrade(pnl_bruto_pct, edad_seg)
         es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
 
         tick_size, step_qty, min_qty = extraer_precision_y_minimos(
@@ -868,6 +867,7 @@ class GestorPosiciones:
                 px_full_maker = calcular_precio_salida_maker_seguro(
                     pos.side, pos.entry_price, best_bid, best_ask, tick_size, permitir_scratch=False
                 )
+                pos.modo_cosecha_ejecutado = "FULL_MAKER_100"
                 pos.orden_salida_precio = px_full_maker
                 log_sniper(
                     f"[FRANCOTIRADOR] [DIAMOND] {pos.symbol} Full-Maker Harvest 100% PostOnly ejecutado @ {px_full_maker} "
@@ -1060,6 +1060,102 @@ def colorear_linea_log_mobaxterm(linea: str) -> str:
     return s
 
 
+def imprimir_baul_ia_cli_verbot(max_eventos: int = 8, modo_json: bool = False) -> None:
+    """
+    Renderiza en consola el resumen estructurado del Baul Cognitivo Forense IA
+    (baul_ia_forense.jsonl) con el conteo de escudos que salvaron capital a +15s
+    (True Positive Shields), falsos rechazos y anatomia MFE/MAE intratrade.
+    """
+    import json
+
+    RST = "\033[0m"
+    C_BORDER = "\033[38;2;80;140;255m"
+    C_TITLE = "\033[1;38;2;0;240;255m"
+    C_GOLD = "\033[1;38;2;255;215;0m"
+    C_WHITE = "\033[1;38;2;245;248;255m"
+    C_GREEN = "\033[1;38;2;0;255;135m"
+    C_RED = "\033[1;38;2;255;75;95m"
+    C_YELLOW = "\033[1;38;2;255;210;60m"
+    C_MAGENTA = "\033[1;38;2;215;120;255m"
+
+    ruta_baul = cfg.ROOT_DIR / "baul_ia_forense.jsonl"
+    if not ruta_baul.exists():
+        print(f" {C_MAGENTA}BAUL IA     :{RST} {C_YELLOW}baul_ia_forense.jsonl listo y esperando el primer evento (+15s escudo o cierre)...{RST}")
+        print(f"{C_BORDER}=========================================================================================={RST}")
+        return
+
+    eventos = []
+    for l in ruta_baul.read_text(encoding="utf-8", errors="ignore").splitlines():
+        if l.strip():
+            try:
+                eventos.append(json.loads(l))
+            except Exception:
+                pass
+
+    if not eventos:
+        print(f" {C_MAGENTA}BAUL IA     :{RST} {C_YELLOW}baul_ia_forense.jsonl inicializado (0 eventos aun).{RST}")
+        print(f"{C_BORDER}=========================================================================================={RST}")
+        return
+
+    if modo_json:
+        for ev in eventos[-max_eventos:]:
+            print(json.dumps(ev, ensure_ascii=False))
+        return
+
+    escudos = [e for e in eventos if e.get("tipo_evento") == "AUDITORIA_ESCUDO_15S"]
+    trades_b = [e for e in eventos if e.get("tipo_evento") == "TRADE_COMPLETO"]
+    salvadas = [e for e in escudos if e.get("veredicto_ia") == "CAPITAL_SALVADO_TRUE_SHIELD"]
+    falsos = [e for e in escudos if e.get("veredicto_ia") == "OPORTUNIDAD_PERDIDA_FALSE_REJECTION"]
+    neutros = len(escudos) - len(salvadas) - len(falsos)
+    usdt_salvados = sum(float(e.get("impacto_estimado_usdt") or 0.0) for e in salvadas)
+
+    print(f" {C_MAGENTA}BAUL FORENSE IA (baul_ia_forense.jsonl) -- ORACULO CONTRAFACTUAL +15S & ANATOMIA MFE/MAE:{RST}")
+    print(f"{C_BORDER}------------------------------------------------------------------------------------------{RST}")
+    print(
+        f" {C_TITLE}Escudos +15s:{RST} {C_WHITE}{len(escudos)} auditados{RST} | "
+        f"{C_GREEN}True Shields: {len(salvadas)} (+{usdt_salvados:.4f} USDT salvados){RST} | "
+        f"{C_YELLOW}Neutros: {neutros}{RST} | {C_RED}False Rejections: {len(falsos)}{RST} | "
+        f"{C_MAGENTA}Trades MFE/MAE: {len(trades_b)}{RST}"
+    )
+    print(f"{C_BORDER}------------------------------------------------------------------------------------------{RST}")
+    for ev in eventos[-max_eventos:]:
+        t_ev = str(ev.get("tipo_evento") or "")
+        ts_c = str(ev.get("ts_utc") or "")[11:19]
+        sym_c = str(ev.get("symbol") or "").replace("/USDT:USDT", "").ljust(8)
+        if t_ev == "AUDITORIA_ESCUDO_15S":
+            ver = str(ev.get("veredicto_ia") or "")
+            c_v = C_GREEN if "SALVADO" in ver else (C_RED if "PERDIDA" in ver else C_YELLOW)
+            tag_v = "SHIELD_OK" if "SALVADO" in ver else ("FALSE_REJ" if "PERDIDA" in ver else "NEUTRO_15S")
+            scar = str(ev.get("scar_id") or "")[:24].ljust(24)
+            exc = float(ev.get("excursion_15s_pct") or 0.0)
+            imp = float(ev.get("impacto_estimado_usdt") or 0.0)
+            p_tag = str(ev.get("tag_percentil") or "")[:3]
+            print(
+                f" {C_WHITE}{ts_c}{RST} | {c_v}{tag_v:<9}{RST} | {C_TITLE}{sym_c}{RST} | "
+                f"{C_MAGENTA}{scar}{RST} | {C_GOLD}{p_tag}{RST} | "
+                f"15s: {c_v}{exc:+6.2f}% ({imp:+.4f} USDT){RST}"
+            )
+        elif t_ev == "TRADE_COMPLETO":
+            res = str(ev.get("resultado") or "")
+            c_r = C_GREEN if res == "WIN" else (C_YELLOW if "SCRATCH" in res else C_RED)
+            anat = ev.get("anatomia_intratrade") or {}
+            vin = ev.get("vector_entrada") or {}
+            mfe = float(anat.get("mfe_max_pnl_pct") or 0.0)
+            mae = float(anat.get("mae_min_pnl_pct") or 0.0)
+            p18 = float(anat.get("pnl_18s_pct") or 0.0)
+            pnl_u = float(ev.get("pnl_usdt") or 0.0)
+            p_tag = str(vin.get("tag_percentil") or "")[:3]
+            modo_c = str(anat.get("modo_cosecha") or "NONE")[:10]
+            trd_num = int(ev.get("trade_num") or 0)
+            trd_lbl = f"TRD #{trd_num}"
+            print(
+                f" {C_WHITE}{ts_c}{RST} | {c_r}{trd_lbl:<9}{RST} | {C_TITLE}{sym_c}{RST} | "
+                f"MFE:{C_GREEN}{mfe:+5.2f}%{RST} MAE:{C_RED}{mae:+5.2f}%{RST} 18s:{C_YELLOW}{p18:+5.2f}%{RST} | "
+                f"{C_GOLD}{p_tag}{RST} | {C_MAGENTA}{modo_c:<10}{RST} -> {c_r}{pnl_u:+.4f} USDT{RST}"
+            )
+    print(f"{C_BORDER}=========================================================================================={RST}")
+
+
 def imprimir_status_cli_verbot() -> None:
     import json
     from collections import defaultdict
@@ -1176,7 +1272,8 @@ def imprimir_status_cli_verbot() -> None:
             print(f" {C_WHITE}{idx:02d}.{RST} {badge_op} {C_WHITE}{ts_s}{RST} | {C_TITLE}{sym_s}{RST} [{C_MAGENTA}{side_s}{RST}] | {c_op}{pct_s:+6.2f}% ({pnl_u:+.4f} USDT){RST} | {C_YELLOW}{hold_s:3.0f}s{RST} | {c_op}{mot}{RST}")
     else:
         print(f"  {C_YELLOW}Esperando el primer disparo confirmado...{RST}")
-    print(f"{C_BORDER}=========================================================================================={RST}")
+    print(f"{C_BORDER}------------------------------------------------------------------------------------------{RST}")
+    imprimir_baul_ia_cli_verbot(max_eventos=8, modo_json=False)
 
 
 async def reenviar_ultimo_cierre_cli() -> None:

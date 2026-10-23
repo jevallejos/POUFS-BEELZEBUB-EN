@@ -5,13 +5,16 @@
 ARCHIVO #04: core_estado_ram.py
 SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 -- ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
-Nucleo de Memoria Compartida O(1), Contratos @dataclass y Logger Dual (CL/UTC).
+Nucleo de Memoria Compartida O(1), Contratos @dataclass, Logger Dual (CL/UTC)
+y Motor del Baul Cognitivo Forense IA (baul_ia_forense.jsonl) con Oraculo
+Contrafactual Diferido a +15.0s para auditoria de SCAR-LOCK-01..12.
 Arquitectura Single-Layer Nativa libre de envoltorios dinamicos.
 ==============================================================================
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sys
 import time
@@ -23,6 +26,7 @@ import config_parametros as cfg
 
 _TZ_UTC = timezone.utc
 _TZ_CHILE = timezone(timedelta(hours=-3))
+_ARCHIVO_BAUL_IA: str = "baul_ia_forense.jsonl"
 
 
 # ==============================================================================
@@ -71,7 +75,9 @@ class PermisoRegimenActivo:
 class PosicionActiva:
     """
     Estado en memoria RAM de una posicion abierta en Bybit UTA.
-    Soporta nativamente las Leyes 2 y 3 de CHRONOS-TRIZ y la Escalera 50/25/25 (P-06).
+    Soporta nativamente las Leyes 2 y 3 de CHRONOS-TRIZ V2.0, la Escalera
+    50/25/25 (P-06) y la telemetria de trayectoria intratrade (MFE / MAE)
+    para el Baul Cognitivo Forense IA.
     """
     symbol: str
     side: str
@@ -111,6 +117,26 @@ class PosicionActiva:
 
     # Cerrojo atomico anti-doble-contabilizacion
     cerrada: bool = False
+
+    # Contexto microestructural de entrada y anatomia intratrade (Baul Forense IA)
+    p_dia_entry: float = 0.25
+    tag_percentil_entry: str = "P25_ELASTICO"
+    ema900_dist_entry: float = 0.0
+    ema900_slope_entry: float = 0.0
+    delta_p_entry: float = 0.0
+    lyapunov_entry: float = 0.0
+    hawkes_entry: float = 0.0
+    vpin_entry: float = 0.0
+    z_btc_entry: float = 0.0
+    ofi_btc_entry: float = 0.0
+    kelly_fraccion_entry: float = 0.55
+    hurst_max_elastico_entry: float = 0.485
+    min_pnl_pct_alcanzado: float = 0.0
+    pnl_18s_pct: float = 0.0
+    pnl_45s_pct: float = 0.0
+    snapshot_18s_tomado: bool = False
+    snapshot_45s_tomado: bool = False
+    modo_cosecha_ejecutado: str = "NONE"
 
     @property
     def entrada(self) -> float:
@@ -163,6 +189,18 @@ class PosicionActiva:
             return (self.entry_price - precio_actual) / self.entry_price
         return (precio_actual - self.entry_price) / self.entry_price
 
+    def actualizar_anatomia_intratrade(self, pnl_bruto_pct: float, edad_seg: float) -> None:
+        if pnl_bruto_pct > self.max_pnl_pct_alcanzado:
+            self.max_pnl_pct_alcanzado = pnl_bruto_pct
+        if pnl_bruto_pct < self.min_pnl_pct_alcanzado:
+            self.min_pnl_pct_alcanzado = pnl_bruto_pct
+        if not self.snapshot_18s_tomado and edad_seg >= 18.0:
+            self.pnl_18s_pct = round(pnl_bruto_pct, 6)
+            self.snapshot_18s_tomado = True
+        if not self.snapshot_45s_tomado and edad_seg >= 45.0:
+            self.pnl_45s_pct = round(pnl_bruto_pct, 6)
+            self.snapshot_45s_tomado = True
+
 
 @dataclass(slots=True)
 class RegistroOperacionCerrada:
@@ -190,7 +228,84 @@ class RegistroOperacionCerrada:
 
 
 # ==============================================================================
-# 2. TABLA HASH DE ESTADO EN MEMORIA RAM O(1) (< 1.5 MICROSEGUNDOS)
+# 2. LOGGER DUAL DETERMINISTA Y ESCRITOR DEL BAUL FORENSE IA
+# ==============================================================================
+_ARGV0_RAM: str = str(sys.argv[0]) if sys.argv else ""
+_ES_DAEMON_O_SUITE: bool = any(
+    _k in _ARGV0_RAM for _k in ("main.py", "test_tribrain", "evaluador_cuantico")
+)
+
+
+def formatear_sello_tiempo(ts: Optional[float] = None) -> str:
+    t_val = ts if ts is not None else time.time()
+    dt_utc = datetime.fromtimestamp(t_val, tz=_TZ_UTC)
+    dt_cl = dt_utc.astimezone(_TZ_CHILE)
+    ms = int((t_val - int(t_val)) * 1000.0)
+    return f"[{dt_cl.strftime('%Y-%m-%d %H:%M:%S')}.{ms:03d} CL | {dt_utc.strftime('%H:%M:%S')} UTC]"
+
+
+def registrar_evento_baul_ia(evento: Dict[str, Any], ahora: Optional[float] = None) -> bool:
+    """
+    Persiste en baul_ia_forense.jsonl un registro estructurado de alta senal
+    y cero ruido para auditoria matematica del Nucleo Cognitivo IA.
+    """
+    if os.environ.get("TRIBRAIN_TEST_MODE") == "1" or not isinstance(evento, dict):
+        return False
+
+    t_val = float(ahora) if ahora is not None else time.time()
+    dt_utc = datetime.fromtimestamp(t_val, tz=_TZ_UTC)
+    registro: Dict[str, Any] = {
+        "ts_utc": dt_utc.isoformat(timespec="seconds"),
+        "sello_dual": formatear_sello_tiempo(t_val),
+    }
+    registro.update(evento)
+
+    try:
+        ruta_baul = cfg.ROOT_DIR / _ARCHIVO_BAUL_IA
+        with open(ruta_baul, "a", encoding="utf-8") as f_baul:
+            f_baul.write(json.dumps(registro, ensure_ascii=False) + "\n")
+        return True
+    except Exception:
+        return False
+
+
+def log_sniper(mensaje: str, escribir_disco: bool = True) -> Optional[str]:
+    if not _ES_DAEMON_O_SUITE and "Whitelist O(1) inicializada" in str(mensaje):
+        return None
+
+    sello = formatear_sello_tiempo()
+    linea = f"{sello} {mensaje}"
+    sys.stdout.write(linea + "\n")
+    sys.stdout.flush()
+
+    if escribir_disco:
+        es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
+        try:
+            if es_test:
+                ruta_test = cfg.ROOT_DIR / ".test_bot_hft.log"
+                with open(ruta_test, "a", encoding="utf-8") as f_test:
+                    f_test.write(linea + "\n")
+            else:
+                ruta_sesion = cfg.ROOT_DIR / cfg.ARCHIVO_LOG_SESION
+                ruta_hist = cfg.ROOT_DIR / cfg.ARCHIVO_LOG_HISTORICO
+                with open(ruta_sesion, "a", encoding="utf-8") as f_ses:
+                    f_ses.write(linea + "\n")
+                with open(ruta_hist, "a", encoding="utf-8") as f_hist:
+                    f_hist.write(linea + "\n")
+        except Exception:
+            pass
+
+    return linea
+
+
+log_sniper.info = log_sniper
+log_sniper.warning = log_sniper
+log_sniper.error = log_sniper
+log_sniper.debug = log_sniper
+
+
+# ==============================================================================
+# 3. TABLA HASH DE ESTADO EN MEMORIA RAM O(1) (< 1.5 MICROSEGUNDOS)
 # ==============================================================================
 class EstadoGlobalRAM:
     """Almacen centralizado en memoria RAM con complejidad O(1)."""
@@ -219,6 +334,10 @@ class EstadoGlobalRAM:
 
         self.pares_excluidos_lote: set[str] = set()
         self.cola_eventos: asyncio.Queue[Dict[str, Any]] = asyncio.Queue(maxsize=1024)
+
+        # Cola O(1) del Oraculo Contrafactual a +15.0s para el Baul Forense IA
+        self.auditorias_escudo_pendientes: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        self.ultimo_ts_auditoria_escudo: Dict[Tuple[str, str], float] = {}
 
     def consultar_permiso_o1(
         self,
@@ -268,6 +387,139 @@ class EstadoGlobalRAM:
                 return False, "REGIMEN_LONG_ONLY_ACTIVO", 0.0
 
         return True, "APROBADO_O1", perm.sizing_mult_gemini
+
+    def encolar_auditoria_escudo_15s(
+        self,
+        symbol: str,
+        side: str,
+        scar_id: str,
+        precio_bloqueo: float,
+        tag_percentil: str = "P50_ELASTICO",
+        p_dia: float = 0.50,
+        detalle: str = "",
+        ahora: Optional[float] = None,
+    ) -> None:
+        """
+        Registra en RAM un bloqueo de pre-orden (SCAR-LOCK-01..12) o cancelacion TTL
+        para evaluar exactamente 15.0s despues si salvo un Stop-Loss (True Positive
+        Shield) o si rechazo una reversion ganadora (False Rejection).
+        """
+        if os.environ.get("TRIBRAIN_TEST_MODE") == "1" or precio_bloqueo <= 0.0:
+            return
+
+        t_now = float(ahora) if ahora is not None else time.time()
+        clave = (symbol, str(scar_id))
+        if (t_now - self.ultimo_ts_auditoria_escudo.get(clave, 0.0)) < 15.0:
+            return
+
+        self.ultimo_ts_auditoria_escudo[clave] = t_now
+        tk = self.ticks_ram.get(symbol)
+        tk_btc = self.ticks_ram.get(cfg.SIMBOLO_CENTINELA_MACRO)
+
+        self.auditorias_escudo_pendientes[clave] = {
+            "symbol": symbol,
+            "side": str(side).lower(),
+            "scar_id": str(scar_id),
+            "precio_bloqueo": float(precio_bloqueo),
+            "ts_bloqueo": t_now,
+            "tag_percentil": str(tag_percentil),
+            "p_dia": round(float(p_dia), 4),
+            "detalle": str(detalle),
+            "z_score": round(float(tk.z_score), 3) if tk else 0.0,
+            "dp_pct": round(float(tk.delta_p_pct) * 100.0, 3) if tk else 0.0,
+            "ema900_pct": round(float(tk.ema900_dist_pct) * 100.0, 3) if tk else 0.0,
+            "ema_slope_pct": round(float(tk.ema900_slope_pct) * 100.0, 4) if tk else 0.0,
+            "ofi_l1_l5": round(float(tk.ofi_l1_l5), 3) if tk else 0.0,
+            "hurst": round(float(tk.hurst), 4) if tk else 0.45,
+            "lyap_acel_pct": round(float(tk.lyapunov_acel_pct) * 100.0, 4) if tk else 0.0,
+            "hawkes": round(float(tk.hawkes_intensidad), 3) if tk else 0.0,
+            "vpin": round(float(tk.vpin), 3) if tk else 0.0,
+            "z_btc": round(float(tk_btc.z_score), 3) if tk_btc else 0.0,
+            "ofi_btc": round(float(tk_btc.ofi_l1_l5), 3) if tk_btc else 0.0,
+        }
+
+    def evaluar_auditorias_escudo_vencidas(
+        self,
+        symbol: str,
+        precio_actual: float,
+        ahora: Optional[float] = None,
+    ) -> int:
+        """
+        Verifica en O(1) si algun bloqueo encolado para symbol cumplio >= 15.0s
+        y escribe el veredicto contrafactual en baul_ia_forense.jsonl.
+        """
+        if (
+            os.environ.get("TRIBRAIN_TEST_MODE") == "1"
+            or not self.auditorias_escudo_pendientes
+            or precio_actual <= 0.0
+        ):
+            return 0
+
+        t_now = float(ahora) if ahora is not None else time.time()
+        procesadas = 0
+
+        for clave in list(self.auditorias_escudo_pendientes.keys()):
+            if clave[0] != symbol:
+                continue
+            item = self.auditorias_escudo_pendientes.get(clave)
+            if item is None:
+                continue
+            dt_seg = t_now - float(item["ts_bloqueo"])
+            if dt_seg < 15.0:
+                continue
+
+            self.auditorias_escudo_pendientes.pop(clave, None)
+            p_bloq = float(item["precio_bloqueo"])
+            side = str(item["side"])
+            ret_15s = (
+                ((precio_actual - p_bloq) / p_bloq)
+                if side == "long"
+                else ((p_bloq - precio_actual) / p_bloq)
+            )
+            nocional_ref = 25.0 if symbol in cfg.CLASE_TIER1_LIQUIDO else cfg.NOCIONAL_MAX_HIGH_BETA_USDT
+
+            if ret_15s <= -0.0015:
+                veredicto = "CAPITAL_SALVADO_TRUE_SHIELD"
+                impacto_usdt = round(abs(ret_15s) * nocional_ref, 4)
+            elif ret_15s >= 0.0024:
+                veredicto = "OPORTUNIDAD_PERDIDA_FALSE_REJECTION"
+                impacto_usdt = -round(max(0.0, ret_15s - 0.0004) * nocional_ref, 4)
+            else:
+                veredicto = "RUIDO_NEUTRO_LATERAL"
+                impacto_usdt = 0.0
+
+            evento_baul = {
+                "tipo_evento": "AUDITORIA_ESCUDO_15S",
+                "veredicto_ia": veredicto,
+                "scar_id": item["scar_id"],
+                "symbol": symbol,
+                "side": side,
+                "tag_percentil": item["tag_percentil"],
+                "p_dia": item["p_dia"],
+                "precio_bloqueo": p_bloq,
+                "precio_15s_despues": round(float(precio_actual), 8),
+                "excursion_15s_pct": round(ret_15s * 100.0, 4),
+                "impacto_estimado_usdt": impacto_usdt,
+                "dt_evaluacion_seg": round(dt_seg, 2),
+                "detalle_filtro": item["detalle"],
+                "vector_x": {
+                    "z": item["z_score"],
+                    "dp_pct": item["dp_pct"],
+                    "ema900_pct": item["ema900_pct"],
+                    "ema_slope_pct": item["ema_slope_pct"],
+                    "ofi": item["ofi_l1_l5"],
+                    "hurst": item["hurst"],
+                    "lyap_pct": item["lyap_acel_pct"],
+                    "hawkes": item["hawkes"],
+                    "vpin": item["vpin"],
+                    "z_btc": item["z_btc"],
+                    "ofi_btc": item["ofi_btc"],
+                },
+            }
+            registrar_evento_baul_ia(evento_baul, ahora=t_now)
+            procesadas += 1
+
+        return procesadas
 
     def aplicar_cuarentena(self, symbol: str, duracion_seg: float, motivo: str) -> None:
         perm = self.permisos_ram.get(symbol)
@@ -320,55 +572,3 @@ class EstadoGlobalRAM:
 
 
 ESTADO_RAM: EstadoGlobalRAM = EstadoGlobalRAM()
-
-
-# ==============================================================================
-# 3. LOGGER DUAL DETERMINISTA (CHILE CONTINENTAL / UTC) CON FILTRO CLI
-# ==============================================================================
-_ARGV0_RAM: str = str(sys.argv[0]) if sys.argv else ""
-_ES_DAEMON_O_SUITE: bool = any(
-    _k in _ARGV0_RAM for _k in ("main.py", "test_tribrain", "evaluador_cuantico")
-)
-
-
-def formatear_sello_tiempo(ts: Optional[float] = None) -> str:
-    t_val = ts if ts is not None else time.time()
-    dt_utc = datetime.fromtimestamp(t_val, tz=_TZ_UTC)
-    dt_cl = dt_utc.astimezone(_TZ_CHILE)
-    ms = int((t_val - int(t_val)) * 1000.0)
-    return f"[{dt_cl.strftime('%Y-%m-%d %H:%M:%S')}.{ms:03d} CL | {dt_utc.strftime('%H:%M:%S')} UTC]"
-
-
-def log_sniper(mensaje: str, escribir_disco: bool = True) -> Optional[str]:
-    if not _ES_DAEMON_O_SUITE and "Whitelist O(1) inicializada" in str(mensaje):
-        return None
-
-    sello = formatear_sello_tiempo()
-    linea = f"{sello} {mensaje}"
-    sys.stdout.write(linea + "\n")
-    sys.stdout.flush()
-
-    if escribir_disco:
-        es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
-        try:
-            if es_test:
-                ruta_test = cfg.ROOT_DIR / ".test_bot_hft.log"
-                with open(ruta_test, "a", encoding="utf-8") as f_test:
-                    f_test.write(linea + "\n")
-            else:
-                ruta_sesion = cfg.ROOT_DIR / cfg.ARCHIVO_LOG_SESION
-                ruta_hist = cfg.ROOT_DIR / cfg.ARCHIVO_LOG_HISTORICO
-                with open(ruta_sesion, "a", encoding="utf-8") as f_ses:
-                    f_ses.write(linea + "\n")
-                with open(ruta_hist, "a", encoding="utf-8") as f_hist:
-                    f_hist.write(linea + "\n")
-        except Exception:
-            pass
-
-    return linea
-
-
-log_sniper.info = log_sniper
-log_sniper.warning = log_sniper
-log_sniper.error = log_sniper
-log_sniper.debug = log_sniper

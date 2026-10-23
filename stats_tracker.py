@@ -6,7 +6,8 @@ ARCHIVO #06: stats_tracker.py
 SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 -- ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Motor Contable de Caja Negra (tribrain_stats_v1.jsonl), Paridad 1:1 Bybit UTA,
-Calculo de MAP, LVR (Milionis-Moallemi-Roughgarden), Velocidad Geometrica g*
+Calculo de MAP, LVR (Milionis-Moallemi-Roughgarden), Velocidad Geometrica g*,
+Escritura Enriquecida hacia el Baul Cognitivo Forense IA (baul_ia_forense.jsonl)
 y Gancho de Respaldo Contable hacia Telegram (Single-Layer Nativo).
 ==============================================================================
 """
@@ -26,6 +27,7 @@ from core_estado_ram import (
     PosicionActiva,
     RegistroOperacionCerrada,
     log_sniper,
+    registrar_evento_baul_ia,
 )
 from telemetria_telegram import TELEMETRIA_TG
 
@@ -33,7 +35,8 @@ from telemetria_telegram import TELEMETRIA_TG
 class GestorCajaNegra:
     """
     Libro mayor transaccional con paridad 1:1 frente a Bybit UTA,
-    blindaje anti-doble-contabilizacion y auditoria de integridad JSONL.
+    blindaje anti-doble-contabilizacion, auditoria de integridad JSONL
+    y persistencia de alta densidad en el Baul Cognitivo Forense IA.
     """
 
     def __init__(self, ruta_jsonl: Optional[pathlib.Path] = None) -> None:
@@ -173,7 +176,7 @@ class GestorCajaNegra:
 
     def sincronizar_paridad_uta(self, balance_real_uta: float) -> bool:
         """
-        Vector de Gradiente #4: Garantiza paridad contable 1:1 exacta al diezmilésimo
+        Vector de Gradiente #4: Garantiza paridad contable 1:1 exacta al diezmilesimo
         entre tribrain_stats_v1.jsonl y el patrimonio real de Bybit UTA cuando no hay
         posiciones abiertas, sin alterar el conteo de Wins ni Losses.
         """
@@ -217,6 +220,15 @@ class GestorCajaNegra:
                 f"[CAJA NEGRA 1:1] Paridad UTA sincronizada al diezmilesimo "
                 f"(Ajuste Zero-Orphan: {desfase:+.4f} USDT -> Balance {real_u:.4f} == {real_u:.4f} USDT)."
             )
+            registrar_evento_baul_ia(
+                {
+                    "tipo_evento": "PARIDAD_1A1_AJUSTE",
+                    "symbol": str(op_obj.get("symbol") or ""),
+                    "ajuste_usdt": round(desfase, 4),
+                    "balance_uta_real": round(real_u, 4),
+                    "n_trades": self.trades_totales,
+                }
+            )
             return True
         except Exception:
             return False
@@ -251,6 +263,7 @@ class GestorCajaNegra:
         pnl_neto_tramo = pnl_bruto - fees_tramo
 
         pos.cosecha_50_ejecutada = True
+        pos.modo_cosecha_ejecutado = "ESCALERA_50_25_25"
         pos.pnl_realizado_parcial_usdt += pnl_neto_tramo
         pos.fees_acumulados_usdt += fees_tramo
         pos.qty_actual = max(0.0, pos.qty_actual - qty_c)
@@ -341,6 +354,84 @@ class GestorCajaNegra:
         else:
             self.mejor_trade_usdt = max(self.mejor_trade_usdt, pnl_neto_total_usdt)
             self.peor_trade_usdt = min(self.peor_trade_usdt, pnl_neto_total_usdt)
+
+        # Registro de alta densidad en el Baul Cognitivo Forense IA (baul_ia_forense.jsonl)
+        if os.environ.get("TRIBRAIN_TEST_MODE") != "1" and "ESCAPE_HUERFANA_BOOT" not in str(motivo).upper():
+            mapa_vec = getattr(ESTADO_RAM, "vectores_entrada_baul", None) or {}
+            vec_in = mapa_vec.get(pos.symbol) or {}
+            tk_out = ESTADO_RAM.ticks_ram.get(pos.symbol)
+            bal_contable_now = round(self.capital_base_usdt + self.pnl_total_usdt, 4)
+            bal_real_now = round(
+                ESTADO_RAM.patrimonio_total_usdt if ESTADO_RAM.patrimonio_total_usdt > 0 else bal_contable_now,
+                4,
+            )
+            resultado_tag = (
+                "WIN"
+                if pnl_neto_total_usdt >= 0.0
+                else ("SCRATCH_18S" if "SCRATCH" in str(motivo).upper() else "LOSS")
+            )
+            modo_cosecha_str = str(getattr(pos, "modo_cosecha_ejecutado", "NONE") or "NONE")
+            if modo_cosecha_str == "NONE" and pos.cosecha_50_ejecutada:
+                modo_cosecha_str = "ESCALERA_50_25_25"
+
+            registrar_evento_baul_ia(
+                {
+                    "tipo_evento": "TRADE_COMPLETO",
+                    "trade_num": self.trades_totales,
+                    "resultado": resultado_tag,
+                    "symbol": pos.symbol,
+                    "side": pos.side,
+                    "motivo": str(motivo),
+                    "es_salida_maker": bool(es_salida_maker),
+                    "entry_price": ep,
+                    "exit_price": xp,
+                    "qty_total": qty_total_original,
+                    "map_usdt": map_usdt,
+                    "pnl_pct_neto": pnl_pct_neto,
+                    "pnl_usdt": round(pnl_neto_total_usdt, 4),
+                    "fees_usdt": round(fees_totales_usdt, 4),
+                    "lvr_usdt": lvr_usdt,
+                    "hold_seg": hold_seg,
+                    "balance_contable": bal_contable_now,
+                    "balance_uta_real": bal_real_now,
+                    "anatomia_intratrade": {
+                        "mfe_max_pnl_pct": round(float(pos.max_pnl_pct_alcanzado) * 100.0, 4),
+                        "mae_min_pnl_pct": round(float(getattr(pos, "min_pnl_pct_alcanzado", 0.0)) * 100.0, 4),
+                        "pnl_18s_pct": round(float(getattr(pos, "pnl_18s_pct", 0.0)) * 100.0, 4),
+                        "pnl_45s_pct": round(float(getattr(pos, "pnl_45s_pct", 0.0)) * 100.0, 4),
+                        "modo_cosecha": modo_cosecha_str,
+                        "cosecha_50": bool(pos.cosecha_50_ejecutada),
+                        "cosecha_25": bool(pos.cosecha_25_ejecutada),
+                        "eslabon_max": int(pos.eslabon_chain_jail),
+                        "trinquete_be": bool(pos.trinquete_be_armado),
+                    },
+                    "vector_entrada": {
+                        "p_dia": vec_in.get("p_dia", getattr(pos, "p_dia_entry", 0.25)),
+                        "tag_percentil": vec_in.get("tag_percentil", getattr(pos, "tag_percentil_entry", "P25_ELASTICO")),
+                        "mu_boot": vec_in.get("mu_boot", 0.0),
+                        "z_entry": round(float(pos.z_score_entry or 0.0), 3),
+                        "dp_pct": round(float(vec_in.get("delta_p_pct", getattr(pos, "delta_p_entry", 0.0))) * 100.0, 3),
+                        "ema900_pct": round(float(vec_in.get("ema900_dist_pct", getattr(pos, "ema900_dist_entry", 0.0))) * 100.0, 3),
+                        "ema_slope_pct": round(float(vec_in.get("ema900_slope_pct", getattr(pos, "ema900_slope_entry", 0.0))) * 100.0, 4),
+                        "ofi_entry": round(float(pos.ofi_entry or 0.0), 3),
+                        "hurst_entry": round(float(pos.hurst_entry or 0.45), 4),
+                        "hurst_max_elastico": round(float(vec_in.get("hurst_max_elastico", getattr(pos, "hurst_max_elastico_entry", 0.485))), 4),
+                        "lyap_acel_pct": round(float(vec_in.get("lyapunov_acel_pct", getattr(pos, "lyapunov_entry", 0.0))) * 100.0, 4),
+                        "hawkes": round(float(vec_in.get("hawkes_intensidad", getattr(pos, "hawkes_entry", 0.0))), 3),
+                        "vpin": round(float(vec_in.get("vpin", getattr(pos, "vpin_entry", 0.0))), 3),
+                        "volatilidad_bv": round(float(pos.volatilidad_entry or 0.0006), 6),
+                        "z_btc": round(float(vec_in.get("z_btc", getattr(pos, "z_btc_entry", 0.0))), 3),
+                        "ofi_btc": round(float(vec_in.get("ofi_btc", getattr(pos, "ofi_btc_entry", 0.0))), 3),
+                    },
+                    "vector_salida": {
+                        "z_exit": round(float(tk_out.z_score), 3) if tk_out else 0.0,
+                        "ofi_exit": round(float(tk_out.ofi_l1_l5), 3) if tk_out else 0.0,
+                        "ofi_5s_exit": round(float(tk_out.ofi_5s), 3) if tk_out else 0.0,
+                        "hurst_exit": round(float(tk_out.hurst), 4) if tk_out else 0.45,
+                    },
+                },
+                ahora=t_cierre,
+            )
 
         icono = "[WIN]" if pnl_neto_total_usdt >= 0.0 else ("[SCRATCH]" if "SCRATCH" in str(motivo).upper() else "[LOSS]")
         lado_str = " SHORT" if pos.side == "short" else ""
