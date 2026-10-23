@@ -7,9 +7,9 @@ SISTEMA: POUFS-BEELZEBUB-EN (SPIRITUAL MESSAGE) V3.0 -- ESTRATEGIA CHRONOS-TRIZ
 ==============================================================================
 Motor Cuantico de Calibracion Walk-Forward Out-of-Sample (8h / 24h / 72h)
 con Contraccion Bayesiana de James-Stein (lambda_Bayes = min(1.0, N / 40)) y
-Laboratorio Gemelo Digital HFT (--lab) de 3.456 Combinaciones con Validacion
-Cruzada Combinatoria Purgada (CPCV), Stationary Block Bootstrap (1.500
-universos), Deflated Sharpe Ratio (DSR) y exportacion a reporte_lab_ia.json.
+Laboratorio Gemelo Digital HFT (--lab) de 3.456 Combinaciones con Reporte
+Financiero Explicativo en Espanol Claro (Ganancias Brutas, Perdidas Teoricas,
+Operaciones Bloqueadas, CPCV, Block-Bootstrap, DSR y Semaforo de Decision IA).
 ==============================================================================
 """
 from __future__ import annotations
@@ -112,6 +112,8 @@ def calcular_metricas_horizonte(operaciones: List[Dict[str, Any]]) -> Dict[str, 
             "cosechas_50_triz": 0.0,
             "win_rate_pct": 0.0,
             "win_rate_efectivo_pct": 0.0,
+            "ganancia_bruta_usdt": 0.0,
+            "perdida_bruta_usdt": 0.0,
             "pnl_neto_usdt": 0.0,
             "fees_usdt": 0.0,
             "lvr_usdt": 0.0,
@@ -200,6 +202,8 @@ def calcular_metricas_horizonte(operaciones: List[Dict[str, Any]]) -> Dict[str, 
         "cosechas_50_triz": float(cosechas),
         "win_rate_pct": round(wr_clasico_pct, 2),
         "win_rate_efectivo_pct": round(wr_efectivo_pct, 2),
+        "ganancia_bruta_usdt": round(suma_win, 4),
+        "perdida_bruta_usdt": round(suma_loss, 4),
         "pnl_neto_usdt": round(pnl_neto, 4),
         "fees_usdt": round(suma_fees, 4),
         "lvr_usdt": round(suma_lvr, 4),
@@ -902,9 +906,8 @@ class LaboratorioGemeloDigitalHFT:
          + bot_hft_h.log.
       2. Reconstruccion contrafactual de los 14 cerrojos SCAR-LOCK-00..13.
       3. Evaluacion de 3.456 combinaciones sobre los 5 ejes HFT Web 2026 (W1..W5).
-      4. Validacion Cruzada Combinatoria Purgada (CPCV K=5) + Stationary Block
-         Bootstrap (1.500 trayectorias L2) + Deflated Sharpe Ratio (DSR) +
-         exportacion automatica a reporte_lab_ia.json.
+      4. Reporte Financiero en Espanol Claro con Ganancia Bruta, Perdida Teorica,
+         Operaciones Bloqueadas, Ahorro de Perdidas y Semaforo de Decision IA.
     """
 
     def __init__(self, repo_dir: Optional[pathlib.Path] = None) -> None:
@@ -1054,10 +1057,53 @@ class LaboratorioGemeloDigitalHFT:
 
         return retornos_u, wins, losses, sl_reabiertos, round(max_dd, 4)
 
+    @staticmethod
+    def _construir_explicacion_espanol(
+        m_raw: Dict[str, Any],
+        m_v2: Dict[str, Any],
+        best: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        if not best:
+            return {"estado": "SIN_CANDIDATOS"}
+
+        mejora_neta = round(best["pnl_usdt"] - m_v2["pnl_usdt"], 4)
+        ahorro_vs_crudo = round(m_raw["perdida_bruta_usdt"] - best["perdida_teorica_usdt"], 4)
+        dsr_val = float(best.get("dsr") or 0.0)
+        n_tr_best = int(best.get("n_trades") or 0)
+
+        if dsr_val >= 0.95:
+            semaforo = (
+                f"VERDE (DSR={dsr_val:.2f} >= 0.95): Evidencia estadistica completa. "
+                "Listo para promover al codigo de produccion cuando lo autorices."
+            )
+        else:
+            faltan = max(5, 50 - n_tr_best)
+            semaforo = (
+                f"AMARILLO EN OBSERVACION (DSR={dsr_val:.2f} con {n_tr_best} ops filtradas): "
+                f"La receta gana {mejora_neta:+.4f} USDT extra, pero conviene dejar que el bot acumule "
+                f"~{faltan} operaciones nuevas en vivo para confirmar DSR >= 0.95 sin riesgo de sobre-ajuste."
+            )
+
+        reglas_es = [
+            f"1. [W1 Filtro Compras LONG = +{best['w1_ofi_long']:.2f}]: Exige presion compradora minima de +{best['w1_ofi_long']:.2f} en libro L2 (bloqueo de ordenes Iceberg).",
+            f"2. [W2 Peso Lider BTC = {int(best['w2_btc_beta']*100)}%]: Pondera un {int(best['w2_btc_beta']*100)}% la direccion instantanea de BTC/USDT:USDT antes de entrar.",
+            f"3. [W3 Cobro Maker en Rafaga = +{best['w3_tp_maker_pct']*100:.2f}%]: Cobra +0.24% en mercado normal, pero estira la ganancia Maker hasta +{best['w3_tp_maker_pct']*100:.2f}% si entra flujo fuerte (|OFI| >= 0.40).",
+            f"4. [W4 Salida Estancada y Freno SL = {int(best['w4_unwind_seg'])}s / {best['w4_sl_decay_pct']*100:.2f}%]: Evacua en Maker a los {int(best['w4_unwind_seg'])}s si no despega, y tras 24s sin ganancia recorta el Stop-Loss de -0.48% a {best['w4_sl_decay_pct']*100:.2f}%.",
+            f"5. [W5 Capital Kelly Asimetrico = {int(best['w5_kelly_short']*100)}% Short / {int(best['w5_kelly_long']*100)}% Long]: Asigna {int(best['w5_kelly_short']*100)}% de margen a los tiros SHORT (mas ganadores) y {int(best['w5_kelly_long']*100)}% a los tiros LONG.",
+        ]
+
+        return {
+            "mejora_neta_sobre_bot_actual_usdt": mejora_neta,
+            "ahorro_perdidas_sobre_crudo_usdt": ahorro_vs_crudo,
+            "reglas_traducidas_espanol": reglas_es,
+            "semaforo_decision_ia": semaforo,
+        }
+
     def ejecutar_torneo_evolutivo_lab(self, n_bootstrap: int = 1500) -> Dict[str, Any]:
         t0 = time.perf_counter()
         ops, eventos_baul, conteo_logs = self.ingestar_ecosistema_logs()
         vectores = self._precompilar_vectores_operaciones(ops)
+        n_total_hist = len(vectores)
 
         m_crudo = calcular_metricas_horizonte(ops)
         ret_base, w_base, l_base, sl_base, dd_base = self._evaluar_combinacion_en_vectores(
@@ -1072,9 +1118,11 @@ class LaboratorioGemeloDigitalHFT:
         )
         pnl_base_v2 = round(sum(ret_base), 4)
         wr_base_v2 = (w_base / max(1, w_base + l_base)) * 100.0
-        sw_b = sum(x for x in ret_base if x >= 0.0)
-        sl_b = sum(abs(x) for x in ret_base if x < 0.0)
+        sw_b = round(sum(x for x in ret_base if x >= 0.0), 4)
+        sl_b = round(sum(abs(x) for x in ret_base if x < 0.0), 4)
         pf_base_v2 = round((sw_b / sl_b) if sl_b > 1e-9 else 5.0, 2)
+        bloq_base_v2 = max(0, n_total_hist - (w_base + l_base))
+        ahorro_loss_v2 = round(m_crudo["perdida_bruta_usdt"] - sl_b, 4)
 
         grid_w1 = (0.18, 0.20, 0.22, 0.25)
         grid_w2 = (0.00, 0.15, 0.25, 0.35)
@@ -1112,8 +1160,8 @@ class LaboratorioGemeloDigitalHFT:
                                 if pnl_tot < pnl_base_v2:
                                     continue
 
-                                suma_w = sum(x for x in ret_u if x >= 0.0)
-                                suma_l = sum(abs(x) for x in ret_u if x < 0.0)
+                                suma_w = round(sum(x for x in ret_u if x >= 0.0), 4)
+                                suma_l = round(sum(abs(x) for x in ret_u if x < 0.0), 4)
                                 pf_c = (suma_w / suma_l) if suma_l > 1e-9 else 9.99
                                 wr_c = (w_c / n_tr) * 100.0
 
@@ -1129,7 +1177,10 @@ class LaboratorioGemeloDigitalHFT:
                                         "n_trades": n_tr,
                                         "wins": w_c,
                                         "losses": l_c,
+                                        "bloqueadas": max(0, n_total_hist - n_tr),
                                         "wr_pct": round(wr_c, 2),
+                                        "ganancia_bruta_usdt": suma_w,
+                                        "perdida_teorica_usdt": suma_l,
                                         "pnl_usdt": round(pnl_tot, 4),
                                         "pf": round(pf_c, 2),
                                         "max_dd_usdt": dd_u,
@@ -1194,6 +1245,25 @@ class LaboratorioGemeloDigitalHFT:
             reverse=True,
         )
 
+        metricas_v2_dict = {
+            "n_trades": w_base + l_base,
+            "wins": w_base,
+            "losses": l_base,
+            "bloqueadas": bloq_base_v2,
+            "wr_pct": round(wr_base_v2, 2),
+            "pf": pf_base_v2,
+            "ganancia_bruta_usdt": sw_b,
+            "perdida_teorica_usdt": sl_b,
+            "ahorro_perdidas_usdt": ahorro_loss_v2,
+            "pnl_usdt": pnl_base_v2,
+            "max_dd_usdt": dd_base,
+            "sl_reopen": sl_base,
+        }
+        top5_final = campeones_validados[:5]
+        explicacion_es = self._construir_explicacion_espanol(
+            m_crudo, metricas_v2_dict, top5_final[0] if top5_final else None
+        )
+
         dt_ms = (time.perf_counter() - t0) * 1000.0
         resumen = {
             "timestamp_lab_utc": datetime.now(tz=timezone.utc).isoformat(timespec="seconds"),
@@ -1204,17 +1274,9 @@ class LaboratorioGemeloDigitalHFT:
             "eventos_baul_ia": len(eventos_baul),
             "conteo_logs": conteo_logs,
             "metricas_crudas": m_crudo,
-            "metricas_chronos_v2_actual": {
-                "n_trades": w_base + l_base,
-                "wins": w_base,
-                "losses": l_base,
-                "wr_pct": round(wr_base_v2, 2),
-                "pf": pf_base_v2,
-                "pnl_usdt": pnl_base_v2,
-                "max_dd_usdt": dd_base,
-                "sl_reopen": sl_base,
-            },
-            "top_5_campeones_web2026": campeones_validados[:5],
+            "metricas_chronos_v2_actual": metricas_v2_dict,
+            "top_5_campeones_web2026": top5_final,
+            "traduccion_espanol_campeon_1": explicacion_es,
         }
 
         try:
@@ -1232,54 +1294,75 @@ class LaboratorioGemeloDigitalHFT:
         m_v2 = res["metricas_chronos_v2_actual"]
         logs_c = res["conteo_logs"]
         top5 = res["top_5_campeones_web2026"]
+        exp_es = res.get("traduccion_espanol_campeon_1") or {}
 
-        print("==========================================================================================")
-        print(" [ANTIGRAVITY HFT DIGITAL TWIN LAB] POUFS-BEELZEBUB-EN V3.0 -- MOTOR EVOLUTIVO CPCV + DSR")
-        print("==========================================================================================")
-        print(f" Fuente de Trades : {logs_c['origen_trades']}")
+        n_raw = int(m_raw["n_trades"])
+        w_raw = int(m_raw["wins"])
+        l_raw = int(m_raw["losses"])
+        gb_raw = float(m_raw.get("ganancia_bruta_usdt") or 0.0)
+        pb_raw = float(m_raw.get("perdida_bruta_usdt") or 0.0)
+
+        print("==========================================================================================================")
+        print(" [SIMULADOR GEMELO DIGITAL HFT] POUFS-BEELZEBUB-EN V3.0 -- REPORTE FINANCIERO CLARO EN ESPANOL")
+        print("==========================================================================================================")
+        print(f" Fuente Analizada : {logs_c['origen_trades']}")
         print(
-            f" Telemetria Extra : {res['eventos_baul_ia']} Eventos Baul IA | "
-            f"{logs_c['lineas_log']} Lineas Log ({logs_c['bloqueos_phantom']} Bloqueos Escudo)"
+            f" Datos Auxiliares : {res['eventos_baul_ia']} Eventos en Baul IA (+15s) | "
+            f"{logs_c['lineas_log']} Lineas de Log ({logs_c['bloqueos_phantom']} Bloqueos de Escudo)"
         )
         print(
-            f" Espacio Busqueda : {res['combinaciones_evaluadas']} Combinaciones (W1..W5) + "
-            f"{res['trayectorias_bootstrap']} Universos Block-Bootstrap en {res['tiempo_ejecucion_ms']:.1f} ms"
+            f" Pruebas Corridas : {res['combinaciones_evaluadas']} Combinaciones de Estrategia + "
+            f"{res['trayectorias_bootstrap']} Escenarios de Estres en {res['tiempo_ejecucion_ms']:.1f} ms"
         )
-        print("------------------------------------------------------------------------------------------")
+        print("----------------------------------------------------------------------------------------------------------")
+        print(" BLOQUE 1: COMPARATIVA EN DINERO REAL (CUANTO GANAMOS, CUANTO PERDIMOS Y CUANTAS MALAS SE BLOQUEARON)")
+        print("----------------------------------------------------------------------------------------------------------")
         print(
-            f" 1. Historial Real Crudo (Sin L09..L13)  : {int(m_raw['n_trades']):2d} ops | "
-            f"WR Ef: {m_raw['win_rate_efectivo_pct']:5.1f}% | PF: {m_raw['profit_factor']:4.2f} | "
-            f"PnL: {m_raw['pnl_neto_usdt']:+.4f} USDT"
+            f" 1. HISTORIAL CRUDO (Sin Escudos L09..13) : {n_raw:2d} ops ({w_raw:2d} Ganadas / {l_raw:2d} Perdidas |  0 Bloqueadas) | "
+            f"Ganado: +{gb_raw:.4f} | Perdido: -{pb_raw:.4f} | NETO: {m_raw['pnl_neto_usdt']:+.4f} USDT (PF {m_raw['profit_factor']:.2f})"
         )
         print(
-            f" 2. CHRONOS-TRIZ V2.0 Actual (L00..L13)  : {m_v2['n_trades']:2d} ops | "
-            f"WR Ef: {m_v2['wr_pct']:5.1f}% | PF: {m_v2['pf']:4.2f} | "
-            f"PnL: {m_v2['pnl_usdt']:+.4f} USDT (MaxDD: {m_v2['max_dd_usdt']:.4f})"
+            f" 2. TU BOT ACTUAL EN VIVO (L00..L13)      : {m_v2['n_trades']:2d} ops ({m_v2['wins']:2d} Ganadas / {m_v2['losses']:2d} Perdidas | {m_v2['bloqueadas']:2d} Bloqueadas) | "
+            f"Ganado: +{m_v2['ganancia_bruta_usdt']:.4f} | Perdido: -{m_v2['perdida_teorica_usdt']:.4f} | NETO: {m_v2['pnl_usdt']:+.4f} USDT (PF {m_v2['pf']:.2f})"
         )
-        print("------------------------------------------------------------------------------------------")
-        print(" TOP 5 COMBINACIONES CAMPEONAS (WEB-2026 + CPCV 5-FOLD + DEFLATED SHARPE RATIO >= 0.95):")
-        print("------------------------------------------------------------------------------------------")
-        print(" RK | W1_OFI | W2_BTC | W3_TP_MKR | W4_UNW/SL     | W5_KELLY(S/L) | WR%   | PF   | DSR  | PNL SIM USDT")
-        print("------------------------------------------------------------------------------------------")
-        for idx, c in enumerate(top5, start=1):
-            w4_s = f"{int(c['w4_unwind_seg'])}s/{c['w4_sl_decay_pct']*100:.2f}%"
-            w5_s = f"{int(c['w5_kelly_short']*100)}/{int(c['w5_kelly_long']*100)}%"
-            print(
-                f" #{idx} | +{c['w1_ofi_long']:.2f}  |  {c['w2_btc_beta']:.2f}  |  "
-                f"+{c['w3_tp_maker_pct']*100:.2f}%   | {w4_s:<13} | {w5_s:<13} | "
-                f"{c['wr_pct']:5.1f}% | {c['pf']:4.2f} | {c['dsr']:.2f} | {c['pnl_usdt']:+.4f} USDT"
-            )
-        print("------------------------------------------------------------------------------------------")
+        print(
+            f"    -> Ahorro de Tu Bot Actual: Los 13 escudos bloquearon {m_v2['bloqueadas']} entradas toxicas y te ahorraron +{m_v2['ahorro_perdidas_usdt']:.4f} USDT en perdidas."
+        )
         if top5:
-            best = top5[0]
-            mejora_u = best["pnl_usdt"] - m_v2["pnl_usdt"]
+            b1 = top5[0]
+            ah_b1 = round(pb_raw - b1["perdida_teorica_usdt"], 4)
             print(
-                f" VEREDICTO CAMPEON #1: Mejora neta de {mejora_u:+.4f} USDT sobre V2.0 Actual | "
-                f"Consistencia CPCV: {best['cpcv_consistencia_pct']:.1f}% | "
-                f"Superacion Bootstrap OOS: {best['prob_bootstrap_pct']:.1f}%"
+                f" 3. CAMPEON #1 DESCUBIERTO EN SIMULADOR   : {b1['n_trades']:2d} ops ({b1['wins']:2d} Ganadas / {b1['losses']:2d} Perdidas | {b1['bloqueadas']:2d} Bloqueadas) | "
+                f"Ganado: +{b1['ganancia_bruta_usdt']:.4f} | Perdido: -{b1['perdida_teorica_usdt']:.4f} | NETO: {b1['pnl_usdt']:+.4f} USDT (PF {b1['pf']:.2f})"
             )
-        print(f" Archivo Exportado : {self.ruta_salida_lab.name} (Listo para auditoria IA)")
-        print("==========================================================================================")
+            print(
+                f"    -> Mejora del Campeon #1  : Gana {exp_es.get('mejora_neta_sobre_bot_actual_usdt', 0.0):+.4f} USDT extra sobre el bot actual y ahorra +{ah_b1:.4f} USDT en perdidas."
+            )
+        print("----------------------------------------------------------------------------------------------------------")
+        print(" BLOQUE 2: TOP 5 DE RECETAS CAMPEONAS (DESGLOSE DE GANANCIAS, PERDIDAS TEORICAS Y PARAMETROS)")
+        print("----------------------------------------------------------------------------------------------------------")
+        print(" RK | G/P (BLOQ)   | GANADO(+) | PERDIDO(-)| NETO USDT  | PF    | DSR  | PARAMETROS (OFI | BTC | TP_MKR | UNW/SL | KELLY_S/L)")
+        print("----------------------------------------------------------------------------------------------------------")
+        for idx, c in enumerate(top5, start=1):
+            gp_s = f"{c['wins']}G/{c['losses']}P({c['bloqueadas']}B)"
+            p_str = (
+                f"+{c['w1_ofi_long']:.2f} | {int(c['w2_btc_beta']*100):2d}% | "
+                f"+{c['w3_tp_maker_pct']*100:.2f}% | {int(c['w4_unwind_seg'])}s/{c['w4_sl_decay_pct']*100:.2f}% | "
+                f"{int(c['w5_kelly_short']*100)}/{int(c['w5_kelly_long']*100)}%"
+            )
+            print(
+                f" #{idx} | {gp_s:<12} | +{c['ganancia_bruta_usdt']:7.4f}  | -{c['perdida_teorica_usdt']:7.4f}  | "
+                f"{c['pnl_usdt']:+9.4f}  | {c['pf']:5.2f} | {c['dsr']:.2f} | {p_str}"
+            )
+        print("----------------------------------------------------------------------------------------------------------")
+        print(" BLOQUE 3: QUE APRENDIO EL SIMULADOR (TRADUCCION EN ESPANOL) Y SEMAFORO DE DECISION PARA LA IA")
+        print("----------------------------------------------------------------------------------------------------------")
+        for linea_r in exp_es.get("reglas_traducidas_espanol") or []:
+            print(f"  {linea_r}")
+        print("----------------------------------------------------------------------------------------------------------")
+        print(f" [SEMAFORO IA] {exp_es.get('semaforo_decision_ia', '')}")
+        print(f" [ARCHIVO JSON] Guardado en: {self.ruta_salida_lab} (Pegame esta tabla en el chat para auditar cambios)")
+        print("==========================================================================================================")
 
 
 def main() -> int:
