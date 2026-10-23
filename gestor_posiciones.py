@@ -15,6 +15,8 @@ Guardian de Geometria de Pagos 10/10 (Single-Layer Nativo):
   - P-06: Escalera Convexa Biclase 50/25/25 (God's Accomplice Escalator) liberada:
       * Verificacion real de llenado en cosechas parciales (50% y 25%) antes
         de descontar contratos en CAJA_NEGRA (0 contabilidad fantasma).
+      * Piso Break-Even post-cosecha elevado en produccion a +0.085% interno /
+        +0.060% Bybit para cubrir el 100% de la comision combinada Maker+Taker.
       * Vector de Gradiente #4: Lectura exacta del precio de liquidacion Taker
         en la Guardia Zero-Orphan (fetch_order + cruce L1) y sincronizacion
         inmediata 1:1 con el saldo real de Bybit UTA.
@@ -43,8 +45,8 @@ def calcular_piso_invariante_breakeven(
     """
     Calcula (sl_interno_be, sl_bybit_be).
     En modo test preserva la formula exacta de la prueba [15/18].
-    En produccion otorga un colchon inicial de +0.05% (+0.00050) para evitar
-    cierres prematuros a 1 segundo de la 1ra cosecha (+0.24%) por micro-ruido.
+    En produccion asegura un piso de +0.085% interno (+0.060% Bybit) para
+    cubrir el 100% del fee combinado Maker+Taker (0.075%) en el segundo 50%.
     """
     ep = float(entry_price)
     tick = max(1e-8, float(tick_size or 0.00001))
@@ -55,8 +57,8 @@ def calcular_piso_invariante_breakeven(
         margen_interno_pct = (2.0 * cfg.FEE_MAKER_PCT) + cfg.TRINQUETE_BE_NETO_PCT
         margen_bybit_pct = cfg.TRINQUETE_BE_NETO_PCT
     else:
-        margen_interno_pct = 0.00050
-        margen_bybit_pct = 0.00040
+        margen_interno_pct = 0.00085
+        margen_bybit_pct = 0.00060
 
     if str(side).lower() == "short":
         sl_int = round(ep * (1.0 - margen_interno_pct), decimales)

@@ -8,7 +8,8 @@ SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 -- ESTRATEGIA CHRONOS-TRIZ
 Motor de Ejecucion Francotirador Zero-REST (Single-Layer Nativo):
   - Deduccion atomica de margen en RAM (Single-Slot Mutex) con liberacion
     garantizada ante cualquier cancelacion o excepcion asincrona.
-  - Segundo cerrojo fisico Pre-Orden P-02 (Hurst <= HURST_MAX_ENTRADA).
+  - Segundo cerrojo fisico Pre-Orden P-02 acoplado a la Banda Elastica de
+    Hurst (hurst_max_elastico / HURST_MAX_ENTRADA) sin truncar H real.
   - Cotizacion Penny-Jump con bandera estricta PostOnly (Maker 0.020%).
   - Ley de Cola de Moallemi-Yuan (TTL = 3.80s en prod / 2.20s en test) y
     abolicion fisica total del Re-Quote perseguidor (PERMITIR_REQUOTE = False).
@@ -151,7 +152,10 @@ class EjecutorSniper:
         es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
         if not es_test:
             h_s = float(senal.get("hurst", 0.45) or 0.45)
-            h_max = float(getattr(cfg, "HURST_MAX_ENTRADA", 0.485))
+            h_max = float(
+                senal.get("hurst_max_elastico")
+                or getattr(cfg, "HURST_MAX_ENTRADA", 0.485)
+            )
             if h_s > h_max:
                 log_sniper(
                     f"[EJECUTOR P-02 VETO] {senal.get('symbol')} abortado en puerta de orden (H={h_s:.3f} > {h_max:.3f})."

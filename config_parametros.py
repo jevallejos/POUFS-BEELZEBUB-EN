@@ -270,6 +270,7 @@ def _aplicar_parametros_produccion_phantom() -> None:
     """
     Aplica en una unica capa nativa los parametros calibrados de produccion
     cuando TRIBRAIN_TEST_MODE != '1', preservando intactas las 18/18 pruebas.
+    Incluye SCAR-LOCK-10: Piso positivo de absorcion de Hawkes (I_Hawkes >= +0.05).
     """
     if os.environ.get("TRIBRAIN_TEST_MODE", "0") == "1":
         return
@@ -288,7 +289,7 @@ def _aplicar_parametros_produccion_phantom() -> None:
     g["HURST_MAX_ENTRADA"] = 0.485
     g["LYAPUNOV_ACEL_MIN_PCT"] = -0.00022
     g["HAWKES_ABSORCION_MIN_SEG"] = 0.25
-    g["HAWKES_INTENSIDAD_MIN"] = -0.25
+    g["HAWKES_INTENSIDAD_MIN"] = 0.05
     g["SHORT_PUMP_SOBREEXTENSION_PCT"] = 0.0042
     g["SHORT_REBOTE_DEBIL_MIN_EMA_PCT"] = 0.0032
     g["SHORT_OFI_AGOTAMIENTO_MAX"] = -0.35

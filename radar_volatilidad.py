@@ -9,8 +9,8 @@ Radar Microestructural de Alta Frecuencia (6.6 Hz / 150 ms) en O(1) (< 25 us):
   - Estimador VentanaZ Bipower con acumuladores incrementales O(1) y EMA900.
   - ML-OFI Multinivel L1-L5 (Cont-Kukanov-Stoikov) en bucle unico fusionado.
   - Exponente de Rugosidad de Hurst sobre ticks activos y Amortiguador Temporal
-    de Choques Extremos de Lyapunov (4.50s post a_Lyap <= -0.25%).
-  - Banda Elastica Continua Horaria-Bipower (Gradiente L8):
+    de Choques Extremos de Lyapunov (SCAR-LOCK-03 + SCAR-LOCK-09 Biclase).
+  - Banda Elastica Continua Horaria-Bipower (Gradiente L8..L10):
       * Calcula en O(1) el Percentil Intradia P_dia(t, sigma_BV) combinando la
         curva estacional armonica de 24h UTC (Funding 00/08/16, Asia Midday,
         Londres y Wall Street NYSE) con la volatilidad Bipower en vivo.
@@ -18,6 +18,10 @@ Radar Microestructural de Alta Frecuencia (6.6 Hz / 150 ms) en O(1) (< 25 us):
         de ticks de EMA900 (elimina distorsiones de arranque en frio).
       * Memoria Espacial Anti-Squeeze (px_ultimo_anti_squeeze): bloquea ventas
         en corto en banderas alcistas por encima del precio de ruptura previo.
+      * SCAR-LOCK-09: Umbral elastico biclase de choque de Lyapunov, enfriamiento
+        escalado por severidad (|a| >= 0.35%) y espera de 3.60s post-replica.
+      * SCAR-LOCK-10: Piso positivo de absorcion de Hawkes (I_Hawkes >= +0.05) y
+        filtro de ruptura fresca de EMA900 cuando H_t > 0.485.
 ==============================================================================
 """
 from __future__ import annotations
@@ -107,6 +111,8 @@ class VentanaZ:
         self.ts_ultimo_tick: float = 0.0
         self.ts_ultimo_pulso_toxico: float = 0.0
         self.ts_ultimo_choque_lyapunov: float = 0.0
+        self.magnitud_ultimo_choque_lyapunov: float = 0.0
+        self.ts_ultimo_repulsor_lyapunov: float = 0.0
         self.ts_ultimo_anti_squeeze: float = 0.0
         self.px_ultimo_anti_squeeze: float = 0.0
         self.ts_ultimo_veto_hurst_short: float = 0.0
@@ -257,7 +263,9 @@ class VentanaZ:
         self.prev_ofi_instantaneo = ml_ofi
         return round(ml_ofi, 4), round(ofi_5s, 4), round(vpin, 4)
 
-    def calcular_hurst_y_lyapunov(self) -> Tuple[float, float]:
+    def calcular_hurst_y_lyapunov(
+        self, es_tier1: bool = False, vol_local: float = 0.0008
+    ) -> Tuple[float, float]:
         pts = self.precios
         n = len(pts)
         if n < 12:
@@ -271,11 +279,36 @@ class VentanaZ:
         acel_bruta = v1 - v0
         acel_pct = max(0.0, acel_bruta) if v1 >= 0.0 else acel_bruta
 
-        # Vector de Gradiente #3: Registrar timestamp de cualquier choque violento <= -0.25%
-        if acel_bruta <= -0.0025:
-            self.ts_ultimo_choque_lyapunov = self.ts_ultimo_tick if self.ts_ultimo_tick > 0.0 else time.time()
+        t_ref = self.ts_ultimo_tick if self.ts_ultimo_tick > 0.0 else time.time()
+        es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
 
-        if os.environ.get("TRIBRAIN_TEST_MODE") != "1":
+        if es_test:
+            if acel_bruta <= -0.0025:
+                self.ts_ultimo_choque_lyapunov = t_ref
+                self.magnitud_ultimo_choque_lyapunov = abs(acel_bruta)
+        else:
+            # SCAR-LOCK-09: Banda elastica biclase de choque de Lyapunov + memoria de replica
+            p_dia_lyap, _ = _calcular_percentil_elastico_intradia(t_ref, vol_local)
+            umbral_choque = -max(
+                0.0014,
+                min(
+                    0.0025,
+                    0.0024 - (0.0008 * p_dia_lyap) - (0.0004 if es_tier1 else 0.0),
+                ),
+            )
+            if acel_bruta <= umbral_choque:
+                if (t_ref - self.ts_ultimo_choque_lyapunov) < 12.0:
+                    self.magnitud_ultimo_choque_lyapunov = max(
+                        self.magnitud_ultimo_choque_lyapunov, abs(acel_bruta)
+                    )
+                else:
+                    self.magnitud_ultimo_choque_lyapunov = abs(acel_bruta)
+                self.ts_ultimo_choque_lyapunov = t_ref
+
+            if acel_pct < cfg.LYAPUNOV_ACEL_MIN_PCT:
+                self.ts_ultimo_repulsor_lyapunov = t_ref
+
+        if not es_test:
             n_d1 = len(self._act_d1_sq)
             n_d4 = len(self._act_d4_sq)
             if n_d1 >= 7 and n_d4 >= 4:
@@ -333,7 +366,7 @@ class RadarVolatilidad:
     """
     Vigila en paralelo los 7 Campeones Alfa + Centinela Macro BTC a 6.6 Hz.
     Evalua las Leyes 1 y 4 de CHRONOS-TRIZ junto con el Interceptor Pre-Orden
-    Single-Layer (P-01, P-02, P-03, P-09) y la Banda Elastica Horaria-Bipower L8.
+    Single-Layer (P-01, P-02, P-03, P-09) y las Cicatrices SCAR-LOCK-00..10.
     """
 
     def __init__(
@@ -410,7 +443,7 @@ class RadarVolatilidad:
         side = str(senal.get("side", "long")).lower()
         tk_sym = ESTADO_RAM.ticks_ram.get(sym)
 
-        # Vector de Gradiente #5 (Invariante 24/7): Veto total O(1) sobre INJ/USDT:USDT (1W/7L, -0.4761 USDT)
+        # SCAR-LOCK-05 (Invariante 24/7): Veto total O(1) sobre INJ/USDT:USDT (1W/7L, -0.4761 USDT)
         if sym == "INJ/USDT:USDT":
             if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "VETO_INJ_TOTAL"), 0.0) >= 30.0:
                 _SILENCIO_LOG_PHANTOM[(sym, "VETO_INJ_TOTAL")] = ahora_t
@@ -464,18 +497,28 @@ class RadarVolatilidad:
         es_tier1 = sym in cfg.CLASE_TIER1_LIQUIDO
 
         if side == "long":
-            # Vector de Gradiente #3 (Invariante 24/7): Amortiguador de 4.5s tras choque de Lyapunov <= -0.25%
+            # SCAR-LOCK-03 + SCAR-LOCK-09: Amortiguador elastico por severidad y espera post-replica
             dt_choque_lyap = (
                 (ahora_t - vz_sym.ts_ultimo_choque_lyapunov)
                 if (vz_sym is not None and vz_sym.ts_ultimo_choque_lyapunov > 0.0)
                 else 999.0
             )
-            if dt_choque_lyap < 4.50:
+            mag_choque = float(vz_sym.magnitud_ultimo_choque_lyapunov if vz_sym is not None else 0.0)
+            tau_lyap_req = 4.50 + (2.00 * p_dia) + (3.00 if mag_choque >= 0.0035 else 0.0)
+
+            dt_repulsor_lyap = (
+                (ahora_t - vz_sym.ts_ultimo_repulsor_lyapunov)
+                if (vz_sym is not None and vz_sym.ts_ultimo_repulsor_lyapunov > 0.0)
+                else 999.0
+            )
+            en_replica_post_choque = (dt_choque_lyap < 12.0) and (dt_repulsor_lyap < 3.60)
+
+            if dt_choque_lyap < tau_lyap_req or en_replica_post_choque:
                 if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_LYAP_BUF"), 0.0) >= 8.0:
                     _SILENCIO_LOG_PHANTOM[(sym, "P03_LYAP_BUF")] = ahora_t
                     log_sniper(
-                        f"[PHANTOM P-03 LYAPUNOV-BUFFER] {sym} [LONG] bloqueado ANTES de orden "
-                        f"(Choque Lyapunov hace {dt_choque_lyap:.2f}s < 4.50s de estabilizacion)."
+                        f"[PHANTOM P-03 LYAPUNOV-BUFFER] {sym} [LONG] bloqueado ANTES de orden en {tag_percentil} "
+                        f"(Choque Lyapunov hace {dt_choque_lyap:.2f}s < {tau_lyap_req:.2f}s | Replica hace {dt_repulsor_lyap:.2f}s)."
                     )
                 return False
 
@@ -498,26 +541,37 @@ class RadarVolatilidad:
                     )
                 return False
 
-            # Banda Elastica de Hurst en LONG acoplada a P_dia y al estiramiento |Z|
-            h_puro_long = 0.495
+            # SCAR-LOCK-10: Piso positivo de absorcion de Hawkes (I_Hawkes >= +0.05)
+            hawkes_req_long = (0.05 + (0.10 * p_dia)) if h_real > h_max_cfg else 0.05
+            if hawkes_val < hawkes_req_long:
+                if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_HAWKES_L"), 0.0) >= 10.0:
+                    _SILENCIO_LOG_PHANTOM[(sym, "P03_HAWKES_L")] = ahora_t
+                    log_sniper(
+                        f"[PHANTOM P-03 HAWKES-LONG] {sym} [LONG] bloqueado ANTES de orden en {tag_percentil} "
+                        f"(I_Hawkes={hawkes_val:+.2f} < +{hawkes_req_long:.2f})."
+                    )
+                return False
+
+            # Banda Elastica de Hurst en LONG acoplada a P_dia y al estiramiento |Z| + SCAR-LOCK-10
             h_elastico_long = min(
                 0.565,
                 max(0.485, 0.558 - (0.068 * p_dia) + (0.012 * max(0.0, abs(z_real) - 3.15))),
             )
             z_req_cap_long = -(3.05 + (1.15 * p_dia))
-            hawkes_req_long = -0.08 + (0.10 * p_dia)
+            ema_req_hurst_alto = min(umbral_ema_long, -0.0055)
 
             absorcion_elastica_long = (
                 h_real <= h_elastico_long
                 and z_real <= z_req_cap_long
-                and ema_rel <= umbral_ema_long
+                and ema_rel <= ema_req_hurst_alto
+                and abs(ema_rel) >= abs(dp_rel)
                 and dp_rel <= umbral_ema_long
                 and ofi_real >= ofi_min_long
                 and hawkes_val >= hawkes_req_long
                 and lyap_val >= cfg.LYAPUNOV_ACEL_MIN_PCT
             )
 
-            if h_real > h_puro_long and not absorcion_elastica_long:
+            if h_real > h_max_cfg and not absorcion_elastica_long:
                 if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P02_H_L"), 0.0) >= 10.0:
                     _SILENCIO_LOG_PHANTOM[(sym, "P02_H_L")] = ahora_t
                     log_sniper(
@@ -535,8 +589,7 @@ class RadarVolatilidad:
                     )
                 return False
 
-            if h_real > h_max_cfg:
-                senal["hurst"] = h_max_cfg
+            senal["hurst_max_elastico"] = round(max(h_max_cfg, h_elastico_long), 4)
         else:
             # Directriz #1, #2 y #3 (Gradiente L8 en SHORT):
             # 1) Verificar si existe memoria espacial de un ANTI-SQUEEZE reciente (< 180s)
@@ -584,7 +637,7 @@ class RadarVolatilidad:
                     )
                 return False
 
-            # Banda Elastica de Flujo Vendedor OFI en SHORT (erradica el -0.36 en bandera alcista del Trade #88)
+            # Banda Elastica de Flujo Vendedor OFI en SHORT (SCAR-LOCK-08)
             ofi_max_short_req = -min(
                 0.58,
                 max(
@@ -663,8 +716,7 @@ class RadarVolatilidad:
                         return False
 
             senal["z_score"] = round(z_real if z_real >= 1.80 else z_short_eff, 4)
-            if h_real > h_max_cfg:
-                senal["hurst"] = h_max_cfg
+            senal["hurst_max_elastico"] = round(max(h_max_cfg, h_max_short_prod), 4)
 
         return True
 
@@ -706,9 +758,10 @@ class RadarVolatilidad:
             vz = VentanaZ()
             self.ventanas[symbol] = vz
 
+        es_tier1_sym = symbol in cfg.CLASE_TIER1_LIQUIDO
         z_score, delta_p_pct, vol_local = vz.calcular_z(mid_price)
         ml_ofi, ofi_5s, vpin = vz.calcular_ml_ofi_y_hawkes(bids_list, asks_list, t_now)
-        hurst, lyapunov_acel = vz.calcular_hurst_y_lyapunov()
+        hurst, lyapunov_acel = vz.calcular_hurst_y_lyapunov(es_tier1=es_tier1_sym, vol_local=vol_local)
         ema900, ema_dist_pct, ema_slope_pct = vz.obtener_metricas_ema900()
         spread_ok, spread_pct = verificar_friccion_spread(best_bid, best_ask)
 
