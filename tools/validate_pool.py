@@ -2,16 +2,16 @@
 # -*- coding: utf-8 -*-
 """
 ==============================================================================
-HERRAMIENTA DE AUDITORIA Y SANITIZACION ESTATICA: tools/validate_pool.py
-SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 -- COMPUERTA 0
+STATIC AUDIT AND SANITIZATION TOOL: tools/validate_pool.py
+SYSTEM: POUFS-BEELZEBUB-EN (SPIRITUAL MESSAGE) V5.0 -- GATE 0
 ==============================================================================
-Audita y sanitiza deterministicamente todos los archivos del repositorio:
-  a) Codificacion estricta UTF-8 sin BOM (Byte Order Mark \xef\xbb\xbf).
-  b) Saltos de linea exclusivos Unix (LF \n), corrigiendo o rechazando CRLF.
-  c) Ausencia total de iconos, emojis, espacios invisibles (\u00A0, \u200B),
-     comillas curvas tipograficas o secuencias Mojibake corruptas.
-  d) Validacion de sintaxis y compilacion estatica AST para Python (incluyendo
-     el contrato de 100 constantes unicas en config_parametros.py).
+Deterministically audits and sanitizes all repository files:
+  a) Strict UTF-8 encoding without BOM (Byte Order Mark \xef\xbb\xbf).
+  b) Exclusive Unix line endings (LF \n), fixing or rejecting CRLF.
+  c) Total absence of unescaped icons, emojis, invisible spaces (\u00A0, \u200B),
+     typographic smart quotes, or corrupted Mojibake sequences.
+  d) Static AST syntax validation and compilation for Python modules (including
+     the 100 unique top-level constants contract in config_parametros.py).
 ==============================================================================
 """
 from __future__ import annotations
@@ -100,126 +100,132 @@ def _es_caracter_permitido(ch: str) -> bool:
 
 
 def sanitizar_texto(texto: str) -> Tuple[str, List[str]]:
-    correcciones: List[str] = []
+    fixes: List[str] = []
     if "\r\n" in texto or "\r" in texto:
         texto = texto.replace("\r\n", "\n").replace("\r", "\n")
-        correcciones.append("CRLF->LF")
+        fixes.append("CRLF->LF")
 
-    for sucio, limpio in MAPA_REEMPLAZO_LIMPIO.items():
-        if sucio in texto:
-            texto = texto.replace(sucio, limpio)
-            correcciones.append("TOKEN_CORRUPTO_REEMPLAZADO")
+    for dirty, clean in MAPA_REEMPLAZO_LIMPIO.items():
+        if dirty in texto:
+            texto = texto.replace(dirty, clean)
+            fixes.append("CORRUPTED_TOKEN_REPLACED")
 
     chars_out: List[str] = []
-    removidos = 0
+    removed = 0
     for ch in texto:
         if _es_caracter_permitido(ch):
             chars_out.append(ch)
         else:
-            removidos += 1
+            removed += 1
 
-    if removidos > 0:
-        correcciones.append(f"EMOJI_O_ICONO_REMOVIDO({removidos})")
+    if removed > 0:
+        fixes.append(f"EMOJI_OR_ICON_REMOVED({removed})")
 
-    texto_final = "".join(chars_out)
-    return texto_final, correcciones
+    final_text = "".join(chars_out)
+    return final_text, fixes
 
 
 def validar_archivo(ruta: pathlib.Path, modo_sanitize: bool) -> Tuple[bool, List[str]]:
-    mensajes: List[str] = []
+    messages: List[str] = []
     if not ruta.exists():
-        return False, ["ARCHIVO_NO_EXISTE"]
+        return False, ["FILE_NOT_FOUND"]
 
     raw = ruta.read_bytes()
-    tenia_bom = raw.startswith(b"\xef\xbb\xbf")
-    if tenia_bom:
+    had_bom = raw.startswith(b"\xef\xbb\xbf")
+    if had_bom:
         raw = raw[3:]
-        mensajes.append("BOM_DETECTADO")
+        messages.append("BOM_DETECTED")
 
     try:
-        texto = raw.decode("utf-8")
+        text = raw.decode("utf-8")
     except UnicodeDecodeError as exc:
         if not modo_sanitize:
-            return False, [f"UTF8_INVALIDO: {exc}"]
-        texto = raw.decode("utf-8", errors="ignore")
-        mensajes.append("UTF8_REPARADO")
+            return False, [f"INVALID_UTF8: {exc}"]
+        text = raw.decode("utf-8", errors="ignore")
+        messages.append("UTF8_REPAIRED")
 
-    texto_limpio, cambios = sanitizar_texto(texto)
-    mensajes.extend(cambios)
+    clean_text, changes = sanitizar_texto(text)
+    messages.extend(changes)
 
-    if modo_sanitize and (tenia_bom or cambios):
-        ruta.write_bytes(texto_limpio.encode("utf-8"))
-        mensajes = [f"SANITIZADO({','.join(mensajes)})"]
-    elif not modo_sanitize and (tenia_bom or cambios):
-        return False, mensajes
+    if modo_sanitize and (had_bom or changes):
+        ruta.write_bytes(clean_text.encode("utf-8"))
+        messages = [f"SANITIZED({','.join(messages)})"]
+    elif not modo_sanitize and (had_bom or changes):
+        return False, messages
 
     if ruta.suffix == ".py":
         try:
-            tree = ast.parse(texto_limpio, filename=ruta.name)
+            tree = ast.parse(clean_text, filename=ruta.name)
             compile(tree, filename=ruta.name, mode="exec")
         except SyntaxError as exc:
-            return False, [f"AST_SYNTAX_ERROR(linea {exc.lineno}: {exc.msg})"]
+            return False, [f"AST_SYNTAX_ERROR(line {exc.lineno}: {exc.msg})"]
 
         if ruta.name == "config_parametros.py":
-            asignaciones = [
+            assignments = [
                 (n.targets[0].id if isinstance(n, ast.Assign) else n.target.id)
                 for n in tree.body
                 if (isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name) and n.targets[0].id.isupper())
                 or (isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name) and n.target.id.isupper())
             ]
-            duplicadas = [k for k in set(asignaciones) if asignaciones.count(k) > 1]
-            if duplicadas:
-                return False, [f"CONSTANTES_DUPLICADAS({duplicadas})"]
-            if len(asignaciones) != 100:
-                return False, [f"CONTRATO_AST_100_VIOLADO(encontradas={len(asignaciones)})"]
-            mensajes.append("AST_100_CONSTANTES_OK")
+            duplicates = [k for k in set(assignments) if assignments.count(k) > 1]
+            if duplicates:
+                return False, [f"DUPLICATE_CONSTANTS({duplicates})"]
+            if len(assignments) != 100:
+                return False, [f"AST_100_CONTRACT_VIOLATED(found={len(assignments)})"]
+            messages.append("AST_100_CONSTANTES_OK")
         else:
-            mensajes.append("AST_OK")
+            messages.append("AST_OK")
 
     elif ruta.suffix == ".json":
         try:
-            json.loads(texto_limpio)
-            mensajes.append("JSON_OK")
+            json.loads(clean_text)
+            messages.append("JSON_OK")
         except Exception as exc:
-            return False, [f"JSON_INVALIDO({exc})"]
+            return False, [f"INVALID_JSON({exc})"]
 
     elif ruta.suffix == ".sh":
-        if "\r" in texto_limpio:
-            return False, ["SH_CONTIENE_CR"]
-        mensajes.append("SH_LF_OK")
+        if "\r" in clean_text:
+            return False, ["SH_CONTAINS_CR"]
+        messages.append("SH_LF_OK")
 
-    return True, mensajes or ["LIMPIO_UTF8_LF"]
+    return True, messages or ["CLEAN_UTF8_LF"]
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validador y Sanitizador del Pool TRI-BRAIN-PHANTOM V1.0")
-    parser.add_argument("--sanitize", action="store_true", help="Sanitiza automaticamente BOM, CRLF, emojis y caracteres corruptos.")
+    parser = argparse.ArgumentParser(
+        description="Gate 0 Pool Validator & Sanitizer for POUFS-BEELZEBUB-EN (Spiritual Message) V5.0"
+    )
+    parser.add_argument(
+        "--sanitize",
+        action="store_true",
+        help="Automatically sanitize BOM, CRLF, unescaped emojis, and corrupted tokens.",
+    )
     args = parser.parse_args()
 
     print("==========================================================================================")
-    print(" [COMPUERTA 0] AUDITORIA ESTATICA DE INTEGRIDAD UTF-8 / LF / AST -- TRI-BRAIN-PHANTOM V1.0")
+    print(" [GATE 0] STATIC UTF-8 / LF / AST INTEGRITY AUDIT -- POUFS-BEELZEBUB-EN V5.0")
     print("==========================================================================================")
 
-    errores_totales = 0
-    objetivos = list(ARCHIVOS_CANONICOS)
-    if (ROOT_DIR / "calibracion_oos.json").exists() and "calibracion_oos.json" not in objetivos:
-        objetivos.append("calibracion_oos.json")
+    total_errors = 0
+    targets = list(ARCHIVOS_CANONICOS)
+    if (ROOT_DIR / "calibracion_oos.json").exists() and "calibracion_oos.json" not in targets:
+        targets.append("calibracion_oos.json")
 
-    for rel_path in objetivos:
-        ruta_f = ROOT_DIR / rel_path
-        ok, detalles = validar_archivo(ruta_f, modo_sanitize=bool(args.sanitize))
-        estado_str = "[OK]" if ok else "[ERROR]"
+    for rel_path in targets:
+        file_path = ROOT_DIR / rel_path
+        ok, details = validar_archivo(file_path, modo_sanitize=bool(args.sanitize))
+        status_str = "[OK]" if ok else "[ERROR]"
         if not ok:
-            errores_totales += 1
-        print(f" {estado_str:<8} {rel_path:<32} -> {', '.join(detalles)}")
+            total_errors += 1
+        print(f" {status_str:<8} {rel_path:<32} -> {', '.join(details)}")
 
     print("==========================================================================================")
-    if errores_totales == 0:
-        print(" RESULTADO FINAL: 0 ERRORES DETECTADOS | POOL 100% CERTIFICADO (UTF-8 SIN BOM / LF / AST)")
+    if total_errors == 0:
+        print(" FINAL RESULT: 0 ERRORS DETECTED | POOL 100% CERTIFIED (UTF-8 NO BOM / LF / AST)")
         print("==========================================================================================")
         return 0
 
-    print(f" RESULTADO FINAL: {errores_totales} ARCHIVO(S) CON ERRORES DE VALIDACION")
+    print(f" FINAL RESULT: {total_errors} FILE(S) WITH VALIDATION ERRORS")
     print("==========================================================================================")
     return 1
 

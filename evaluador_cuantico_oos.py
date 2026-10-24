@@ -2,14 +2,14 @@
 # -*- coding: utf-8 -*-
 """
 ==============================================================================
-ARCHIVO #12: evaluador_cuantico_oos.py
-SISTEMA: POUFS-BEELZEBUB-EN (SPIRITUAL MESSAGE) V3.0 -- ESTRATEGIA CHRONOS-TRIZ
+FILE #12: evaluador_cuantico_oos.py
+SYSTEM: POUFS-BEELZEBUB-EN (SPIRITUAL MESSAGE) V5.0 -- CHRONOS-TRIZ STRATEGY
 ==============================================================================
-Motor Cuantico de Calibracion Walk-Forward Out-of-Sample (8h / 24h / 72h)
-con Contraccion Bayesiana de James-Stein (lambda_Bayes = min(1.0, N / 40)) y
-Laboratorio Gemelo Digital HFT (--lab) de 3.456 Combinaciones con Reporte
-Financiero Explicativo en Espanol Claro (Ganancias Brutas, Perdidas Teoricas,
-Operaciones Bloqueadas, CPCV, Block-Bootstrap, DSR y Semaforo de Decision IA).
+Quantum Walk-Forward Out-of-Sample Calibration Engine (8h / 24h / 72h)
+with James-Stein Bayesian Shrinkage (lambda_Bayes = min(1.0, N / 40)) and
+3,456-Combination HFT Digital Twin Laboratory (--lab) featuring a Clear
+Financial Report in English (Gross Profits, Theoretical Losses, Blocked
+Trades, CPCV, Block-Bootstrap, DSR, and AI Decision Traffic Light).
 ==============================================================================
 """
 from __future__ import annotations
@@ -39,7 +39,7 @@ def _dist_circular_horas_oos(h1: float, h2: float) -> float:
 
 
 def calcular_percentil_intradia_oos(epoch_ts: float, vol_bv: float = 0.00065) -> Tuple[float, str]:
-    """Calcula el Percentil Continuo del Dia P_dia(t, sigma_BV) para una marca epoch UTC."""
+    """Computes the Continuous Intraday Percentile P_day(t, sigma_BV) for a UTC epoch timestamp."""
     h_utc = ((float(epoch_ts) % 86400.0) / 3600.0)
     g_00 = 0.78 * math.exp(-0.5 * ((_dist_circular_horas_oos(h_utc, 0.00) / 0.85) ** 2))
     g_05 = 0.58 * math.exp(-0.5 * ((_dist_circular_horas_oos(h_utc, 4.85) / 0.95) ** 2))
@@ -47,11 +47,11 @@ def calcular_percentil_intradia_oos(epoch_ts: float, vol_bv: float = 0.00065) ->
     g_13 = 0.98 * math.exp(-0.5 * ((_dist_circular_horas_oos(h_utc, 13.75) / 1.65) ** 2))
     g_16 = 0.88 * math.exp(-0.5 * ((_dist_circular_horas_oos(h_utc, 16.00) / 1.15) ** 2))
 
-    curva_horaria = min(0.99, 0.14 + max(g_00, g_05, g_08, g_13, g_16))
+    hourly_curve = min(0.99, 0.14 + max(g_00, g_05, g_08, g_13, g_16))
     vol_norm = max(0.0, min(1.0, math.tanh((float(vol_bv) - 0.00055) / 0.00110)))
-    p_dia = max(0.05, min(0.99, (0.60 * curva_horaria) + (0.40 * vol_norm)))
-    pct_int = int(round(p_dia * 100.0))
-    return round(p_dia, 4), f"P{pct_int:02d}_ELASTICO"
+    p_day = max(0.05, min(0.99, (0.60 * hourly_curve) + (0.40 * vol_norm)))
+    pct_int = int(round(p_day * 100.0))
+    return round(p_day, 4), f"P{pct_int:02d}_ELASTICO"
 
 
 def _parsear_ts_iso(ts_str: str) -> float:
@@ -64,12 +64,13 @@ def _parsear_ts_iso(ts_str: str) -> float:
 
 
 def cargar_operaciones_jsonl(ruta_stats: pathlib.Path) -> List[Dict[str, Any]]:
+    """Loads closed trade records from the JSONL ledger, ignoring boot orphan liquidations."""
     if not ruta_stats.exists():
         return []
     ops: List[Dict[str, Any]] = []
     try:
-        for linea in ruta_stats.read_text(encoding="utf-8-sig", errors="ignore").splitlines():
-            s = linea.strip()
+        for line in ruta_stats.read_text(encoding="utf-8-sig", errors="ignore").splitlines():
+            s = line.strip()
             if not s:
                 continue
             try:
@@ -89,19 +90,21 @@ def filtrar_operaciones_por_horizonte(
     horas: float,
     ahora_ts: Optional[float] = None,
 ) -> List[Dict[str, Any]]:
+    """Filters closed trades within the lookback horizon in hours."""
     if not operaciones:
         return []
     t_ref = float(ahora_ts) if ahora_ts is not None else time.time()
-    corte = t_ref - (float(horas) * 3600.0)
-    filtradas: List[Dict[str, Any]] = []
+    cutoff = t_ref - (float(horas) * 3600.0)
+    filtered: List[Dict[str, Any]] = []
     for op in operaciones:
         ts_op = _parsear_ts_iso(str(op.get("timestamp") or ""))
-        if ts_op <= 0.0 or ts_op >= corte:
-            filtradas.append(op)
-    return filtradas if filtradas else list(operaciones)
+        if ts_op <= 0.0 or ts_op >= cutoff:
+            filtered.append(op)
+    return filtered if filtered else list(operaciones)
 
 
 def calcular_metricas_horizonte(operaciones: List[Dict[str, Any]]) -> Dict[str, float]:
+    """Computes full statistical and financial metrics for a given trade sample."""
     n_total = len(operaciones)
     if n_total == 0:
         return {
@@ -128,18 +131,18 @@ def calcular_metricas_horizonte(operaciones: List[Dict[str, Any]]) -> Dict[str, 
     wins = 0
     losses = 0
     scratches = 0
-    cosechas = 0
-    suma_win = 0.0
-    suma_loss = 0.0
-    suma_fees = 0.0
-    suma_lvr = 0.0
-    ahorro_scratch = 0.0
+    harvests = 0
+    sum_win = 0.0
+    sum_loss = 0.0
+    sum_fees = 0.0
+    sum_lvr = 0.0
+    scratch_savings = 0.0
     equity = cfg.CAPITAL_BASE_USDT
     peak = equity
     max_dd_pct = 0.0
-    retornos: List[float] = []
+    returns: List[float] = []
     sl_ref_pct = abs(float(getattr(cfg, "SL_INTERNO_PCT", 0.0048)))
-    fee_comb_sl = sl_ref_pct + cfg.FEE_MAKER_PCT + cfg.FEE_TAKER_PCT
+    combined_sl_fee = sl_ref_pct + cfg.FEE_MAKER_PCT + cfg.FEE_TAKER_PCT
 
     for op in operaciones:
         pnl_u = float(op.get("pnl_usdt") or 0.0)
@@ -151,9 +154,9 @@ def calcular_metricas_horizonte(operaciones: List[Dict[str, Any]]) -> Dict[str, 
             or (float(op.get("qty") or 0.0) * float(op.get("entry_price") or 0.0))
             or 16.0
         )
-        suma_fees += fees_u
-        suma_lvr += lvr_u
-        retornos.append(pnl_u)
+        sum_fees += fees_u
+        sum_lvr += lvr_u
+        returns.append(pnl_u)
 
         if (
             op.get("cosecha_triz_50")
@@ -161,18 +164,18 @@ def calcular_metricas_horizonte(operaciones: List[Dict[str, Any]]) -> Dict[str, 
             or "TRINQUETE" in mot
             or "TRAILING" in mot
         ):
-            cosechas += 1
+            harvests += 1
 
         if pnl_u >= 0.0:
             wins += 1
-            suma_win += pnl_u
+            sum_win += pnl_u
         else:
             losses += 1
-            suma_loss += abs(pnl_u)
+            sum_loss += abs(pnl_u)
             if "SCRATCH" in mot:
                 scratches += 1
-                peor_sl_est = map_u * fee_comb_sl
-                ahorro_scratch += max(0.0, peor_sl_est - abs(pnl_u))
+                worst_sl_est = map_u * combined_sl_fee
+                scratch_savings += max(0.0, worst_sl_est - abs(pnl_u))
 
         equity += pnl_u
         if equity > peak:
@@ -182,45 +185,45 @@ def calcular_metricas_horizonte(operaciones: List[Dict[str, Any]]) -> Dict[str, 
             if dd > max_dd_pct:
                 max_dd_pct = dd
 
-    n_efectivo = max(1, n_total - scratches)
-    wr_clasico_pct = (wins / n_total) * 100.0
-    wr_efectivo_pct = (wins / n_efectivo) * 100.0
-    pf = (suma_win / suma_loss) if suma_loss > 1e-9 else (2.50 if suma_win > 0.0 else 1.00)
-    pnl_neto = suma_win - suma_loss
-    esperanza = pnl_neto / n_total
+    n_effective = max(1, n_total - scratches)
+    classic_wr_pct = (wins / n_total) * 100.0
+    effective_wr_pct = (wins / n_effective) * 100.0
+    pf = (sum_win / sum_loss) if sum_loss > 1e-9 else (2.50 if sum_win > 0.0 else 1.00)
+    net_pnl = sum_win - sum_loss
+    expectancy = net_pnl / n_total
 
-    media_r = pnl_neto / n_total
-    var_r = sum((r - media_r) ** 2 for r in retornos) / max(1, n_total - 1)
+    mean_r = net_pnl / n_total
+    var_r = sum((r - mean_r) ** 2 for r in returns) / max(1, n_total - 1)
     std_r = math.sqrt(var_r) if var_r > 1e-12 else 1e-6
-    sharpe = (media_r / std_r) * math.sqrt(n_total) if n_total > 1 else 0.0
+    sharpe = (mean_r / std_r) * math.sqrt(n_total) if n_total > 1 else 0.0
 
     return {
         "n_trades": float(n_total),
         "wins": float(wins),
         "losses": float(losses),
         "scratches_18s": float(scratches),
-        "cosechas_50_triz": float(cosechas),
-        "win_rate_pct": round(wr_clasico_pct, 2),
-        "win_rate_efectivo_pct": round(wr_efectivo_pct, 2),
-        "ganancia_bruta_usdt": round(suma_win, 4),
-        "perdida_bruta_usdt": round(suma_loss, 4),
-        "pnl_neto_usdt": round(pnl_neto, 4),
-        "fees_usdt": round(suma_fees, 4),
-        "lvr_usdt": round(suma_lvr, 4),
+        "cosechas_50_triz": float(harvests),
+        "win_rate_pct": round(classic_wr_pct, 2),
+        "win_rate_efectivo_pct": round(effective_wr_pct, 2),
+        "ganancia_bruta_usdt": round(sum_win, 4),
+        "perdida_bruta_usdt": round(sum_loss, 4),
+        "pnl_neto_usdt": round(net_pnl, 4),
+        "fees_usdt": round(sum_fees, 4),
+        "lvr_usdt": round(sum_lvr, 4),
         "profit_factor": round(pf, 2),
-        "esperanza_usdt": round(esperanza, 4),
+        "esperanza_usdt": round(expectancy, 4),
         "max_drawdown_pct": round(max_dd_pct, 2),
-        "velocidad_g_hora": round(esperanza * 1.5, 4),
+        "velocidad_g_hora": round(expectancy * 1.5, 4),
         "sharpe_oos": round(sharpe, 2),
-        "ahorro_scratch_usdt": round(ahorro_scratch, 4),
+        "ahorro_scratch_usdt": round(scratch_savings, 4),
     }
 
 
 class EvaluadorCuanticoOOS:
     """
-    Motor Walk-Forward Out-of-Sample multi-horizonte (8h: 50%, 24h: 30%, 72h: 20%)
-    con Contraccion Bayesiana de James-Stein (lambda_Bayes = min(1.0, N / 40)).
-    Compatible al 100% con test_tribrain_v1_suite.py ([18/18]) y systemd timer.
+    Multi-horizon Walk-Forward Out-of-Sample Engine (8h: 50%, 24h: 30%, 72h: 20%)
+    with James-Stein Bayesian Shrinkage (lambda_Bayes = min(1.0, N / 40)).
+    100% compatible with test_tribrain_v1_suite.py ([18/18]) and systemd timer.
     """
 
     def __init__(
@@ -277,17 +280,17 @@ class EvaluadorCuanticoOOS:
     def generar_reporte_markdown(self, payload: Dict[str, Any]) -> str:
         m72 = (payload.get("horizontes") or {}).get("ancla_72h") or {}
         params = payload.get("parametros") or {}
-        lineas = [
-            "# REPORTE CUANTICO WALK-FORWARD OOS -- POUFS-BEELZEBUB-EN V3.0",
-            f"- **Sello Temporal**: {payload.get('sello_dual', '')}",
-            f"- **Muestra Base (72h)**: {payload.get('muestra_72h_trades', 0)} trades",
-            f"- **Win Rate Efectivo**: {m72.get('win_rate_efectivo_pct', 0.0):.1f}%",
-            f"- **PnL Neto (72h)**: {m72.get('pnl_neto_usdt', 0.0):+.4f} USDT",
+        lines = [
+            "# QUANTUM WALK-FORWARD OOS REPORT -- POUFS-BEELZEBUB-EN V5.0",
+            f"- **Dual Timestamp**: {payload.get('sello_dual', '')}",
+            f"- **Base Sample (72h)**: {payload.get('muestra_72h_trades', 0)} trades",
+            f"- **Effective Win Rate**: {m72.get('win_rate_efectivo_pct', 0.0):.1f}%",
+            f"- **Net PnL (72h)**: {m72.get('pnl_neto_usdt', 0.0):+.4f} USDT",
             f"- **Profit Factor**: {m72.get('profit_factor', 1.0):.2f}",
-            f"- **Ahorro Scratch 18s**: +{payload.get('ahorro_scratch_18s_usdt', 0.0):.4f} USDT",
-            f"- **Kelly Calibrado**: {float(params.get('KELLY_FRACCION_BASE', 0.55))*100:.1f}%",
+            f"- **18s Scratch Savings**: +{payload.get('ahorro_scratch_18s_usdt', 0.0):.4f} USDT",
+            f"- **Calibrated Kelly**: {float(params.get('KELLY_FRACCION_BASE', 0.55))*100:.1f}%",
         ]
-        md_txt = "\n".join(lineas) + "\n"
+        md_txt = "\n".join(lines) + "\n"
         try:
             self.ruta_reporte_md.write_text(md_txt, encoding="utf-8")
         except Exception:
@@ -301,12 +304,12 @@ class EvaluadorCuanticoOOS:
         silencioso: bool = False,
     ) -> Dict[str, Any]:
         t_now = float(ahora) if ahora is not None else time.time()
-        es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
-        todas = cargar_operaciones_jsonl(self.ruta_jsonl)
+        is_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
+        all_ops = cargar_operaciones_jsonl(self.ruta_jsonl)
 
-        ops_8h = filtrar_operaciones_por_horizonte(todas, 8.0, t_now)
-        ops_24h = filtrar_operaciones_por_horizonte(todas, 24.0, t_now)
-        ops_72h = filtrar_operaciones_por_horizonte(todas, max(72.0, float(horas_base)), t_now)
+        ops_8h = filtrar_operaciones_por_horizonte(all_ops, 8.0, t_now)
+        ops_24h = filtrar_operaciones_por_horizonte(all_ops, 24.0, t_now)
+        ops_72h = filtrar_operaciones_por_horizonte(all_ops, max(72.0, float(horas_base)), t_now)
 
         m8 = calcular_metricas_horizonte(ops_8h)
         m24 = calcular_metricas_horizonte(ops_24h)
@@ -315,47 +318,47 @@ class EvaluadorCuanticoOOS:
         n_72 = int(m72["n_trades"])
         n_min_req = int(getattr(cfg, "OOS_MIN_TRADES_SIGNIFICANCIA", 40))
         lambda_bayes = round(min(1.0, n_72 / float(max(1, n_min_req))), 4)
-        modo_shrinkage = "BAYES_FULL_CREDIBILITY" if lambda_bayes >= 1.0 else "ACTIVO_PRIOR_DOMINANT"
+        shrinkage_mode = "BAYES_FULL_CREDIBILITY" if lambda_bayes >= 1.0 else "ACTIVO_PRIOR_DOMINANT"
 
-        pf_combinado = (0.50 * m8["profit_factor"]) + (0.30 * m24["profit_factor"]) + (0.20 * m72["profit_factor"])
-        dd_combinado_pct = (0.50 * m8["max_drawdown_pct"]) + (0.30 * m24["max_drawdown_pct"]) + (0.20 * m72["max_drawdown_pct"])
+        combined_pf = (0.50 * m8["profit_factor"]) + (0.30 * m24["profit_factor"]) + (0.20 * m72["profit_factor"])
+        combined_dd_pct = (0.50 * m8["max_drawdown_pct"]) + (0.30 * m24["max_drawdown_pct"]) + (0.20 * m72["max_drawdown_pct"])
 
         prior_kelly = 0.55
         prior_z_hb = -2.85
-        prior_z_t1 = -2.55 if es_test else -3.10
+        prior_z_t1 = -2.55 if is_test else -3.10
         prior_scratch_s = 18.0
-        prior_cosecha_pct = 0.0026 if es_test else 0.0024
+        prior_harvest_pct = 0.0026 if is_test else 0.0024
         prior_sl_pct = abs(float(getattr(cfg, "SL_INTERNO_PCT", 0.0048)))
 
-        factor_dd = (
-            math.exp(-3.0 * (dd_combinado_pct / 100.0))
-            if es_test
-            else math.exp(-1.2 * max(0.0, (dd_combinado_pct - 4.0) / 100.0))
+        dd_factor = (
+            math.exp(-3.0 * (combined_dd_pct / 100.0))
+            if is_test
+            else math.exp(-1.2 * max(0.0, (combined_dd_pct - 4.0) / 100.0))
         )
 
-        if pf_combinado >= 1.15:
-            obs_kelly = min(0.60, (0.54 + 0.04 * min(1.0, pf_combinado - 1.0)) * factor_dd)
+        if combined_pf >= 1.15:
+            obs_kelly = min(0.60, (0.54 + 0.04 * min(1.0, combined_pf - 1.0)) * dd_factor)
             obs_z_hb = -2.80
         else:
-            obs_kelly = (0.514 if es_test else 0.520) * factor_dd
+            obs_kelly = (0.514 if is_test else 0.520) * dd_factor
             obs_z_hb = -3.00
 
         obs_scratch_s = (
             18.0
-            if not es_test
-            else (16.0 if pf_combinado < 0.95 else (19.0 if pf_combinado > 1.50 else prior_scratch_s))
+            if not is_test
+            else (16.0 if combined_pf < 0.95 else (19.0 if combined_pf > 1.50 else prior_scratch_s))
         )
 
         kelly_cal = round(((1.0 - lambda_bayes) * prior_kelly) + (lambda_bayes * obs_kelly), 4)
         z_hb_cal = round(((1.0 - lambda_bayes) * prior_z_hb) + (lambda_bayes * obs_z_hb), 4)
-        z_t1_cal = round(prior_z_t1 if es_test else min(-3.10, z_hb_cal - 0.25), 4)
+        z_t1_cal = round(prior_z_t1 if is_test else min(-3.10, z_hb_cal - 0.25), 4)
         scratch_cal = round(((1.0 - lambda_bayes) * prior_scratch_s) + (lambda_bayes * obs_scratch_s), 2)
 
         kelly_cal = max(0.48, min(0.62, kelly_cal))
         z_hb_cal = max(-3.80, min(-2.60, z_hb_cal))
         scratch_cal = max(14.0, min(24.0, scratch_cal))
 
-        bloque_params: Dict[str, Any] = {
+        params_block: Dict[str, Any] = {
             "KELLY_FRACCION_BASE": kelly_cal,
             "Z_SCORE_UMBRAL_HIGH_BETA": z_hb_cal,
             "Z_UMBRAL_HIGH_BETA": z_hb_cal,
@@ -363,7 +366,7 @@ class EvaluadorCuanticoOOS:
             "Z_UMBRAL_TIER1": z_t1_cal,
             "OFI_MIN_ENTRADA": 0.12,
             "MAKER_SCRATCH_TIEMPO_SEG": scratch_cal,
-            "COSECHA_TRIZ_ACTIVACION_PCT": prior_cosecha_pct,
+            "COSECHA_TRIZ_ACTIVACION_PCT": prior_harvest_pct,
             "SL_INTERNO_PCT": prior_sl_pct,
             "SL_INTERNO_MAX_PCT": -prior_sl_pct,
             "TIEMPO_MAX_HOLD_SEG": 90.0,
@@ -374,7 +377,7 @@ class EvaluadorCuanticoOOS:
             "sello_dual": formatear_sello_tiempo(t_now),
             "epoch_ts": round(t_now, 3),
             "version_motor": cfg.VERSION_SISTEMA,
-            "sistema": "TRI-BRAIN-PHANTOM (God's Accomplice) V1.0",
+            "sistema": "POUFS-BEELZEBUB-EN (Spiritual Message) V5.0",
             "estrategia": cfg.NOMBRE_ESTRATEGIA,
             "muestra_72h_trades": n_72,
             "win_rate_clasico_pct": m72["win_rate_pct"],
@@ -388,15 +391,15 @@ class EvaluadorCuanticoOOS:
                 "n_operaciones_base": n_72,
                 "n_min_requerido": n_min_req,
                 "credibilidad_bayesiana_lambda": lambda_bayes,
-                "modo_shrinkage": modo_shrinkage,
+                "modo_shrinkage": shrinkage_mode,
             },
             "horizontes": {
                 "sesion_8h": m8,
                 "dia_24h": m24,
                 "ancla_72h": m72,
             },
-            "parametros": bloque_params,
-            "parametros_calibrados": dict(bloque_params),
+            "parametros": params_block,
+            "parametros_calibrados": dict(params_block),
             "replicador_activos": {},
         }
 
@@ -405,21 +408,21 @@ class EvaluadorCuanticoOOS:
             tmp_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
             tmp_path.replace(self.ruta_calibracion)
         except Exception as exc:
-            log_sniper(f"[WARN] [EVALUADOR OOS] Error guardando {self.ruta_calibracion.name}: {exc}")
+            log_sniper(f"[WARN] [OOS EVALUATOR] Error saving {self.ruta_calibracion.name}: {exc}")
 
         self.generar_reporte_markdown(payload)
 
         if not silencioso:
             log_sniper("==================================================================")
-            log_sniper("[EVALUADOR CUANTICO OOS] TRI-BRAIN-PHANTOM (God's Accomplice) V1.0")
+            log_sniper("[QUANTUM OOS EVALUATOR] POUFS-BEELZEBUB-EN (Spiritual Message) V5.0")
             log_sniper("==================================================================")
             log_sniper(
-                f"   -> Muestra Base (72h) : {n_72} trades | WR Efectivo: {m72['win_rate_efectivo_pct']:.1f}% | "
+                f"   -> Base Sample (72h)  : {n_72} trades | Effective WR: {m72['win_rate_efectivo_pct']:.1f}% | "
                 f"PnL: {m72['pnl_neto_usdt']:+.4f} USDT | PF: {m72['profit_factor']:.2f} | Lambda Bayes: {lambda_bayes:.2f}"
             )
             log_sniper(
-                f"   -> Ahorro Scratch 18s : +{m72['ahorro_scratch_usdt']:.4f} USDT salvados de tocar Stop-Loss | "
-                f"Cosechas 50% TRIZ: {int(m72['cosechas_50_triz'])}"
+                f"   -> 18s Scratch Saved  : +{m72['ahorro_scratch_usdt']:.4f} USDT saved from hitting Stop-Loss | "
+                f"50% TRIZ Harvests: {int(m72['cosechas_50_triz'])}"
             )
             log_sniper(
                 f"   -> Hot-Reload JSON    : Kelly={kelly_cal*100:.1f}% | Z_HB={z_hb_cal} | "
@@ -447,8 +450,8 @@ class EvaluadorCuanticoOOS:
                 elif hasattr(TELEMETRIA_TG, "enviar_mensaje_sistema"):
                     m72 = (payload.get("horizontes") or {}).get("ancla_72h") or {}
                     msg = (
-                        f"[EVALUADOR OOS] Trades: {payload.get('muestra_72h_trades', 0)} | "
-                        f"WR Ef: {m72.get('win_rate_efectivo_pct', 0.0):.1f}% | "
+                        f"[OOS EVALUATOR] Trades: {payload.get('muestra_72h_trades', 0)} | "
+                        f"Eff WR: {m72.get('win_rate_efectivo_pct', 0.0):.1f}% | "
                         f"PnL: {m72.get('pnl_neto_usdt', 0.0):+.4f} USDT"
                     )
                     await TELEMETRIA_TG.enviar_mensaje_sistema(msg)
@@ -486,18 +489,18 @@ calcular_calibracion_walk_forward = ejecutar_evaluacion_oos
 
 
 # ==============================================================================
-# 2. SEMILLA CANONICA DE LOS N=97 TRADES REALES PARA MODO LOCAL EN ANTIGRAVITY
+# 2. CANONICAL N=97 REAL TRADES SEED FOR LOCAL MODE IN ANTIGRAVITY IDE
 # ==============================================================================
 def _construir_semilla_97_trades_reales() -> List[Dict[str, Any]]:
     """
-    Reconstruye la distribucion exacta de las N=97 operaciones reales certificadas
-    en sniper-singapur (40W / 57L / 16 Scratches / 26 Cosechas, PnL +0.7969 USDT)
-    cuando tribrain_stats_v1.jsonl no se encuentra descargado localmente en Windows.
+    Reconstructs the exact distribution of the N=97 certified real trades
+    from sniper-singapur (40W / 57L / 16 Scratches / 26 Harvests, Net PnL +0.7969 USDT)
+    when tribrain_stats_v1.jsonl is not downloaded locally on Windows.
     """
-    semilla: List[Dict[str, Any]] = []
+    seed: List[Dict[str, Any]] = []
 
-    # 1. ZEREBRO [SHORT]: 34 Trades (19W / 15L, H medio = 0.467, PnL Neto = +1.8622 USDT)
-    semilla.append({
+    # 1. ZEREBRO [SHORT]: 34 Trades (19W / 15L, Mean H = 0.467, Net PnL = +1.8622 USDT)
+    seed.append({
         "timestamp": "2026-10-20T03:15:00+00:00",
         "symbol": "ZEREBRO/USDT:USDT",
         "side": "short",
@@ -517,7 +520,7 @@ def _construir_semilla_97_trades_reales() -> List[Dict[str, Any]]:
         "cosecha_triz_50": True,
     })
     for i in range(18):
-        semilla.append({
+        seed.append({
             "timestamp": f"2026-10-21T{(i % 24):02d}:12:00+00:00",
             "symbol": "ZEREBRO/USDT:USDT",
             "side": "short",
@@ -544,7 +547,7 @@ def _construir_semilla_97_trades_reales() -> List[Dict[str, Any]]:
         ("2026-10-23T14:39:22+00:00", 4.18, -0.44, 0.49, -0.0439, 59.0, "MAKER_SCRATCH_18S"),
     ]
     for ts_s, z_v, ofi_v, h_v, pnl_v, hold_v, mot_v in losses_zs:
-        semilla.append({
+        seed.append({
             "timestamp": ts_s,
             "symbol": "ZEREBRO/USDT:USDT",
             "side": "short",
@@ -564,7 +567,7 @@ def _construir_semilla_97_trades_reales() -> List[Dict[str, Any]]:
             "cosecha_triz_50": False,
         })
     for i in range(10):
-        semilla.append({
+        seed.append({
             "timestamp": f"2026-10-21T{(10 + i):02d}:30:00+00:00",
             "symbol": "ZEREBRO/USDT:USDT",
             "side": "short",
@@ -584,9 +587,9 @@ def _construir_semilla_97_trades_reales() -> List[Dict[str, Any]]:
             "cosecha_triz_50": False,
         })
 
-    # 2. ARB [SHORT]: 14 Trades (6W / 8L, H medio = 0.590, PnL Neto = +0.1424 USDT)
+    # 2. ARB [SHORT]: 14 Trades (6W / 8L, Mean H = 0.590, Net PnL = +0.1424 USDT)
     for i in range(6):
-        semilla.append({
+        seed.append({
             "timestamp": f"2026-10-21T{(2 + i):02d}:20:00+00:00",
             "symbol": "ARB/USDT:USDT",
             "side": "short",
@@ -606,7 +609,7 @@ def _construir_semilla_97_trades_reales() -> List[Dict[str, Any]]:
             "cosecha_triz_50": True,
         })
     for i in range(8):
-        semilla.append({
+        seed.append({
             "timestamp": f"2026-10-21T{(12 + i):02d}:40:00+00:00",
             "symbol": "ARB/USDT:USDT",
             "side": "short",
@@ -627,7 +630,7 @@ def _construir_semilla_97_trades_reales() -> List[Dict[str, Any]]:
         })
 
     # 3. XRP [LONG] (1L: -0.0022), TAO [SHORT] (1L: -0.0174), ARB [LONG] (3L: -0.1443), INJ (1W/7L: -0.5800)
-    semilla.append({
+    seed.append({
         "timestamp": "2026-10-22T18:04:41+00:00",
         "symbol": "XRP/USDT:USDT",
         "side": "long",
@@ -646,7 +649,7 @@ def _construir_semilla_97_trades_reales() -> List[Dict[str, Any]]:
         "lvr_usdt": 0.0,
         "cosecha_triz_50": False,
     })
-    semilla.append({
+    seed.append({
         "timestamp": "2026-10-22T11:10:00+00:00",
         "symbol": "TAO/USDT:USDT",
         "side": "short",
@@ -666,7 +669,7 @@ def _construir_semilla_97_trades_reales() -> List[Dict[str, Any]]:
         "cosecha_triz_50": False,
     })
     for pnl_arb_l in (-0.0520, -0.0555, -0.0368):
-        semilla.append({
+        seed.append({
             "timestamp": "2026-10-23T09:26:05+00:00",
             "symbol": "ARB/USDT:USDT",
             "side": "long",
@@ -685,7 +688,7 @@ def _construir_semilla_97_trades_reales() -> List[Dict[str, Any]]:
             "lvr_usdt": 0.0,
             "cosecha_triz_50": False,
         })
-    semilla.append({
+    seed.append({
         "timestamp": "2026-10-20T12:00:00+00:00",
         "symbol": "INJ/USDT:USDT",
         "side": "short",
@@ -705,7 +708,7 @@ def _construir_semilla_97_trades_reales() -> List[Dict[str, Any]]:
         "cosecha_triz_50": False,
     })
     for i in range(3):
-        semilla.append({
+        seed.append({
             "timestamp": f"2026-10-20T1{3+i}:00:00+00:00",
             "symbol": "INJ/USDT:USDT",
             "side": "short",
@@ -725,7 +728,7 @@ def _construir_semilla_97_trades_reales() -> List[Dict[str, Any]]:
             "cosecha_triz_50": False,
         })
     for i in range(4):
-        semilla.append({
+        seed.append({
             "timestamp": f"2026-10-20T1{6+i}:00:00+00:00",
             "symbol": "INJ/USDT:USDT",
             "side": "long",
@@ -745,8 +748,8 @@ def _construir_semilla_97_trades_reales() -> List[Dict[str, Any]]:
             "cosecha_triz_50": False,
         })
 
-    # 4. ZEREBRO [LONG]: 36 Trades (14W / 22L, H medio = 0.505, PnL Neto = -0.4637 USDT)
-    semilla.append({
+    # 4. ZEREBRO [LONG]: 36 Trades (14W / 22L, Mean H = 0.505, Net PnL = -0.4637 USDT)
+    seed.append({
         "timestamp": "2026-10-23T05:27:08+00:00",
         "symbol": "ZEREBRO/USDT:USDT",
         "side": "long",
@@ -765,7 +768,7 @@ def _construir_semilla_97_trades_reales() -> List[Dict[str, Any]]:
         "lvr_usdt": 0.0,
         "cosecha_triz_50": True,
     })
-    semilla.append({
+    seed.append({
         "timestamp": "2026-10-23T05:35:09+00:00",
         "symbol": "ZEREBRO/USDT:USDT",
         "side": "long",
@@ -785,7 +788,7 @@ def _construir_semilla_97_trades_reales() -> List[Dict[str, Any]]:
         "cosecha_triz_50": False,
     })
     for i in range(12):
-        semilla.append({
+        seed.append({
             "timestamp": f"2026-10-22T{(i % 20):02d}:15:00+00:00",
             "symbol": "ZEREBRO/USDT:USDT",
             "side": "long",
@@ -813,7 +816,7 @@ def _construir_semilla_97_trades_reales() -> List[Dict[str, Any]]:
         ("2026-10-23T19:13:19+00:00", -6.67, 0.16, 0.49, -0.1077, 3.0, "SL_INTERNO_CHRONOS", False),
     ]
     for ts_l, z_l, ofi_l, h_l, pnl_l, hold_l, mot_l, cos_l in losses_zl:
-        semilla.append({
+        seed.append({
             "timestamp": ts_l,
             "symbol": "ZEREBRO/USDT:USDT",
             "side": "long",
@@ -833,7 +836,7 @@ def _construir_semilla_97_trades_reales() -> List[Dict[str, Any]]:
             "cosecha_triz_50": cos_l,
         })
     for i in range(16):
-        semilla.append({
+        seed.append({
             "timestamp": f"2026-10-22T{(5 + (i % 18)):02d}:45:00+00:00",
             "symbol": "ZEREBRO/USDT:USDT",
             "side": "long",
@@ -853,11 +856,11 @@ def _construir_semilla_97_trades_reales() -> List[Dict[str, Any]]:
             "cosecha_triz_50": False,
         })
 
-    return semilla
+    return seed
 
 
 # ==============================================================================
-# 3. LABORATORIO GEMELO DIGITAL HFT (--lab): 3.456 COMBINACIONES + CPCV + DSR
+# 3. HFT DIGITAL TWIN LABORATORY (--lab): 3,456 COMBINATIONS + CPCV + DSR
 # ==============================================================================
 def _cdf_normal_estandar(x: float) -> float:
     return 0.5 * (1.0 + math.erf(float(x) / math.sqrt(2.0)))
@@ -868,46 +871,46 @@ def _calcular_deflated_sharpe_ratio(
     n_ensayos: int,
 ) -> Tuple[float, float]:
     """
-    Calcula (Sharpe_Por_Trade, Deflated_Sharpe_Ratio_DSR) segun Lopez de Prado
-    penalizando el sesgo de seleccion multiple sobre M = n_ensayos combinaciones.
+    Computes (Per_Trade_Sharpe, Deflated_Sharpe_Ratio_DSR) following Lopez de Prado,
+    penalizing multiple-testing selection bias across M = n_ensayos combinations.
     """
     n = len(retornos)
     if n < 5:
         return 0.0, 0.0
 
-    media = sum(retornos) / n
-    var = sum((r - media) ** 2 for r in retornos) / max(1, n - 1)
+    mean = sum(retornos) / n
+    var = sum((r - mean) ** 2 for r in returns_list(retornos)) / max(1, n - 1) if False else sum((r - mean) ** 2 for r in retornos) / max(1, n - 1)
     std = math.sqrt(var) if var > 1e-12 else 1e-6
-    sr = media / std
+    sr = mean / std
 
-    m3 = sum(((r - media) / std) ** 3 for r in retornos) / n
-    m4 = sum(((r - media) / std) ** 4 for r in retornos) / n
+    m3 = sum(((r - mean) / std) ** 3 for r in retornos) / n
+    m4 = sum(((r - mean) / std) ** 4 for r in retornos) / n
 
     m_trials = max(2, int(n_ensayos))
     euler_gamma = 0.5772156649
     z1 = math.sqrt(2.0 * math.log(m_trials))
     z2 = math.sqrt(2.0 * math.log(max(2.0, m_trials / math.e)))
-    sr_esperado_azar = (
+    expected_random_sr = (
         ((1.0 - euler_gamma) * z1 + euler_gamma * z2) / math.sqrt(max(1.0, n - 1.0))
     ) * 0.25
 
     denom_sq = 1.0 - (m3 * sr) + (((m4 - 1.0) / 4.0) * (sr ** 2))
     denom = math.sqrt(max(0.10, denom_sq))
-    z_dsr = ((sr - sr_esperado_azar) * math.sqrt(max(1.0, n - 1.0))) / denom
+    z_dsr = ((sr - expected_random_sr) * math.sqrt(max(1.0, n - 1.0))) / denom
     dsr = _cdf_normal_estandar(z_dsr)
     return round(sr, 4), round(dsr, 4)
 
 
 class LaboratorioGemeloDigitalHFT:
     """
-    Laboratorio Local de Simulacion y Evolucion Cuantitativa para Antigravity IDE:
-      1. Ingesta multi-fuente: tribrain_stats_v1.jsonl (o Semilla Real N=97 si se
-         corre en Windows sin haber descargado el JSONL) + baul_ia_forense.jsonl
-         + bot_hft_h.log.
-      2. Reconstruccion contrafactual de los 14 cerrojos SCAR-LOCK-00..13.
-      3. Evaluacion de 3.456 combinaciones sobre los 5 ejes HFT Web 2026 (W1..W5).
-      4. Reporte Financiero en Espanol Claro con Ganancia Bruta, Perdida Teorica,
-         Operaciones Bloqueadas, Ahorro de Perdidas y Semaforo de Decision IA.
+    Local Quantitative Simulation & Evolution Laboratory for Antigravity IDE:
+      1. Multi-source ingestion: tribrain_stats_v1.jsonl (or Canonical Real N=97
+         Seed when running on Windows without downloading the JSONL) +
+         baul_ia_forense.jsonl + bot_hft_h.log.
+      2. Counterfactual reconstruction of SCAR-LOCK-00..18 shields.
+      3. Evaluation of 3,456 combinations across the 5 HFT 2026 axes (W1..W5).
+      4. Clear Financial Report in English with Gross Profit, Theoretical Loss,
+         Blocked Trades, Loss Savings, and AI Decision Traffic Light.
     """
 
     def __init__(self, repo_dir: Optional[pathlib.Path] = None) -> None:
@@ -919,49 +922,49 @@ class LaboratorioGemeloDigitalHFT:
         self.ruta_salida_lab: pathlib.Path = self.repo_dir / _ARCHIVO_SALIDA_LAB_IA
 
     def ingestar_ecosistema_logs(self) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Any]]:
-        ops_disco = cargar_operaciones_jsonl(self.ruta_stats)
-        if len(ops_disco) >= 10:
-            ops = ops_disco
-            origen_ops = f"ARCHIVO_VIVO ({self.ruta_stats.name}: {len(ops_disco)} ops)"
+        disk_ops = cargar_operaciones_jsonl(self.ruta_stats)
+        if len(disk_ops) >= 10:
+            ops = disk_ops
+            ops_source = f"LIVE_FILE ({self.ruta_stats.name}: {len(disk_ops)} ops)"
         else:
             ops = _construir_semilla_97_trades_reales()
-            origen_ops = f"SEMILLA_CANONICA_97_TRADES (N={len(ops)} ops reales de sniper-singapur)"
+            ops_source = f"CANONICAL_97_TRADES_SEED (N={len(ops)} real ops from sniper-singapur)"
 
-        eventos_baul: List[Dict[str, Any]] = []
+        vault_events: List[Dict[str, Any]] = []
         if self.ruta_baul.exists():
             for l in self.ruta_baul.read_text(encoding="utf-8", errors="ignore").splitlines():
                 if l.strip():
                     try:
-                        eventos_baul.append(json.loads(l))
+                        vault_events.append(json.loads(l))
                     except Exception:
                         pass
 
-        conteo_logs: Dict[str, Any] = {
-            "origen_trades": origen_ops,
+        log_counts: Dict[str, Any] = {
+            "origen_trades": ops_source,
             "lineas_log": 0,
             "disparos_radar": 0,
             "bloqueos_phantom": 0,
         }
-        for ruta_l in (self.ruta_log_h, self.ruta_log_s):
-            if ruta_l.exists():
+        for log_path in (self.ruta_log_h, self.ruta_log_s):
+            if log_path.exists():
                 try:
-                    lineas = ruta_l.read_text(encoding="utf-8", errors="ignore").splitlines()
-                    conteo_logs["lineas_log"] += len(lineas)
-                    for ln in lineas:
-                        if "[RADAR]" in ln and "APROBADO" in ln:
-                            conteo_logs["disparos_radar"] += 1
-                        elif "[PHANTOM" in ln and "bloqueado" in ln:
-                            conteo_logs["bloqueos_phantom"] += 1
+                    lines = log_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+                    log_counts["lineas_log"] += len(lines)
+                    for ln in lines:
+                        if "[RADAR]" in ln and ("APROBADO" in ln or "APPROVED" in ln):
+                            log_counts["disparos_radar"] += 1
+                        elif "[PHANTOM" in ln and ("bloqueado" in ln or "blocked" in ln):
+                            log_counts["bloqueos_phantom"] += 1
                 except Exception:
                     pass
 
-        return ops, eventos_baul, conteo_logs
+        return ops, vault_events, log_counts
 
     @staticmethod
     def _precompilar_vectores_operaciones(
         ops: List[Dict[str, Any]]
     ) -> List[Tuple[int, str, str, float, float, float, float, float, float, str, int, float]]:
-        vectores = []
+        vectors = []
         for idx, op in enumerate(ops, start=1):
             sym = str(op.get("symbol") or "")
             side = str(op.get("side") or "long").lower()
@@ -971,16 +974,16 @@ class LaboratorioGemeloDigitalHFT:
             pnl_pct = float(op.get("pnl_percentage") or 0.0) / 100.0
             pnl_u = float(op.get("pnl_usdt") or 0.0)
             hold_s = float(op.get("hold_seg") or 30.0)
-            motivo = str(op.get("motivo") or "")
-            cosecha_50 = 1 if (
+            reason = str(op.get("motivo") or "")
+            harvest_50 = 1 if (
                 op.get("cosecha_triz_50")
-                or "TRINQUETE" in motivo.upper()
-                or "TRAILING" in motivo.upper()
+                or "TRINQUETE" in reason.upper()
+                or "TRAILING" in reason.upper()
             ) else 0
             ts_epoch = _parsear_ts_iso(str(op.get("timestamp") or ""))
-            p_dia, _ = calcular_percentil_intradia_oos(ts_epoch if ts_epoch > 0 else 1729700000.0)
-            vectores.append((idx, sym, side, z, ofi, hurst, pnl_pct, pnl_u, hold_s, motivo, cosecha_50, p_dia))
-        return vectores
+            p_day, _ = calcular_percentil_intradia_oos(ts_epoch if ts_epoch > 0 else 1729700000.0)
+            vectors.append((idx, sym, side, z, ofi, hurst, pnl_pct, pnl_u, hold_s, reason, harvest_50, p_day))
+        return vectors
 
     @staticmethod
     def _evaluar_combinacion_en_vectores(
@@ -993,69 +996,69 @@ class LaboratorioGemeloDigitalHFT:
         w5_kelly_short: float,
         w5_kelly_long: float,
     ) -> Tuple[List[float], int, int, int, float]:
-        retornos_u: List[float] = []
+        returns_u: List[float] = []
         wins = 0
         losses = 0
-        sl_reabiertos = 0
+        sl_reopened = 0
         equity = 0.0
         peak = 0.0
         max_dd = 0.0
 
-        for _, sym, side, z, ofi, hurst, _, pnl_u, hold_s, motivo, cosecha_50, p_dia in vectores:
+        for _, sym, side, z, ofi, hurst, _, pnl_u, hold_s, reason, harvest_50, p_day in vectores:
             if sym == "INJ/USDT:USDT" or sym in cfg.PARES_VETADOS_OOS:
                 continue
 
-            es_t1 = sym in cfg.CLASE_TIER1_LIQUIDO
+            is_t1 = sym in cfg.CLASE_TIER1_LIQUIDO
 
             if side == "long":
-                exceso_z = max(0.0, abs(z) - 4.50)
-                prima_h = 0.08 if hurst >= 0.455 else 0.0
-                ofi_req = max(w1_ofi_long_min, 0.18 + (0.045 * p_dia) + (0.050 * exceso_z) + prima_h)
-                h_max_long = 0.465 if es_t1 else min(0.485, 0.475 - (0.015 * p_dia) + (0.012 if ofi >= 0.40 else 0.0))
+                excess_z = max(0.0, abs(z) - 4.50)
+                h_premium = 0.08 if hurst >= 0.455 else 0.0
+                ofi_req = max(w1_ofi_long_min, 0.18 + (0.045 * p_day) + (0.050 * excess_z) + h_premium)
+                h_max_long = 0.465 if is_t1 else min(0.485, 0.475 - (0.015 * p_day) + (0.012 if ofi >= 0.40 else 0.0))
 
-                if hurst > h_max_long or ofi < ofi_req or (es_t1 and abs(z) < 3.35):
+                if hurst > h_max_long or ofi < ofi_req or (is_t1 and abs(z) < 3.35):
                     continue
-                mult_kelly = (w5_kelly_long / 0.55) * (1.0 + (0.08 * w2_btc_beta))
+                kelly_mult = (w5_kelly_long / 0.55) * (1.0 + (0.08 * w2_btc_beta))
             else:
-                h_max_short = 0.538 if es_t1 else (0.640 - (0.045 * p_dia))
-                ofi_req_short = -(0.35 + (0.12 * p_dia) + (0.05 * w2_btc_beta))
+                h_max_short = 0.538 if is_t1 else (0.640 - (0.045 * p_day))
+                ofi_req_short = -(0.35 + (0.12 * p_day) + (0.05 * w2_btc_beta))
                 if hurst > h_max_short or ofi > ofi_req_short or abs(z) < 3.10:
                     continue
-                mult_kelly = (w5_kelly_short / 0.55) * (1.0 + (0.10 * w2_btc_beta))
+                kelly_mult = (w5_kelly_short / 0.55) * (1.0 + (0.10 * w2_btc_beta))
 
-            map_est = 16.33 * mult_kelly
-            pnl_sim_u = pnl_u * mult_kelly
+            map_est = 16.33 * kelly_mult
+            sim_pnl_u = pnl_u * kelly_mult
 
-            if cosecha_50 == 1 and "TRINQUETE_BE" in motivo.upper():
+            if harvest_50 == 1 and "TRINQUETE_BE" in reason.upper():
                 tp_eff = w3_tp_maker_pct + (0.0004 * w2_btc_beta) if abs(ofi) >= 0.40 else min(w3_tp_maker_pct, 0.0024)
-                pnl_sim_u = map_est * (tp_eff - (2.0 * cfg.FEE_MAKER_PCT))
-            elif pnl_u > 0.0 and "MAKER_UNWIND" in motivo.upper():
-                factor_tp = min(1.35, max(0.92, w3_tp_maker_pct / 0.0024))
-                pnl_sim_u = pnl_u * mult_kelly * factor_tp
+                sim_pnl_u = map_est * (tp_eff - (2.0 * cfg.FEE_MAKER_PCT))
+            elif pnl_u > 0.0 and "MAKER_UNWIND" in reason.upper():
+                tp_factor = min(1.35, max(0.92, w3_tp_maker_pct / 0.0024))
+                sim_pnl_u = pnl_u * kelly_mult * tp_factor
             elif pnl_u < 0.0:
-                if "SL_" in motivo.upper():
+                if "SL_" in reason.upper():
                     if hold_s >= 24.0:
-                        ratio_sl = abs(w4_sl_decay_pct) / 0.0048
-                        pnl_sim_u = pnl_u * mult_kelly * ratio_sl
+                        sl_ratio = abs(w4_sl_decay_pct) / 0.0048
+                        sim_pnl_u = pnl_u * kelly_mult * sl_ratio
                     else:
-                        sl_reabiertos += 1
-                elif "MAKER_UNWIND" in motivo.upper() and hold_s >= w4_unwind_seg:
-                    pnl_sim_u = pnl_u * mult_kelly * 0.55
+                        sl_reopened += 1
+                elif "MAKER_UNWIND" in reason.upper() and hold_s >= w4_unwind_seg:
+                    sim_pnl_u = pnl_u * kelly_mult * 0.55
 
-            retornos_u.append(pnl_sim_u)
-            if pnl_sim_u >= 0.0:
+            returns_u.append(sim_pnl_u)
+            if sim_pnl_u >= 0.0:
                 wins += 1
             else:
                 losses += 1
 
-            equity += pnl_sim_u
+            equity += sim_pnl_u
             if equity > peak:
                 peak = equity
             dd = peak - equity
             if dd > max_dd:
                 max_dd = dd
 
-        return retornos_u, wins, losses, sl_reabiertos, round(max_dd, 4)
+        return returns_u, wins, losses, sl_reopened, round(max_dd, 4)
 
     @staticmethod
     def _construir_explicacion_espanol(
@@ -1064,50 +1067,50 @@ class LaboratorioGemeloDigitalHFT:
         best: Optional[Dict[str, Any]],
     ) -> Dict[str, Any]:
         if not best:
-            return {"estado": "SIN_CANDIDATOS"}
+            return {"estado": "NO_CANDIDATES"}
 
-        mejora_neta = round(best["pnl_usdt"] - m_v2["pnl_usdt"], 4)
-        ahorro_vs_crudo = round(m_raw["perdida_bruta_usdt"] - best["perdida_teorica_usdt"], 4)
+        net_improvement = round(best["pnl_usdt"] - m_v2["pnl_usdt"], 4)
+        savings_vs_raw = round(m_raw["perdida_bruta_usdt"] - best["perdida_teorica_usdt"], 4)
         dsr_val = float(best.get("dsr") or 0.0)
         n_tr_best = int(best.get("n_trades") or 0)
 
         if dsr_val >= 0.95:
-            semaforo = (
-                f"VERDE (DSR={dsr_val:.2f} >= 0.95): Evidencia estadistica completa. "
-                "Listo para promover al codigo de produccion cuando lo autorices."
+            traffic_light = (
+                f"GREEN (DSR={dsr_val:.2f} >= 0.95): Full statistical significance achieved. "
+                "Ready to promote to live production upon operator authorization."
             )
         else:
-            faltan = max(5, 50 - n_tr_best)
-            semaforo = (
-                f"AMARILLO EN OBSERVACION (DSR={dsr_val:.2f} con {n_tr_best} ops filtradas): "
-                f"La receta gana {mejora_neta:+.4f} USDT extra, pero conviene dejar que el bot acumule "
-                f"~{faltan} operaciones nuevas en vivo para confirmar DSR >= 0.95 sin riesgo de sobre-ajuste."
+            missing = max(5, 50 - n_tr_best)
+            traffic_light = (
+                f"YELLOW ON WATCH (DSR={dsr_val:.2f} across {n_tr_best} filtered ops): "
+                f"The recipe yields {net_improvement:+.4f} USDT extra, but the bot should accumulate "
+                f"~{missing} additional live trades to confirm DSR >= 0.95 without overfitting risk."
             )
 
-        reglas_es = [
-            f"1. [W1 Filtro Compras LONG = +{best['w1_ofi_long']:.2f}]: Exige presion compradora minima de +{best['w1_ofi_long']:.2f} en libro L2 (bloqueo de ordenes Iceberg).",
-            f"2. [W2 Peso Lider BTC = {int(best['w2_btc_beta']*100)}%]: Pondera un {int(best['w2_btc_beta']*100)}% la direccion instantanea de BTC/USDT:USDT antes de entrar.",
-            f"3. [W3 Cobro Maker en Rafaga = +{best['w3_tp_maker_pct']*100:.2f}%]: Cobra +0.24% en mercado normal, pero estira la ganancia Maker hasta +{best['w3_tp_maker_pct']*100:.2f}% si entra flujo fuerte (|OFI| >= 0.40).",
-            f"4. [W4 Salida Estancada y Freno SL = {int(best['w4_unwind_seg'])}s / {best['w4_sl_decay_pct']*100:.2f}%]: Evacua en Maker a los {int(best['w4_unwind_seg'])}s si no despega, y tras 24s sin ganancia recorta el Stop-Loss de -0.48% a {best['w4_sl_decay_pct']*100:.2f}%.",
-            f"5. [W5 Capital Kelly Asimetrico = {int(best['w5_kelly_short']*100)}% Short / {int(best['w5_kelly_long']*100)}% Long]: Asigna {int(best['w5_kelly_short']*100)}% de margen a los tiros SHORT (mas ganadores) y {int(best['w5_kelly_long']*100)}% a los tiros LONG.",
+        rules_en = [
+            f"1. [W1 LONG Buy Filter = +{best['w1_ofi_long']:.2f}]: Requires minimum buying pressure of +{best['w1_ofi_long']:.2f} in L2 book (blocks Iceberg sell walls).",
+            f"2. [W2 BTC Leader Beta = {int(best['w2_btc_beta']*100)}%]: Weights instantaneous BTC/USDT:USDT direction by {int(best['w2_btc_beta']*100)}% prior to entry.",
+            f"3. [W3 Burst Maker Harvest = +{best['w3_tp_maker_pct']*100:.2f}%]: Harvests +0.24% in normal flow, stretching Maker profit to +{best['w3_tp_maker_pct']*100:.2f}% under strong order flow (|OFI| >= 0.40).",
+            f"4. [W4 Stagnant Unwind & SL Decay = {int(best['w4_unwind_seg'])}s / {best['w4_sl_decay_pct']*100:.2f}%]: Evacuates as Maker at {int(best['w4_unwind_seg'])}s if stagnant, and tightens Stop-Loss from -0.48% to {best['w4_sl_decay_pct']*100:.2f}% after 24s without profit.",
+            f"5. [W5 Asymmetric Kelly Sizing = {int(best['w5_kelly_short']*100)}% Short / {int(best['w5_kelly_long']*100)}% Long]: Allocates {int(best['w5_kelly_short']*100)}% margin to higher-expectancy SHORT shots and {int(best['w5_kelly_long']*100)}% to LONG shots.",
         ]
 
         return {
-            "mejora_neta_sobre_bot_actual_usdt": mejora_neta,
-            "ahorro_perdidas_sobre_crudo_usdt": ahorro_vs_crudo,
-            "reglas_traducidas_espanol": reglas_es,
-            "semaforo_decision_ia": semaforo,
+            "mejora_neta_sobre_bot_actual_usdt": net_improvement,
+            "ahorro_perdidas_sobre_crudo_usdt": savings_vs_raw,
+            "reglas_traducidas_espanol": rules_en,
+            "semaforo_decision_ia": traffic_light,
         }
 
     def ejecutar_torneo_evolutivo_lab(self, n_bootstrap: int = 1500) -> Dict[str, Any]:
         t0 = time.perf_counter()
-        ops, eventos_baul, conteo_logs = self.ingestar_ecosistema_logs()
-        vectores = self._precompilar_vectores_operaciones(ops)
-        n_total_hist = len(vectores)
+        ops, vault_events, log_counts = self.ingestar_ecosistema_logs()
+        vectors = self._precompilar_vectores_operaciones(ops)
+        n_total_hist = len(vectors)
 
-        m_crudo = calcular_metricas_horizonte(ops)
+        m_raw = calcular_metricas_horizonte(ops)
         ret_base, w_base, l_base, sl_base, dd_base = self._evaluar_combinacion_en_vectores(
-            vectores,
+            vectors,
             w1_ofi_long_min=0.18,
             w2_btc_beta=0.25,
             w3_tp_maker_pct=0.0024,
@@ -1122,7 +1125,7 @@ class LaboratorioGemeloDigitalHFT:
         sl_b = round(sum(abs(x) for x in ret_base if x < 0.0), 4)
         pf_base_v2 = round((sw_b / sl_b) if sl_b > 1e-9 else 5.0, 2)
         bloq_base_v2 = max(0, n_total_hist - (w_base + l_base))
-        ahorro_loss_v2 = round(m_crudo["perdida_bruta_usdt"] - sl_b, 4)
+        loss_savings_v2 = round(m_raw["perdida_bruta_usdt"] - sl_b, 4)
 
         grid_w1 = (0.18, 0.20, 0.22, 0.25)
         grid_w2 = (0.00, 0.15, 0.25, 0.35)
@@ -1136,13 +1139,13 @@ class LaboratorioGemeloDigitalHFT:
         )
 
         k_folds = 5
-        n_vec = len(vectores)
+        n_vec = len(vectors)
         fold_size = max(1, n_vec // k_folds)
-        folds = [vectores[i * fold_size : (i + 1) * fold_size] for i in range(k_folds)]
+        folds = [vectors[i * fold_size : (i + 1) * fold_size] for i in range(k_folds)]
         if n_vec > k_folds * fold_size:
-            folds[-1].extend(vectores[k_folds * fold_size :])
+            folds[-1].extend(vectors[k_folds * fold_size :])
 
-        candidatos_top: List[Dict[str, Any]] = []
+        top_candidates: List[Dict[str, Any]] = []
 
         for w1 in grid_w1:
             for w2 in grid_w2:
@@ -1151,7 +1154,7 @@ class LaboratorioGemeloDigitalHFT:
                         for w4_sl in grid_w4_sl:
                             for k_s, k_l in grid_w5:
                                 ret_u, w_c, l_c, sl_reopen, dd_u = self._evaluar_combinacion_en_vectores(
-                                    vectores, w1, w2, w3, w4_t, w4_sl, k_s, k_l
+                                    vectors, w1, w2, w3, w4_t, w4_sl, k_s, k_l
                                 )
                                 n_tr = w_c + l_c
                                 if n_tr < 20:
@@ -1160,12 +1163,12 @@ class LaboratorioGemeloDigitalHFT:
                                 if pnl_tot < pnl_base_v2:
                                     continue
 
-                                suma_w = round(sum(x for x in ret_u if x >= 0.0), 4)
-                                suma_l = round(sum(abs(x) for x in ret_u if x < 0.0), 4)
-                                pf_c = (suma_w / suma_l) if suma_l > 1e-9 else 9.99
+                                sum_w = round(sum(x for x in ret_u if x >= 0.0), 4)
+                                sum_l = round(sum(abs(x) for x in ret_u if x < 0.0), 4)
+                                pf_c = (sum_w / sum_l) if sum_l > 1e-9 else 9.99
                                 wr_c = (w_c / n_tr) * 100.0
 
-                                candidatos_top.append(
+                                top_candidates.append(
                                     {
                                         "w1_ofi_long": w1,
                                         "w2_btc_beta": w2,
@@ -1179,8 +1182,8 @@ class LaboratorioGemeloDigitalHFT:
                                         "losses": l_c,
                                         "bloqueadas": max(0, n_total_hist - n_tr),
                                         "wr_pct": round(wr_c, 2),
-                                        "ganancia_bruta_usdt": suma_w,
-                                        "perdida_teorica_usdt": suma_l,
+                                        "ganancia_bruta_usdt": sum_w,
+                                        "perdida_teorica_usdt": sum_l,
                                         "pnl_usdt": round(pnl_tot, 4),
                                         "pf": round(pf_c, 2),
                                         "max_dd_usdt": dd_u,
@@ -1189,17 +1192,17 @@ class LaboratorioGemeloDigitalHFT:
                                     }
                                 )
 
-        candidatos_top.sort(key=lambda x: (x["pnl_usdt"], x["pf"], -x["max_dd_usdt"]), reverse=True)
-        finalistas = candidatos_top[:25]
+        top_candidates.sort(key=lambda x: (x["pnl_usdt"], x["pf"], -x["max_dd_usdt"]), reverse=True)
+        finalists = top_candidates[:25]
 
         rng = random.Random(20261023)
-        campeones_validados: List[Dict[str, Any]] = []
+        validated_champions: List[Dict[str, Any]] = []
 
-        for cand in finalistas:
+        for cand in finalists:
             ret_c = cand["retornos"]
             sr_c, dsr_c = _calcular_deflated_sharpe_ratio(ret_c, total_combos)
 
-            folds_positivos = 0
+            positive_folds = 0
             for f_vec in folds:
                 if not f_vec:
                     continue
@@ -1214,38 +1217,38 @@ class LaboratorioGemeloDigitalHFT:
                     cand["w5_kelly_long"],
                 )
                 if sum(r_f) >= 0.0:
-                    folds_positivos += 1
-            cpcv_score = folds_positivos / max(1, len(folds))
+                    positive_folds += 1
+            cpcv_score = positive_folds / max(1, len(folds))
 
             n_r = len(ret_c)
-            exitos_boot = 0
-            pnl_boot_acum = 0.0
-            n_iter_b = max(100, int(n_bootstrap // max(1, len(finalistas))))
+            boot_successes = 0
+            boot_pnl_accum = 0.0
+            n_iter_b = max(100, int(n_bootstrap // max(1, len(finalists))))
             for _ in range(n_iter_b):
                 pnl_b = 0.0
                 for _ in range(n_r):
                     r_sample = ret_c[rng.randrange(n_r)]
-                    choque_gm = -0.0085 if rng.random() < 0.035 else rng.gauss(0.0, 0.0020)
-                    pnl_b += r_sample + choque_gm
-                pnl_boot_acum += pnl_b
+                    gm_shock = -0.0085 if rng.random() < 0.035 else rng.gauss(0.0, 0.0020)
+                    pnl_b += r_sample + gm_shock
+                boot_pnl_accum += pnl_b
                 if pnl_b > pnl_base_v2:
-                    exitos_boot += 1
+                    boot_successes += 1
 
-            prob_superar_base = exitos_boot / max(1, n_iter_b)
+            prob_beat_base = boot_successes / max(1, n_iter_b)
             cand["sharpe_trade"] = sr_c
             cand["dsr"] = dsr_c
             cand["cpcv_consistencia_pct"] = round(cpcv_score * 100.0, 1)
-            cand["prob_bootstrap_pct"] = round(prob_superar_base * 100.0, 1)
-            cand["pnl_bootstrap_medio"] = round(pnl_boot_acum / max(1, n_iter_b), 4)
+            cand["prob_bootstrap_pct"] = round(prob_beat_base * 100.0, 1)
+            cand["pnl_bootstrap_medio"] = round(boot_pnl_accum / max(1, n_iter_b), 4)
             cand.pop("retornos", None)
-            campeones_validados.append(cand)
+            validated_champions.append(cand)
 
-        campeones_validados.sort(
+        validated_champions.sort(
             key=lambda x: (x["dsr"], x["prob_bootstrap_pct"], x["pnl_usdt"]),
             reverse=True,
         )
 
-        metricas_v2_dict = {
+        v2_metrics_dict = {
             "n_trades": w_base + l_base,
             "wins": w_base,
             "losses": l_base,
@@ -1254,47 +1257,47 @@ class LaboratorioGemeloDigitalHFT:
             "pf": pf_base_v2,
             "ganancia_bruta_usdt": sw_b,
             "perdida_teorica_usdt": sl_b,
-            "ahorro_perdidas_usdt": ahorro_loss_v2,
+            "ahorro_perdidas_usdt": loss_savings_v2,
             "pnl_usdt": pnl_base_v2,
             "max_dd_usdt": dd_base,
             "sl_reopen": sl_base,
         }
-        top5_final = campeones_validados[:5]
-        explicacion_es = self._construir_explicacion_espanol(
-            m_crudo, metricas_v2_dict, top5_final[0] if top5_final else None
+        top5_final = validated_champions[:5]
+        explanation_en = self._construir_explicacion_espanol(
+            m_raw, v2_metrics_dict, top5_final[0] if top5_final else None
         )
 
         dt_ms = (time.perf_counter() - t0) * 1000.0
-        resumen = {
+        summary = {
             "timestamp_lab_utc": datetime.now(tz=timezone.utc).isoformat(timespec="seconds"),
             "tiempo_ejecucion_ms": round(dt_ms, 1),
             "combinaciones_evaluadas": total_combos,
             "trayectorias_bootstrap": n_bootstrap,
             "n_trades_historicos": len(ops),
-            "eventos_baul_ia": len(eventos_baul),
-            "conteo_logs": conteo_logs,
-            "metricas_crudas": m_crudo,
-            "metricas_chronos_v2_actual": metricas_v2_dict,
+            "eventos_baul_ia": len(vault_events),
+            "conteo_logs": log_counts,
+            "metricas_crudas": m_raw,
+            "metricas_chronos_v2_actual": v2_metrics_dict,
             "top_5_campeones_web2026": top5_final,
-            "traduccion_espanol_campeon_1": explicacion_es,
+            "traduccion_espanol_campeon_1": explanation_en,
         }
 
         try:
             self.ruta_salida_lab.write_text(
-                json.dumps(resumen, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+                json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
             )
         except Exception:
             pass
 
-        self._imprimir_reporte_lab_consola(resumen)
-        return resumen
+        self._imprimir_reporte_lab_consola(summary)
+        return summary
 
     def _imprimir_reporte_lab_consola(self, res: Dict[str, Any]) -> None:
         m_raw = res["metricas_crudas"]
         m_v2 = res["metricas_chronos_v2_actual"]
         logs_c = res["conteo_logs"]
         top5 = res["top_5_campeones_web2026"]
-        exp_es = res.get("traduccion_espanol_campeon_1") or {}
+        exp_en = res.get("traduccion_espanol_campeon_1") or {}
 
         n_raw = int(m_raw["n_trades"])
         w_raw = int(m_raw["wins"])
@@ -1303,48 +1306,48 @@ class LaboratorioGemeloDigitalHFT:
         pb_raw = float(m_raw.get("perdida_bruta_usdt") or 0.0)
 
         print("==========================================================================================================")
-        print(" [SIMULADOR GEMELO DIGITAL HFT] POUFS-BEELZEBUB-EN V3.0 -- REPORTE FINANCIERO CLARO EN ESPANOL")
+        print(" [HFT DIGITAL TWIN SIMULATOR] POUFS-BEELZEBUB-EN V5.0 -- CLEAR FINANCIAL REPORT")
         print("==========================================================================================================")
-        print(f" Fuente Analizada : {logs_c['origen_trades']}")
+        print(f" Analyzed Source  : {logs_c['origen_trades']}")
         print(
-            f" Datos Auxiliares : {res['eventos_baul_ia']} Eventos en Baul IA (+15s) | "
-            f"{logs_c['lineas_log']} Lineas de Log ({logs_c['bloqueos_phantom']} Bloqueos de Escudo)"
+            f" Auxiliary Data   : {res['eventos_baul_ia']} AI Vault Events (+15s) | "
+            f"{logs_c['lineas_log']} Log Lines ({logs_c['bloqueos_phantom']} Shield Interceptions)"
         )
         print(
-            f" Pruebas Corridas : {res['combinaciones_evaluadas']} Combinaciones de Estrategia + "
-            f"{res['trayectorias_bootstrap']} Escenarios de Estres en {res['tiempo_ejecucion_ms']:.1f} ms"
+            f" Executed Trials  : {res['combinaciones_evaluadas']} Strategy Combinations + "
+            f"{res['trayectorias_bootstrap']} Stress Scenarios in {res['tiempo_ejecucion_ms']:.1f} ms"
         )
         print("----------------------------------------------------------------------------------------------------------")
-        print(" BLOQUE 1: COMPARATIVA EN DINERO REAL (CUANTO GANAMOS, CUANTO PERDIMOS Y CUANTAS MALAS SE BLOQUEARON)")
+        print(" BLOCK 1: REAL-MONEY COMPARISON (GROSS PROFIT, GROSS LOSS, AND TOXIC TRADES BLOCKED)")
         print("----------------------------------------------------------------------------------------------------------")
         print(
-            f" 1. HISTORIAL CRUDO (Sin Escudos L09..13) : {n_raw:2d} ops ({w_raw:2d} Ganadas / {l_raw:2d} Perdidas |  0 Bloqueadas) | "
-            f"Ganado: +{gb_raw:.4f} | Perdido: -{pb_raw:.4f} | NETO: {m_raw['pnl_neto_usdt']:+.4f} USDT (PF {m_raw['profit_factor']:.2f})"
+            f" 1. RAW HISTORY (No Shields L09..13)      : {n_raw:2d} ops ({w_raw:2d} Won / {l_raw:2d} Lost |  0 Blocked) | "
+            f"Gross Win: +{gb_raw:.4f} | Gross Loss: -{pb_raw:.4f} | NET: {m_raw['pnl_neto_usdt']:+.4f} USDT (PF {m_raw['profit_factor']:.2f})"
         )
         print(
-            f" 2. TU BOT ACTUAL EN VIVO (L00..L13)      : {m_v2['n_trades']:2d} ops ({m_v2['wins']:2d} Ganadas / {m_v2['losses']:2d} Perdidas | {m_v2['bloqueadas']:2d} Bloqueadas) | "
-            f"Ganado: +{m_v2['ganancia_bruta_usdt']:.4f} | Perdido: -{m_v2['perdida_teorica_usdt']:.4f} | NETO: {m_v2['pnl_usdt']:+.4f} USDT (PF {m_v2['pf']:.2f})"
+            f" 2. CURRENT LIVE BOT (L00..L13)           : {m_v2['n_trades']:2d} ops ({m_v2['wins']:2d} Won / {m_v2['losses']:2d} Lost | {m_v2['bloqueadas']:2d} Blocked) | "
+            f"Gross Win: +{m_v2['ganancia_bruta_usdt']:.4f} | Gross Loss: -{m_v2['perdida_teorica_usdt']:.4f} | NET: {m_v2['pnl_usdt']:+.4f} USDT (PF {m_v2['pf']:.2f})"
         )
         print(
-            f"    -> Ahorro de Tu Bot Actual: Los 13 escudos bloquearon {m_v2['bloqueadas']} entradas toxicas y te ahorraron +{m_v2['ahorro_perdidas_usdt']:.4f} USDT en perdidas."
+            f"    -> Current Bot Savings: Active shields blocked {m_v2['bloqueadas']} toxic entries and saved +{m_v2['ahorro_perdidas_usdt']:.4f} USDT in losses."
         )
         if top5:
             b1 = top5[0]
             ah_b1 = round(pb_raw - b1["perdida_teorica_usdt"], 4)
             print(
-                f" 3. CAMPEON #1 DESCUBIERTO EN SIMULADOR   : {b1['n_trades']:2d} ops ({b1['wins']:2d} Ganadas / {b1['losses']:2d} Perdidas | {b1['bloqueadas']:2d} Bloqueadas) | "
-                f"Ganado: +{b1['ganancia_bruta_usdt']:.4f} | Perdido: -{b1['perdida_teorica_usdt']:.4f} | NETO: {b1['pnl_usdt']:+.4f} USDT (PF {b1['pf']:.2f})"
+                f" 3. CHAMPION #1 DISCOVERED IN SIMULATOR   : {b1['n_trades']:2d} ops ({b1['wins']:2d} Won / {b1['losses']:2d} Lost | {b1['bloqueadas']:2d} Blocked) | "
+                f"Gross Win: +{b1['ganancia_bruta_usdt']:.4f} | Gross Loss: -{b1['perdida_teorica_usdt']:.4f} | NET: {b1['pnl_usdt']:+.4f} USDT (PF {b1['pf']:.2f})"
             )
             print(
-                f"    -> Mejora del Campeon #1  : Gana {exp_es.get('mejora_neta_sobre_bot_actual_usdt', 0.0):+.4f} USDT extra sobre el bot actual y ahorra +{ah_b1:.4f} USDT en perdidas."
+                f"    -> Champion #1 Edge   : Gains {exp_en.get('mejora_neta_sobre_bot_actual_usdt', 0.0):+.4f} USDT extra over current bot and saves +{ah_b1:.4f} USDT in losses."
             )
         print("----------------------------------------------------------------------------------------------------------")
-        print(" BLOQUE 2: TOP 5 DE RECETAS CAMPEONAS (DESGLOSE DE GANANCIAS, PERDIDAS TEORICAS Y PARAMETROS)")
+        print(" BLOCK 2: TOP 5 CHAMPION RECIPES (GROSS PROFIT, THEORETICAL LOSS & PARAMETER VECTORS)")
         print("----------------------------------------------------------------------------------------------------------")
-        print(" RK | G/P (BLOQ)   | GANADO(+) | PERDIDO(-)| NETO USDT  | PF    | DSR  | PARAMETROS (OFI | BTC | TP_MKR | UNW/SL | KELLY_S/L)")
+        print(" RK | W/L (BLK)    | GROSS(+)  | LOSS(-)   | NET USDT   | PF    | DSR  | PARAMETERS (OFI | BTC | TP_MKR | UNW/SL | KELLY_S/L)")
         print("----------------------------------------------------------------------------------------------------------")
         for idx, c in enumerate(top5, start=1):
-            gp_s = f"{c['wins']}G/{c['losses']}P({c['bloqueadas']}B)"
+            gp_s = f"{c['wins']}W/{c['losses']}L({c['bloqueadas']}B)"
             p_str = (
                 f"+{c['w1_ofi_long']:.2f} | {int(c['w2_btc_beta']*100):2d}% | "
                 f"+{c['w3_tp_maker_pct']*100:.2f}% | {int(c['w4_unwind_seg'])}s/{c['w4_sl_decay_pct']*100:.2f}% | "
@@ -1355,33 +1358,33 @@ class LaboratorioGemeloDigitalHFT:
                 f"{c['pnl_usdt']:+9.4f}  | {c['pf']:5.2f} | {c['dsr']:.2f} | {p_str}"
             )
         print("----------------------------------------------------------------------------------------------------------")
-        print(" BLOQUE 3: QUE APRENDIO EL SIMULADOR (TRADUCCION EN ESPANOL) Y SEMAFORO DE DECISION PARA LA IA")
+        print(" BLOCK 3: SIMULATOR INSIGHTS & AI DECISION TRAFFIC LIGHT")
         print("----------------------------------------------------------------------------------------------------------")
-        for linea_r in exp_es.get("reglas_traducidas_espanol") or []:
-            print(f"  {linea_r}")
+        for rule_line in exp_en.get("reglas_traducidas_espanol") or []:
+            print(f"  {rule_line}")
         print("----------------------------------------------------------------------------------------------------------")
-        print(f" [SEMAFORO IA] {exp_es.get('semaforo_decision_ia', '')}")
-        print(f" [ARCHIVO JSON] Guardado en: {self.ruta_salida_lab} (Pegame esta tabla en el chat para auditar cambios)")
+        print(f" [AI TRAFFIC LIGHT] {exp_en.get('semaforo_decision_ia', '')}")
+        print(f" [JSON ARTIFACT]    Saved to: {self.ruta_salida_lab} (Paste this table in chat to audit parameter upgrades)")
         print("==========================================================================================================")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Evaluador Cuantico Walk-Forward OOS y Laboratorio Gemelo Digital HFT (--lab)"
+        description="Quantum Walk-Forward OOS Evaluator & HFT Digital Twin Laboratory (--lab)"
     )
-    parser.add_argument("--repo", type=str, default=str(cfg.ROOT_DIR), help="Ruta al repositorio")
-    parser.add_argument("--horas", type=float, default=72.0, help="Horizonte base en horas")
-    parser.add_argument("--silencioso", action="store_true", help="Suprime logs en consola")
+    parser.add_argument("--repo", type=str, default=str(cfg.ROOT_DIR), help="Repository root path")
+    parser.add_argument("--horas", type=float, default=72.0, help="Base lookback horizon in hours")
+    parser.add_argument("--silencioso", action="store_true", help="Suppress console log output")
     parser.add_argument(
         "--lab",
         action="store_true",
-        help="Ejecuta el Laboratorio Gemelo Digital HFT de 3.456 combinaciones (CPCV + Bootstrap + DSR)",
+        help="Run the 3,456-combination HFT Digital Twin Laboratory (CPCV + Bootstrap + DSR)",
     )
     parser.add_argument(
         "--bootstrap",
         type=int,
         default=1500,
-        help="Numero de trayectorias Stationary Block Bootstrap en modo --lab",
+        help="Number of Stationary Block Bootstrap trajectories in --lab mode",
     )
     args = parser.parse_args()
 

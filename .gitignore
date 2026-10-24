@@ -1,14 +1,14 @@
 # ==============================================================================
-# TRI-BRAIN-SNIPER (SKILL HUNTER) V3.0 - BLINDAJE DE SECRETOS Y ESTADO
+# POUFS-BEELZEBUB-EN (SPIRITUAL MESSAGE) V5.0 -- SECRETS & STATE ARMOR
 # ==============================================================================
 
-# 1. Credenciales y Secretos (PROHIBIDO SUBIR A GITHUB)
+# 1. Credentials and Secrets (STRICTLY FORBIDDEN TO COMMIT TO GITHUB)
 .env
 .env.*
 *.pem
 *.key
 
-# 2. Entornos Virtuales y Cache de Python
+# 2. Virtual Environments and Python Bytecode Cache
 venv/
 .venv/
 ENV/
@@ -18,7 +18,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 
-# 3. Archivos de Estado Transaccional, Telemetria y Locks en Produccion
+# 3. Transactional State, Telemetry, Forensic Vault, and Production Locks
 *.lock
 .tribrain.lock
 .tribrain_test.lock
@@ -28,10 +28,12 @@ bot_hft_h.log
 .test_bot_hft.log
 *.jsonl
 tribrain_stats_v1.jsonl
+baul_ia_forense.jsonl
 calibracion_oos.json
+reporte_lab_ia.json
 reporte_cuantico_oos.md
 
-# 4. Artefactos de Sistema Operativo / IDE
+# 4. Operating System / IDE Artifacts
 .DS_Store
 Thumbs.db
 .vscode/

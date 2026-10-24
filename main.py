@@ -2,18 +2,18 @@
 # -*- coding: utf-8 -*-
 """
 ==============================================================================
-ARCHIVO #11: main.py
-SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 -- ESTRATEGIA CHRONOS-TRIZ
+FILE #11: main.py
+SYSTEM: POUFS-BEELZEBUB-EN (SPIRITUAL MESSAGE) V5.0 -- CHRONOS-TRIZ STRATEGY
 ==============================================================================
-Cerebro Central Orquestador Asincrono (uvloop + Bybit UTA WebSocket L2):
-  - Cerrojo fisico de instancia unica (.tribrain.lock / .tribrain_test.lock).
-  - Sanitizador pre-vuelo de calibracion_oos.json (P-08) sin duplicar claves
-    en la raiz del JSON y reconciliador inteligente de arranque.
-  - Orquestacion paralela sin bloqueos:
-      1. Streaming WebSocket L2 a 6.6 Hz (7 Campeones + Centinela BTC).
-      2. Vigilancia de posiciones CHRONOS-TRIZ (P-04, P-05, P-06).
-      3. Enjambre Tri-Cortex (Full-Groq LPU + Failover Multi-Cloud).
-      4. Vigilante Hot-Reload OOS (< 0.5 ms) y telemetria periodica Caja Negra.
+Asynchronous Central Orchestrator Core (uvloop + Bybit UTA WebSocket L2):
+  - Physical single-instance kernel lock (.tribrain.lock / .tribrain_test.lock).
+  - Pre-flight sanitizer for calibracion_oos.json (P-08) without duplicating
+    root JSON keys and intelligent boot position reconciler.
+  - Non-blocking parallel orchestration:
+      1. 6.6 Hz L2 WebSocket streaming (7 Alpha Champions + BTC Sentinel).
+      2. CHRONOS-TRIZ position monitoring (P-04, P-05, P-06).
+      3. Tri-Cortex Swarm (Full-Groq LPU + Multi-Cloud Failover).
+      4. Sub-0.5ms OOS Hot-Reload watcher and periodic Black Box telemetry.
 ==============================================================================
 """
 from __future__ import annotations
@@ -49,10 +49,12 @@ if sys.platform != "win32":
 
 
 class CerrojoInstanciaUnica:
+    """Cross-platform OS-level PID lockfile preventing concurrent bot instances."""
+
     def __init__(self, ruta_lock: Optional[pathlib.Path] = None) -> None:
-        es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
-        nombre = cfg.ARCHIVO_LOCK_TEST if es_test else cfg.ARCHIVO_LOCK_PRODUCCION
-        self.ruta_lock: pathlib.Path = ruta_lock or (cfg.ROOT_DIR / nombre)
+        is_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
+        lock_name = cfg.ARCHIVO_LOCK_TEST if is_test else cfg.ARCHIVO_LOCK_PRODUCCION
+        self.ruta_lock: pathlib.Path = ruta_lock or (cfg.ROOT_DIR / lock_name)
         self.adquirido: bool = False
         self.pid: int = os.getpid()
 
@@ -85,12 +87,12 @@ class CerrojoInstanciaUnica:
     def adquirir(self) -> bool:
         if self.ruta_lock.exists():
             try:
-                contenido = self.ruta_lock.read_text(encoding="utf-8").strip()
-                pid_existente = int(contenido) if contenido.isdigit() else -1
-                if pid_existente == self.pid:
+                content = self.ruta_lock.read_text(encoding="utf-8").strip()
+                existing_pid = int(content) if content.isdigit() else -1
+                if existing_pid == self.pid:
                     self.adquirido = True
                     return True
-                if self._pid_sigue_vivo(pid_existente):
+                if self._pid_sigue_vivo(existing_pid):
                     return False
             except Exception:
                 pass
@@ -111,8 +113,8 @@ class CerrojoInstanciaUnica:
             return
         try:
             if self.ruta_lock.exists():
-                contenido = self.ruta_lock.read_text(encoding="utf-8").strip()
-                if contenido == str(self.pid):
+                content = self.ruta_lock.read_text(encoding="utf-8").strip()
+                if content == str(self.pid):
                     self.ruta_lock.unlink(missing_ok=True)
         except Exception:
             pass
@@ -120,22 +122,23 @@ class CerrojoInstanciaUnica:
 
 
 def _sanear_json_oos_disco_phantom() -> None:
+    """Sanitizes calibracion_oos.json on disk prior to boot in production mode."""
     if os.environ.get("TRIBRAIN_TEST_MODE") == "1":
         return
-    ruta_j = cfg.ROOT_DIR / cfg.ARCHIVO_CALIBRACION_OOS
-    if not ruta_j.exists():
+    json_path = cfg.ROOT_DIR / cfg.ARCHIVO_CALIBRACION_OOS
+    if not json_path.exists():
         return
     try:
-        d = json.loads(ruta_j.read_text(encoding="utf-8-sig"))
+        d = json.loads(json_path.read_text(encoding="utf-8-sig"))
         if not isinstance(d, dict):
             return
-        for k_raiz in (
+        for root_key in (
             "COSECHA_TRIZ_ACTIVACION_PCT",
             "OFI_MIN_ENTRADA",
             "Z_SCORE_UMBRAL_HIGH_BETA",
             "Z_SCORE_UMBRAL_TIER1",
         ):
-            d.pop(k_raiz, None)
+            d.pop(root_key, None)
 
         prms = d.get("parametros")
         if isinstance(prms, dict):
@@ -151,12 +154,17 @@ def _sanear_json_oos_disco_phantom() -> None:
             prms["Z_SCORE_UMBRAL_TIER1"] = round(
                 max(-3.30, min(-2.45, float(prms.get("Z_SCORE_UMBRAL_TIER1", -2.55)))), 2
             )
-        ruta_j.write_bytes((json.dumps(d, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
+        json_path.write_bytes((json.dumps(d, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
     except Exception:
         pass
 
 
 async def reconciliar_posiciones_arranque(exchange: Any) -> int:
+    """
+    Cancels dangling open orders and reconciles any existing Bybit UTA positions on startup:
+    - Positions older than TIEMPO_MAX_HOLD_SEG are liquidated as ESCAPE_HUERFANA_BOOT.
+    - Recent positions (< TIEMPO_MAX_HOLD_SEG) are adopted into RAM with full SL protection.
+    """
     if os.environ.get("TRIBRAIN_TEST_MODE") != "1":
         _sanear_json_oos_disco_phantom()
         cfg._aplicar_parametros_produccion_phantom()
@@ -164,30 +172,30 @@ async def reconciliar_posiciones_arranque(exchange: Any) -> int:
     if exchange is None:
         return 0
 
-    procesadas = 0
-    ahora = time.time()
+    processed = 0
+    now = time.time()
 
     for sym in cfg.PARES_CAMPEONES_ALFA:
         try:
-            ordenes = await exchange.fetch_open_orders(sym)
-            if ordenes:
+            orders = await exchange.fetch_open_orders(sym)
+            if orders:
                 await exchange.cancel_all_orders(sym)
-                log_sniper(f"[RECONCILIADOR] {len(ordenes)} orden(es) colgada(s) cancelada(s) en {sym}.")
+                log_sniper(f"[RECONCILER] {len(orders)} dangling order(s) canceled on {sym}.")
         except Exception:
             pass
 
     try:
-        posiciones = await exchange.fetch_positions()
+        positions = await exchange.fetch_positions()
     except Exception as exc:
-        log_sniper(f"[WARN] [RECONCILIADOR] No se pudo consultar posiciones en arranque: {exc}")
+        log_sniper(f"[WARN] [RECONCILER] Could not query positions on startup: {exc}")
         return 0
 
-    abiertas = [p for p in (posiciones or []) if float(p.get("contracts") or 0.0) > 0.0]
-    if not abiertas:
-        log_sniper("[RECONCILIADOR] Sin posiciones huerfanas abiertas en Bybit. Margen 100% despejado.")
+    open_positions = [p for p in (positions or []) if float(p.get("contracts") or 0.0) > 0.0]
+    if not open_positions:
+        log_sniper("[RECONCILER] No orphan positions open on Bybit. Margin 100% clear.")
         return 0
 
-    for p in abiertas:
+    for p in open_positions:
         sym = str(p.get("symbol") or "")
         side = str(p.get("side") or "long").lower()
         qty = float(p.get("contracts") or 0.0)
@@ -196,54 +204,54 @@ async def reconciliar_posiciones_arranque(exchange: Any) -> int:
 
         ts_ms = p.get("timestamp") or p.get("info", {}).get("updatedTime") or p.get("info", {}).get("createdTime")
         if ts_ms is not None and float(ts_ms) > 0:
-            t_apertura = float(ts_ms) / 1000.0 if float(ts_ms) > 1e11 else float(ts_ms)
-            edad_seg = max(0.0, ahora - t_apertura)
+            t_open = float(ts_ms) / 1000.0 if float(ts_ms) > 1e11 else float(ts_ms)
+            age_sec = max(0.0, now - t_open)
         else:
-            edad_seg = 14400.0
-            t_apertura = ahora - edad_seg
+            age_sec = 14400.0
+            t_open = now - age_sec
 
-        edad_min = edad_seg / 60.0
-        if edad_seg >= cfg.TIEMPO_MAX_HOLD_SEG:
+        age_min = age_sec / 60.0
+        if age_sec >= cfg.TIEMPO_MAX_HOLD_SEG:
             log_sniper(
-                f"[RECONCILIADOR] Posicion zombie huerfana detectada en {sym}: "
-                f"{qty} contratos @ {ep} (edad {edad_min:.1f} min >= {cfg.TIEMPO_MAX_HOLD_SEG:.0f}s). "
-                f"Liquidando a mercado para liberar margen..."
+                f"[RECONCILER] Zombie orphan position detected on {sym}: "
+                f"{qty} contracts @ {ep} (age {age_min:.1f} min >= {cfg.TIEMPO_MAX_HOLD_SEG:.0f}s). "
+                f"Liquidating at market to release margin..."
             )
             side_close = "sell" if side == "long" else "buy"
             exit_p = mark_p
             try:
-                orden_c = await exchange.create_order(
+                close_ord = await exchange.create_order(
                     sym, "market", side_close, qty, None, {"reduceOnly": True}
                 )
-                if isinstance(orden_c, dict):
-                    p_avg = float(orden_c.get("average") or orden_c.get("price") or 0.0)
+                if isinstance(close_ord, dict):
+                    p_avg = float(close_ord.get("average") or close_ord.get("price") or 0.0)
                     if p_avg > 0.0:
                         exit_p = p_avg
             except Exception as exc:
-                log_sniper(f"[WARN] [RECONCILIADOR] Error cerrando zombie en {sym}: {exc}")
+                log_sniper(f"[WARN] [RECONCILER] Error closing zombie position on {sym}: {exc}")
                 continue
 
-            pos_zombie = PosicionActiva(
+            zombie_pos = PosicionActiva(
                 symbol=sym,
                 side=side,
                 qty_inicial=qty,
                 qty_actual=qty,
                 entry_price=ep,
-                ts_apertura=t_apertura,
+                ts_apertura=t_open,
             )
             await CAJA_NEGRA.registrar_cierre_posicion(
-                pos=pos_zombie,
+                pos=zombie_pos,
                 exit_price=exit_p,
                 motivo="ESCAPE_HUERFANA_BOOT",
                 es_salida_maker=False,
-                ahora=ahora,
+                ahora=now,
             )
-            procesadas += 1
+            processed += 1
         else:
             tick_s, _, _ = extraer_precision_y_minimos(exchange, sym, ep)
             sl_i, sl_b = calcular_barreras_sl_iniciales(side, ep, tick_s)
-            ts_norm = ahora if (edad_seg > 3600.0 or edad_seg < 0.0) else t_apertura
-            pos_viva = PosicionActiva(
+            ts_norm = now if (age_sec > 3600.0 or age_sec < 0.0) else t_open
+            live_pos = PosicionActiva(
                 symbol=sym,
                 side=side,
                 qty_inicial=qty,
@@ -254,35 +262,38 @@ async def reconciliar_posiciones_arranque(exchange: Any) -> int:
                 sl_bybit_price=sl_b,
             )
             ESTADO_RAM.slot_ocupado = True
-            ESTADO_RAM.posiciones_activas[sym] = pos_viva
+            ESTADO_RAM.posiciones_activas[sym] = live_pos
             log_sniper(
-                f"[RECONCILIADOR] Posicion reciente adoptada en {sym}: {qty} @ {ep} (edad {edad_seg:.0f}s)."
+                f"[RECONCILER] Recent position adopted on {sym}: {qty} @ {ep} (age {age_sec:.0f}s)."
             )
-            procesadas += 1
+            processed += 1
 
-    log_sniper(f"[RECONCILIADOR] Reconciliacion de arranque completada: {procesadas} posicion(es) procesada(s).")
-    return procesadas
+    log_sniper(f"[RECONCILER] Startup reconciliation completed: {processed} position(s) processed.")
+    return processed
 
 
 def auditar_y_filtrar_lotes_minimos(exchange: Any, nocional_kelly_usdt: float) -> List[str]:
-    excluidos: List[str] = []
-    mercados = getattr(exchange, "markets", None) or {}
-    for sym, mkt in mercados.items():
+    """Filters out symbols whose minimum exchange lot notional exceeds 1.35x the Kelly notional."""
+    excluded: List[str] = []
+    markets = getattr(exchange, "markets", None) or {}
+    for sym, mkt in markets.items():
         if not str(sym).endswith("/USDT:USDT"):
             continue
         lims = (mkt.get("limits") or {}).get("amount") or {}
         min_q = float(lims.get("min") or 0.0)
         info = mkt.get("info") or {}
-        precio_aprox = float(info.get("lastPrice") or info.get("markPrice") or 0.0)
-        if min_q > 0.0 and precio_aprox > 0.0:
-            costo_min = min_q * precio_aprox
-            if costo_min > (nocional_kelly_usdt * 1.35):
+        approx_price = float(info.get("lastPrice") or info.get("markPrice") or 0.0)
+        if min_q > 0.0 and approx_price > 0.0:
+            min_cost = min_q * approx_price
+            if min_cost > (nocional_kelly_usdt * 1.35):
                 ESTADO_RAM.pares_excluidos_lote.add(sym)
-                excluidos.append(sym)
-    return sorted(excluidos)
+                excluded.append(sym)
+    return sorted(excluded)
 
 
 class MotorTriBrainSniper:
+    """Central asynchronous HFT engine orchestrating Radar, Sniper, Position Manager, and Tri-Cortex."""
+
     def __init__(self, exchange: Any = None) -> None:
         self.exchange: Any = exchange
         self.gestor: GestorPosiciones = GestorPosiciones(exchange=exchange)
@@ -306,11 +317,11 @@ class MotorTriBrainSniper:
             bal = await self.exchange.fetch_balance()
             usdt = (bal or {}).get("USDT") or {}
             total = float(usdt.get("total") or 0.0)
-            libre = float(usdt.get("free") or total)
+            free = float(usdt.get("free") or total)
             if total > 0.0:
-                ESTADO_RAM.sincronizar_balance_uta(total, libre)
+                ESTADO_RAM.sincronizar_balance_uta(total, free)
         except Exception as exc:
-            log_sniper(f"[WARN] [MAIN] No se pudo sincronizar balance UTA: {exc}")
+            log_sniper(f"[WARN] [MAIN] Could not synchronize UTA balance: {exc}")
 
     async def _vigilar_stream_simbolo(self, symbol: str) -> None:
         while self._running and self.exchange is not None:
@@ -324,25 +335,25 @@ class MotorTriBrainSniper:
             except asyncio.CancelledError:
                 break
             except Exception as exc:
-                log_sniper(f"[RADAR] Error en {symbol}: {type(exc).__name__}: {exc}")
+                log_sniper(f"[RADAR] Stream error on {symbol}: {type(exc).__name__}: {exc}")
                 await asyncio.sleep(2.5)
 
     async def _bucle_mantenimiento_y_hot_reload(self) -> None:
-        ultimo_panel = time.time()
+        last_panel = time.time()
         while self._running:
             await asyncio.sleep(30.0)
             try:
                 res_oos = cfg.recargar_calibracion_oos_si_cambio()
                 if res_oos.get("recargado"):
                     log_sniper(
-                        f"[HOT-RELOAD OOS] Parametros actualizados en caliente desde {cfg.ARCHIVO_CALIBRACION_OOS}: "
+                        f"[HOT-RELOAD OOS] Parameters hot-reloaded from {cfg.ARCHIVO_CALIBRACION_OOS}: "
                         f"{res_oos.get('aplicados')}"
                     )
-                ahora = time.time()
-                if ahora - ultimo_panel >= 300.0:
+                now = time.time()
+                if now - last_panel >= 300.0:
                     await self.sincronizar_patrimonio_bybit()
                     CAJA_NEGRA.imprimir_panel_caja_negra()
-                    ultimo_panel = ahora
+                    last_panel = now
             except asyncio.CancelledError:
                 break
             except Exception:
@@ -352,10 +363,10 @@ class MotorTriBrainSniper:
         self._running = True
         loop_name = type(asyncio.get_running_loop()).__name__
         log_sniper("==================================================================")
-        log_sniper(f"INICIANDO CEREBRO CENTRAL {cfg.NOMBRE_ESTRATEGIA.upper()} [{cfg.ESTRATEGIA_MATEMATICA}]")
+        log_sniper(f"STARTING CENTRAL CORE {cfg.NOMBRE_ESTRATEGIA.upper()} [{cfg.ESTRATEGIA_MATEMATICA}]")
         log_sniper("==================================================================")
-        log_sniper(f"[MAIN] Bloqueo de instancia fisica adquirido exitosamente (PID {os.getpid()} | Loop: {loop_name}).")
-        log_sniper(f"[MAIN] Telemetria local con sellado de tiempo activa en: {cfg.ARCHIVO_LOG_SESION}")
+        log_sniper(f"[MAIN] Physical single-instance lock acquired successfully (PID {os.getpid()} | Loop: {loop_name}).")
+        log_sniper(f"[MAIN] Local timestamped telemetry active in: {cfg.ARCHIVO_LOG_SESION}")
 
         if self.exchange is None:
             import ccxt.pro as ccxtpro
@@ -378,49 +389,49 @@ class MotorTriBrainSniper:
         await self.sincronizar_patrimonio_bybit()
 
         total_u = ESTADO_RAM.patrimonio_total_usdt
-        libre_u = ESTADO_RAM.margen_libre_usdt
-        bloq_u = ESTADO_RAM.margen_bloqueado_usdt
-        margen_k = round(libre_u * cfg.KELLY_FRACCION_BASE, 2)
-        nocional_k = round(margen_k * cfg.APALANCAMIENTO_BASE, 2)
+        free_u = ESTADO_RAM.margen_libre_usdt
+        locked_u = ESTADO_RAM.margen_bloqueado_usdt
+        kelly_margin = round(free_u * cfg.KELLY_FRACCION_BASE, 2)
+        kelly_notional = round(kelly_margin * cfg.APALANCAMIENTO_BASE, 2)
 
         log_sniper(
-            f"[MAIN] Auditoria UTA USDT -> Total: {total_u:.4f} | Libre RAM: {libre_u:.4f} | "
-            f"Bloqueado: {bloq_u:.4f} | Margen Kelly ({cfg.KELLY_FRACCION_BASE*100:.0f}%): "
-            f"{margen_k:.2f} USDT (Nocional {cfg.APALANCAMIENTO_BASE}x: {nocional_k:.2f} USDT) [LISTO PARA DISPARAR]"
+            f"[MAIN] UTA USDT Audit -> Total: {total_u:.4f} | Free RAM: {free_u:.4f} | "
+            f"Locked: {locked_u:.4f} | Kelly Margin ({cfg.KELLY_FRACCION_BASE*100:.0f}%): "
+            f"{kelly_margin:.2f} USDT (Notional {cfg.APALANCAMIENTO_BASE}x: {kelly_notional:.2f} USDT) [READY TO FIRE]"
         )
 
-        excluidos = auditar_y_filtrar_lotes_minimos(self.exchange, nocional_k)
-        if excluidos:
-            log_sniper(f"[MAIN] Filtro de lote minimo excluyo pares indivisibles: {', '.join(excluidos[:8])}")
+        excluded = auditar_y_filtrar_lotes_minimos(self.exchange, kelly_notional)
+        if excluded:
+            log_sniper(f"[MAIN] Minimum lot filter excluded indivisible pairs: {', '.join(excluded[:8])}")
 
         log_sniper(
-            f"[MAIN] Modo Paper: {cfg.MODO_PAPER} | Estrategia: {cfg.ESTRATEGIA_MATEMATICA} | "
-            f"TTL Entrada: {cfg.TTL_ORDEN_ENTRADA_SEG}s (ReQuote={cfg.PERMITIR_REQUOTE}) | "
-            f"Scratch: {cfg.MAKER_SCRATCH_TIEMPO_SEG:.0f}s | Cosecha 50% TRIZ: +{cfg.COSECHA_TRIZ_ACTIVACION_PCT*100:.2f}% | "
-            f"SL Interno: -{cfg.SL_INTERNO_PCT*100:.2f}% | Hold Max: {cfg.TIEMPO_MAX_HOLD_SEG:.0f}s"
+            f"[MAIN] Paper Mode: {cfg.MODO_PAPER} | Strategy: {cfg.ESTRATEGIA_MATEMATICA} | "
+            f"Entry TTL: {cfg.TTL_ORDEN_ENTRADA_SEG}s (ReQuote={cfg.PERMITIR_REQUOTE}) | "
+            f"Scratch: {cfg.MAKER_SCRATCH_TIEMPO_SEG:.0f}s | 50% TRIZ Harvest: +{cfg.COSECHA_TRIZ_ACTIVACION_PCT*100:.2f}% | "
+            f"Internal SL: -{cfg.SL_INTERNO_PCT*100:.2f}% | Max Hold: {cfg.TIEMPO_MAX_HOLD_SEG:.0f}s"
         )
-        log_sniper(f"[MAIN] Presas activas ({len(cfg.PARES_CAMPEONES_ALFA)} Campeones Alfa): {', '.join(cfg.PARES_CAMPEONES_ALFA)}")
+        log_sniper(f"[MAIN] Active targets ({len(cfg.PARES_CAMPEONES_ALFA)} Alpha Champions): {', '.join(cfg.PARES_CAMPEONES_ALFA)}")
 
         ESCUDO_TRICORTEX.inicializar_whitelist_ram()
         CAJA_NEGRA.imprimir_panel_caja_negra()
 
         await TELEMETRIA_TG.enviar_mensaje_sistema(
             f"[BOOT] {cfg.NOMBRE_ESTRATEGIA}\n"
-            f"- Estrategia: {cfg.ESTRATEGIA_MATEMATICA}\n"
-            f"- Patrimonio UTA: {total_u:.4f} USDT (Libre: {libre_u:.4f} USDT)\n"
-            f"- Campeones activos: {', '.join(p.split('/')[0] for p in cfg.PARES_CAMPEONES_ALFA)}\n"
-            f"- Geometria: TTL={cfg.TTL_ORDEN_ENTRADA_SEG}s | Scratch={cfg.MAKER_SCRATCH_TIEMPO_SEG:.0f}s | "
-            f"Cosecha 50%=+{cfg.COSECHA_TRIZ_ACTIVACION_PCT*100:.2f}% | SL=-{cfg.SL_INTERNO_PCT*100:.2f}%"
+            f"- Strategy: {cfg.ESTRATEGIA_MATEMATICA}\n"
+            f"- UTA Equity: {total_u:.4f} USDT (Free: {free_u:.4f} USDT)\n"
+            f"- Active Champions: {', '.join(p.split('/')[0] for p in cfg.PARES_CAMPEONES_ALFA)}\n"
+            f"- Geometry: TTL={cfg.TTL_ORDEN_ENTRADA_SEG}s | Scratch={cfg.MAKER_SCRATCH_TIEMPO_SEG:.0f}s | "
+            f"50% Harvest=+{cfg.COSECHA_TRIZ_ACTIVACION_PCT*100:.2f}% | SL=-{cfg.SL_INTERNO_PCT*100:.2f}%"
         )
 
-        simbolos_ws = list(cfg.PARES_CAMPEONES_ALFA) + [cfg.SIMBOLO_CENTINELA_MACRO]
-        tareas = [asyncio.create_task(self._vigilar_stream_simbolo(s)) for s in simbolos_ws]
-        tareas.append(asyncio.create_task(self.gestor.bucle_vigilancia_posiciones()))
-        tareas.append(asyncio.create_task(ESCUDO_TRICORTEX.bucle_orquestacion_tricortex()))
-        tareas.append(asyncio.create_task(self._bucle_mantenimiento_y_hot_reload()))
+        ws_symbols = list(cfg.PARES_CAMPEONES_ALFA) + [cfg.SIMBOLO_CENTINELA_MACRO]
+        tasks = [asyncio.create_task(self._vigilar_stream_simbolo(s)) for s in ws_symbols]
+        tasks.append(asyncio.create_task(self.gestor.bucle_vigilancia_posiciones()))
+        tasks.append(asyncio.create_task(ESCUDO_TRICORTEX.bucle_orquestacion_tricortex()))
+        tasks.append(asyncio.create_task(self._bucle_mantenimiento_y_hot_reload()))
 
         try:
-            await asyncio.gather(*tareas)
+            await asyncio.gather(*tasks)
         except asyncio.CancelledError:
             pass
         finally:
@@ -438,31 +449,31 @@ class MotorTriBrainSniper:
 
 
 async def main_async() -> int:
-    cerrojo = CerrojoInstanciaUnica()
-    if not cerrojo.adquirir():
-        log_sniper("[ERROR] [ABORTADO] Otra instancia de Tri-Brain-Sniper ya esta en ejecucion (.tribrain.lock activo).")
+    lock = CerrojoInstanciaUnica()
+    if not lock.adquirir():
+        log_sniper("[ERROR] [ABORTED] Another instance of POUFS-BEELZEBUB-EN is already running (.tribrain.lock active).")
         return 1
 
-    motor = MotorTriBrainSniper()
+    engine = MotorTriBrainSniper()
     loop = asyncio.get_running_loop()
 
-    def _solicitar_apagado() -> None:
-        log_sniper("[STOP] [MAIN] Sennal de apagado recibida. Cerrando conexiones limpiamente...")
+    def _request_shutdown() -> None:
+        log_sniper("[STOP] [MAIN] Shutdown signal received. Closing connections cleanly...")
         for task in asyncio.all_tasks(loop):
             task.cancel()
 
     if sys.platform != "win32":
         for sig in (signal.SIGINT, signal.SIGTERM):
             try:
-                loop.add_signal_handler(sig, _solicitar_apagado)
+                loop.add_signal_handler(sig, _request_shutdown)
             except Exception:
                 pass
 
     try:
-        await motor.iniciar_produccion()
+        await engine.iniciar_produccion()
         return 0
     finally:
-        cerrojo.liberar()
+        lock.liberar()
 
 
 if __name__ == "__main__":

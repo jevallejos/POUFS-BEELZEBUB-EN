@@ -2,13 +2,13 @@
 # -*- coding: utf-8 -*-
 """
 ==============================================================================
-ARCHIVO #06: stats_tracker.py
-SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 -- ESTRATEGIA CHRONOS-TRIZ
+FILE #06: stats_tracker.py
+SYSTEM: POUFS-BEELZEBUB-EN (SPIRITUAL MESSAGE) V5.0 -- CHRONOS-TRIZ STRATEGY
 ==============================================================================
-Motor Contable de Caja Negra (tribrain_stats_v1.jsonl), Paridad 1:1 Bybit UTA,
-Calculo de MAP, LVR (Milionis-Moallemi-Roughgarden), Velocidad Geometrica g*,
-Escritura Enriquecida hacia el Baul Cognitivo Forense IA (baul_ia_forense.jsonl)
-y Gancho de Respaldo Contable hacia Telegram (Single-Layer Nativo).
+Black Box Accounting Engine (tribrain_stats_v1.jsonl), 1:1 Bybit UTA Parity,
+MAP Calculation, LVR (Milionis-Moallemi-Roughgarden), Geometric Growth Rate g*,
+Enriched Persistence into the Forensic AI Cognitive Vault (baul_ia_forense.jsonl),
+and Accounting Backup Hook to Telegram (Single-Layer Native).
 ==============================================================================
 """
 from __future__ import annotations
@@ -34,9 +34,9 @@ from telemetria_telegram import TELEMETRIA_TG
 
 class GestorCajaNegra:
     """
-    Libro mayor transaccional con paridad 1:1 frente a Bybit UTA,
-    blindaje anti-doble-contabilizacion, auditoria de integridad JSONL
-    y persistencia de alta densidad en el Baul Cognitivo Forense IA.
+    Transactional ledger with 1:1 parity against Bybit UTA,
+    anti-double-accounting armor, JSONL integrity auditing,
+    and high-density persistence in the Forensic AI Cognitive Vault.
     """
 
     def __init__(self, ruta_jsonl: Optional[pathlib.Path] = None) -> None:
@@ -56,31 +56,31 @@ class GestorCajaNegra:
 
     def auditar_y_desduplicar_jsonl(self) -> int:
         """
-        Inspecciona el archivo JSONL, normaliza cualquier hold_seg > 86400s
-        y elimina registros duplicados fantasma (mismo symbol, side, entry_price
-        y exit_price en <= 2.5 segundos).
+        Inspects the JSONL ledger, normalizes any hold_seg > 86400s,
+        and removes phantom duplicate records (same symbol, side, entry_price,
+        and exit_price within <= 2.5 seconds).
         """
         if not self.ruta_jsonl.exists():
             return 0
 
-        lineas_limpias: List[str] = []
-        vistos: List[tuple[str, str, float, float, float]] = []
-        eliminados = 0
-        modificados_hold = 0
+        clean_lines: List[str] = []
+        seen: List[tuple[str, str, float, float, float]] = []
+        removed = 0
+        modified_hold = 0
 
         try:
-            for linea in self.ruta_jsonl.read_text(encoding="utf-8-sig").splitlines():
-                linea_str = linea.strip()
-                if not linea_str:
+            for line in self.ruta_jsonl.read_text(encoding="utf-8-sig").splitlines():
+                line_str = line.strip()
+                if not line_str:
                     continue
                 try:
-                    obj = json.loads(linea_str)
+                    obj = json.loads(line_str)
                 except Exception:
                     continue
 
                 if float(obj.get("hold_seg") or 0.0) > 86400.0:
                     obj["hold_seg"] = 28.0
-                    modificados_hold += 1
+                    modified_hold += 1
 
                 sym = str(obj.get("symbol") or "")
                 side = str(obj.get("side") or "long")
@@ -92,33 +92,33 @@ class GestorCajaNegra:
                 except Exception:
                     ts_epoch = 0.0
 
-                es_duplicado = False
-                for v_sym, v_side, v_ep, v_xp, v_ts in vistos:
+                is_duplicate = False
+                for v_sym, v_side, v_ep, v_xp, v_ts in seen:
                     if v_sym == sym and v_side == side and v_ep == ep and v_xp == xp:
                         if abs(ts_epoch - v_ts) <= 2.5:
-                            es_duplicado = True
+                            is_duplicate = True
                             break
 
-                if es_duplicado:
-                    eliminados += 1
+                if is_duplicate:
+                    removed += 1
                 else:
-                    vistos.append((sym, side, ep, xp, ts_epoch))
-                    lineas_limpias.append(json.dumps(obj, ensure_ascii=False))
+                    seen.append((sym, side, ep, xp, ts_epoch))
+                    clean_lines.append(json.dumps(obj, ensure_ascii=False))
 
-            if eliminados > 0 or modificados_hold > 0:
-                contenido = ("\n".join(lineas_limpias) + "\n") if lineas_limpias else ""
-                self.ruta_jsonl.write_text(contenido, encoding="utf-8")
-                if eliminados > 0:
+            if removed > 0 or modified_hold > 0:
+                content = ("\n".join(clean_lines) + "\n") if clean_lines else ""
+                self.ruta_jsonl.write_text(content, encoding="utf-8")
+                if removed > 0:
                     log_sniper(
-                        f"[CAJA NEGRA] Auditoria JSONL elimino {eliminados} registro(s) duplicado(s) en {self.ruta_jsonl.name}."
+                        f"[BLACK BOX] JSONL audit removed {removed} duplicate record(s) in {self.ruta_jsonl.name}."
                     )
         except Exception as exc:
-            log_sniper(f"[WARN] [CAJA NEGRA] Error auditando JSONL: {exc}")
+            log_sniper(f"[WARN] [BLACK BOX] Error auditing JSONL: {exc}")
 
-        return eliminados
+        return removed
 
     def cargar_y_auditar_historial(self) -> None:
-        """Recarga el estado contable acumulado desde el archivo JSONL."""
+        """Reloads cumulative accounting state from the JSONL ledger."""
         self.auditar_y_desduplicar_jsonl()
         self.operaciones.clear()
         self.trades_totales = 0
@@ -129,20 +129,20 @@ class GestorCajaNegra:
         self.mejor_trade_usdt = 0.0
         self.peor_trade_usdt = 0.0
         self.lvr_acumulado_usdt = 0.0
-        suma_map = 0.0
+        sum_map = 0.0
 
         if not self.ruta_jsonl.exists():
             self.map_promedio_usdt = 0.0
             return
 
         try:
-            for linea in self.ruta_jsonl.read_text(encoding="utf-8-sig").splitlines():
-                if not linea.strip():
+            for line in self.ruta_jsonl.read_text(encoding="utf-8-sig").splitlines():
+                if not line.strip():
                     continue
-                op = json.loads(linea)
+                op = json.loads(line)
                 self.operaciones.append(op)
                 pnl_u = float(op.get("pnl_usdt") or 0.0)
-                motivo = str(op.get("motivo") or "")
+                reason = str(op.get("motivo") or "")
                 map_u = float(
                     op.get("map_usdt")
                     or (float(op.get("qty") or 0.0) * float(op.get("entry_price") or 0.0))
@@ -152,13 +152,13 @@ class GestorCajaNegra:
                 self.trades_totales += 1
                 self.pnl_total_usdt += pnl_u
                 self.lvr_acumulado_usdt += lvr_u
-                suma_map += map_u
+                sum_map += map_u
 
                 if pnl_u >= 0.0:
                     self.wins += 1
                 else:
                     self.losses += 1
-                    if "SCRATCH" in motivo.upper():
+                    if "SCRATCH" in reason.upper():
                         self.scratches_18s += 1
 
                 if self.trades_totales == 1:
@@ -168,17 +168,17 @@ class GestorCajaNegra:
                     self.mejor_trade_usdt = max(self.mejor_trade_usdt, pnl_u)
                     self.peor_trade_usdt = min(self.peor_trade_usdt, pnl_u)
 
-            self.map_promedio_usdt = (suma_map / self.trades_totales) if self.trades_totales > 0 else 0.0
+            self.map_promedio_usdt = (sum_map / self.trades_totales) if self.trades_totales > 0 else 0.0
         except Exception as exc:
-            log_sniper(f"[WARN] [CAJA NEGRA] Error cargando historial: {exc}")
+            log_sniper(f"[WARN] [BLACK BOX] Error loading trade history: {exc}")
 
     cargar_historial = cargar_y_auditar_historial
 
     def sincronizar_paridad_uta(self, balance_real_uta: float) -> bool:
         """
-        Vector de Gradiente #4: Garantiza paridad contable 1:1 exacta al diezmilesimo
-        entre tribrain_stats_v1.jsonl y el patrimonio real de Bybit UTA cuando no hay
-        posiciones abiertas, sin alterar el conteo de Wins ni Losses.
+        Gradient Vector #4: Guarantees exact 1:1 accounting parity to the fourth
+        decimal place between tribrain_stats_v1.jsonl and actual Bybit UTA equity
+        when no positions are open, without altering Win or Loss counts.
         """
         if os.environ.get("TRIBRAIN_TEST_MODE") == "1":
             return False
@@ -188,17 +188,17 @@ class GestorCajaNegra:
         if real_u <= 0.0 or abs(real_u - self.capital_base_usdt) < 1e-6:
             return False
 
-        bal_contable = self.capital_base_usdt + self.pnl_total_usdt
-        desfase = round(real_u - bal_contable, 6)
-        if abs(desfase) < 0.0001 or abs(desfase) > 0.45:
+        book_balance = self.capital_base_usdt + self.pnl_total_usdt
+        drift = round(real_u - book_balance, 6)
+        if abs(drift) < 0.0001 or abs(drift) > 0.45:
             return False
 
         idx_target = -1
         for idx in range(len(self.operaciones) - 1, -1, -1):
             op_cand = self.operaciones[idx]
-            pnl_actual = float(op_cand.get("pnl_usdt") or 0.0)
-            nuevo_pnl = round(pnl_actual + desfase, 6)
-            if (pnl_actual < 0.0 and nuevo_pnl < 0.0) or (pnl_actual >= 0.0 and nuevo_pnl >= 0.0):
+            current_pnl = float(op_cand.get("pnl_usdt") or 0.0)
+            new_pnl = round(current_pnl + drift, 6)
+            if (current_pnl < 0.0 and new_pnl < 0.0) or (current_pnl >= 0.0 and new_pnl >= 0.0):
                 idx_target = idx
                 break
 
@@ -206,25 +206,25 @@ class GestorCajaNegra:
             return False
 
         op_obj = self.operaciones[idx_target]
-        nuevo_pnl_u = round(float(op_obj.get("pnl_usdt") or 0.0) + desfase, 6)
+        new_pnl_u = round(float(op_obj.get("pnl_usdt") or 0.0) + drift, 6)
         map_u = float(op_obj.get("map_usdt") or 16.50)
-        op_obj["pnl_usdt"] = nuevo_pnl_u
+        op_obj["pnl_usdt"] = new_pnl_u
         if map_u > 0.0:
-            op_obj["pnl_percentage"] = round((nuevo_pnl_u / map_u) * 100.0, 4)
+            op_obj["pnl_percentage"] = round((new_pnl_u / map_u) * 100.0, 4)
 
         try:
-            lineas = [json.dumps(x, ensure_ascii=False) for x in self.operaciones]
-            self.ruta_jsonl.write_text("\n".join(lineas) + "\n", encoding="utf-8")
+            lines = [json.dumps(x, ensure_ascii=False) for x in self.operaciones]
+            self.ruta_jsonl.write_text("\n".join(lines) + "\n", encoding="utf-8")
             self.cargar_y_auditar_historial()
             log_sniper(
-                f"[CAJA NEGRA 1:1] Paridad UTA sincronizada al diezmilesimo "
-                f"(Ajuste Zero-Orphan: {desfase:+.4f} USDT -> Balance {real_u:.4f} == {real_u:.4f} USDT)."
+                f"[BLACK BOX 1:1] UTA parity synchronized to 1e-4 "
+                f"(Zero-Orphan Adjustment: {drift:+.4f} USDT -> Balance {real_u:.4f} == {real_u:.4f} USDT)."
             )
             registrar_evento_baul_ia(
                 {
                     "tipo_evento": "PARIDAD_1A1_AJUSTE",
                     "symbol": str(op_obj.get("symbol") or ""),
-                    "ajuste_usdt": round(desfase, 4),
+                    "ajuste_usdt": round(drift, 4),
                     "balance_uta_real": round(real_u, 4),
                     "n_trades": self.trades_totales,
                 }
@@ -236,8 +236,8 @@ class GestorCajaNegra:
     @staticmethod
     def calcular_lvr_operacion(map_usdt: float, volatilidad_local: float, hold_seg: float) -> float:
         sigma = max(0.0005, float(volatilidad_local or 0.0020))
-        t_horas = max(0.0, float(hold_seg)) / 3600.0
-        return round(0.125 * (sigma ** 2) * float(map_usdt) * t_horas, 6)
+        t_hours = max(0.0, float(hold_seg)) / 3600.0
+        return round(0.125 * (sigma ** 2) * float(map_usdt) * t_hours, 6)
 
     def registrar_cosecha_parcial_50(
         self,
@@ -249,25 +249,25 @@ class GestorCajaNegra:
         qty_c = float(qty_cerrada)
         ep = float(pos.entry_price)
         xp = float(exit_price)
-        nocional_entrada = qty_c * ep
-        nocional_salida = qty_c * xp
+        entry_notional = qty_c * ep
+        exit_notional = qty_c * xp
 
         if pos.side == "short":
-            pnl_bruto = nocional_entrada - nocional_salida
+            gross_pnl = entry_notional - exit_notional
         else:
-            pnl_bruto = nocional_salida - nocional_entrada
+            gross_pnl = exit_notional - entry_notional
 
-        fee_in = nocional_entrada * cfg.FEE_MAKER_PCT
-        fee_out = nocional_salida * (cfg.FEE_MAKER_PCT if es_maker else cfg.FEE_TAKER_PCT)
-        fees_tramo = fee_in + fee_out
-        pnl_neto_tramo = pnl_bruto - fees_tramo
+        fee_in = entry_notional * cfg.FEE_MAKER_PCT
+        fee_out = exit_notional * (cfg.FEE_MAKER_PCT if es_maker else cfg.FEE_TAKER_PCT)
+        leg_fees = fee_in + fee_out
+        net_leg_pnl = gross_pnl - leg_fees
 
         pos.cosecha_50_ejecutada = True
-        pos.modo_cosecha_ejecutado = "ESCALERA_50_25_25"
-        pos.pnl_realizado_parcial_usdt += pnl_neto_tramo
-        pos.fees_acumulados_usdt += fees_tramo
+        pos.modo_cosecha_ejecutado = "LADDER_50_25_25"
+        pos.pnl_realizado_parcial_usdt += net_leg_pnl
+        pos.fees_acumulados_usdt += leg_fees
         pos.qty_actual = max(0.0, pos.qty_actual - qty_c)
-        return round(pnl_neto_tramo, 6)
+        return round(net_leg_pnl, 6)
 
     async def registrar_cierre_posicion(
         self,
@@ -281,48 +281,48 @@ class GestorCajaNegra:
             return None
         pos.cerrada = True
 
-        t_cierre = ahora if ahora is not None else time.time()
-        hold_seg = round(max(0.1, t_cierre - float(pos.ts_apertura)), 1)
+        t_close = ahora if ahora is not None else time.time()
+        hold_seg = round(max(0.1, t_close - float(pos.ts_apertura)), 1)
 
         ep = float(pos.entry_price)
         xp = float(exit_price)
         qty_rem = float(pos.qty_actual if pos.qty_actual > 0.0 else pos.qty_inicial)
         qty_total_original = float(pos.qty_inicial if pos.qty_inicial > 0.0 else qty_rem)
 
-        nocional_rem_in = qty_rem * ep
-        nocional_rem_out = qty_rem * xp
+        rem_notional_in = qty_rem * ep
+        rem_notional_out = qty_rem * xp
         if pos.side == "short":
-            pnl_bruto_rem = nocional_rem_in - nocional_rem_out
+            gross_pnl_rem = rem_notional_in - rem_notional_out
         else:
-            pnl_bruto_rem = nocional_rem_out - nocional_rem_in
+            gross_pnl_rem = rem_notional_out - rem_notional_in
 
-        fee_in_rem = nocional_rem_in * cfg.FEE_MAKER_PCT
-        fee_out_rem = nocional_rem_out * (cfg.FEE_MAKER_PCT if es_salida_maker else cfg.FEE_TAKER_PCT)
+        fee_in_rem = rem_notional_in * cfg.FEE_MAKER_PCT
+        fee_out_rem = rem_notional_out * (cfg.FEE_MAKER_PCT if es_salida_maker else cfg.FEE_TAKER_PCT)
         fees_rem = fee_in_rem + fee_out_rem
-        pnl_neto_rem = pnl_bruto_rem - fees_rem
+        net_pnl_rem = gross_pnl_rem - fees_rem
 
-        pnl_neto_total_usdt = round(float(pos.pnl_realizado_parcial_usdt) + pnl_neto_rem, 6)
-        fees_totales_usdt = round(float(pos.fees_acumulados_usdt) + fees_rem, 6)
+        total_net_pnl_usdt = round(float(pos.pnl_realizado_parcial_usdt) + net_pnl_rem, 6)
+        total_fees_usdt = round(float(pos.fees_acumulados_usdt) + fees_rem, 6)
         map_usdt = round(qty_total_original * ep, 4)
-        pnl_pct_neto = round((pnl_neto_total_usdt / map_usdt) * 100.0, 4) if map_usdt > 0.0 else 0.0
+        net_pnl_pct = round((total_net_pnl_usdt / map_usdt) * 100.0, 4) if map_usdt > 0.0 else 0.0
         lvr_usdt = self.calcular_lvr_operacion(map_usdt, pos.volatilidad_entry, hold_seg)
 
-        ts_iso = datetime.fromtimestamp(t_cierre, tz=timezone.utc).isoformat(timespec="seconds")
-        registro = RegistroOperacionCerrada(
+        ts_iso = datetime.fromtimestamp(t_close, tz=timezone.utc).isoformat(timespec="seconds")
+        record = RegistroOperacionCerrada(
             timestamp=ts_iso,
             symbol=pos.symbol,
             side=pos.side,
             z_score_entry=round(float(pos.z_score_entry), 4) if pos.z_score_entry else None,
             ofi_entry=round(float(pos.ofi_entry), 4) if pos.ofi_entry else None,
             hurst_entry=round(float(pos.hurst_entry), 4) if pos.hurst_entry else None,
-            pnl_percentage=pnl_pct_neto,
-            pnl_usdt=pnl_neto_total_usdt,
+            pnl_percentage=net_pnl_pct,
+            pnl_usdt=total_net_pnl_usdt,
             entry_price=ep,
             exit_price=xp,
             qty=qty_total_original,
             motivo=str(motivo),
             hold_seg=hold_seg,
-            fees_usdt=fees_totales_usdt,
+            fees_usdt=total_fees_usdt,
             map_usdt=map_usdt,
             lvr_usdt=lvr_usdt,
             cosecha_triz_50=bool(pos.cosecha_50_ejecutada),
@@ -330,18 +330,18 @@ class GestorCajaNegra:
 
         try:
             with open(self.ruta_jsonl, "a", encoding="utf-8") as f_out:
-                f_out.write(json.dumps(registro.to_dict(), ensure_ascii=False) + "\n")
+                f_out.write(json.dumps(record.to_dict(), ensure_ascii=False) + "\n")
         except Exception as exc:
-            log_sniper(f"[WARN] [CAJA NEGRA] Error escribiendo en {self.ruta_jsonl.name}: {exc}")
+            log_sniper(f"[WARN] [BLACK BOX] Error writing to {self.ruta_jsonl.name}: {exc}")
 
-        prev_suma_map = self.map_promedio_usdt * self.trades_totales
-        self.operaciones.append(registro.to_dict())
+        prev_sum_map = self.map_promedio_usdt * self.trades_totales
+        self.operaciones.append(record.to_dict())
         self.trades_totales += 1
-        self.pnl_total_usdt = round(self.pnl_total_usdt + pnl_neto_total_usdt, 6)
+        self.pnl_total_usdt = round(self.pnl_total_usdt + total_net_pnl_usdt, 6)
         self.lvr_acumulado_usdt = round(self.lvr_acumulado_usdt + lvr_usdt, 6)
-        self.map_promedio_usdt = (prev_suma_map + map_usdt) / self.trades_totales
+        self.map_promedio_usdt = (prev_sum_map + map_usdt) / self.trades_totales
 
-        if pnl_neto_total_usdt >= 0.0:
+        if total_net_pnl_usdt >= 0.0:
             self.wins += 1
         else:
             self.losses += 1
@@ -349,36 +349,36 @@ class GestorCajaNegra:
                 self.scratches_18s += 1
 
         if self.trades_totales == 1:
-            self.mejor_trade_usdt = pnl_neto_total_usdt
-            self.peor_trade_usdt = pnl_neto_total_usdt
+            self.mejor_trade_usdt = total_net_pnl_usdt
+            self.peor_trade_usdt = total_net_pnl_usdt
         else:
-            self.mejor_trade_usdt = max(self.mejor_trade_usdt, pnl_neto_total_usdt)
-            self.peor_trade_usdt = min(self.peor_trade_usdt, pnl_neto_total_usdt)
+            self.mejor_trade_usdt = max(self.mejor_trade_usdt, total_net_pnl_usdt)
+            self.peor_trade_usdt = min(self.peor_trade_usdt, total_net_pnl_usdt)
 
-        # Registro de alta densidad en el Baul Cognitivo Forense IA (baul_ia_forense.jsonl)
+        # High-density persistence into the Forensic AI Cognitive Vault (baul_ia_forense.jsonl)
         if os.environ.get("TRIBRAIN_TEST_MODE") != "1" and "ESCAPE_HUERFANA_BOOT" not in str(motivo).upper():
-            mapa_vec = getattr(ESTADO_RAM, "vectores_entrada_baul", None) or {}
-            vec_in = mapa_vec.get(pos.symbol) or {}
+            vec_map = getattr(ESTADO_RAM, "vectores_entrada_baul", None) or {}
+            vec_in = vec_map.get(pos.symbol) or {}
             tk_out = ESTADO_RAM.ticks_ram.get(pos.symbol)
-            bal_contable_now = round(self.capital_base_usdt + self.pnl_total_usdt, 4)
-            bal_real_now = round(
-                ESTADO_RAM.patrimonio_total_usdt if ESTADO_RAM.patrimonio_total_usdt > 0 else bal_contable_now,
+            book_bal_now = round(self.capital_base_usdt + self.pnl_total_usdt, 4)
+            real_bal_now = round(
+                ESTADO_RAM.patrimonio_total_usdt if ESTADO_RAM.patrimonio_total_usdt > 0 else book_bal_now,
                 4,
             )
-            resultado_tag = (
+            result_tag = (
                 "WIN"
-                if pnl_neto_total_usdt >= 0.0
+                if total_net_pnl_usdt >= 0.0
                 else ("SCRATCH_18S" if "SCRATCH" in str(motivo).upper() else "LOSS")
             )
-            modo_cosecha_str = str(getattr(pos, "modo_cosecha_ejecutado", "NONE") or "NONE")
-            if modo_cosecha_str == "NONE" and pos.cosecha_50_ejecutada:
-                modo_cosecha_str = "ESCALERA_50_25_25"
+            harvest_mode_str = str(getattr(pos, "modo_cosecha_ejecutado", "NONE") or "NONE")
+            if harvest_mode_str == "NONE" and pos.cosecha_50_ejecutada:
+                harvest_mode_str = "LADDER_50_25_25"
 
             registrar_evento_baul_ia(
                 {
                     "tipo_evento": "TRADE_COMPLETO",
                     "trade_num": self.trades_totales,
-                    "resultado": resultado_tag,
+                    "resultado": result_tag,
                     "symbol": pos.symbol,
                     "side": pos.side,
                     "motivo": str(motivo),
@@ -387,19 +387,19 @@ class GestorCajaNegra:
                     "exit_price": xp,
                     "qty_total": qty_total_original,
                     "map_usdt": map_usdt,
-                    "pnl_pct_neto": pnl_pct_neto,
-                    "pnl_usdt": round(pnl_neto_total_usdt, 4),
-                    "fees_usdt": round(fees_totales_usdt, 4),
+                    "pnl_pct_neto": net_pnl_pct,
+                    "pnl_usdt": round(total_net_pnl_usdt, 4),
+                    "fees_usdt": round(total_fees_usdt, 4),
                     "lvr_usdt": lvr_usdt,
                     "hold_seg": hold_seg,
-                    "balance_contable": bal_contable_now,
-                    "balance_uta_real": bal_real_now,
+                    "balance_contable": book_bal_now,
+                    "balance_uta_real": real_bal_now,
                     "anatomia_intratrade": {
                         "mfe_max_pnl_pct": round(float(pos.max_pnl_pct_alcanzado) * 100.0, 4),
                         "mae_min_pnl_pct": round(float(getattr(pos, "min_pnl_pct_alcanzado", 0.0)) * 100.0, 4),
                         "pnl_18s_pct": round(float(getattr(pos, "pnl_18s_pct", 0.0)) * 100.0, 4),
                         "pnl_45s_pct": round(float(getattr(pos, "pnl_45s_pct", 0.0)) * 100.0, 4),
-                        "modo_cosecha": modo_cosecha_str,
+                        "modo_cosecha": harvest_mode_str,
                         "cosecha_50": bool(pos.cosecha_50_ejecutada),
                         "cosecha_25": bool(pos.cosecha_25_ejecutada),
                         "eslabon_max": int(pos.eslabon_chain_jail),
@@ -407,7 +407,7 @@ class GestorCajaNegra:
                     },
                     "vector_entrada": {
                         "p_dia": vec_in.get("p_dia", getattr(pos, "p_dia_entry", 0.25)),
-                        "tag_percentil": vec_in.get("tag_percentil", getattr(pos, "tag_percentil_entry", "P25_ELASTICO")),
+                        "tag_percentil": vec_in.get("tag_percentil", getattr(pos, "tag_percentil_entry", "P25_ELASTIC")),
                         "mu_boot": vec_in.get("mu_boot", 0.0),
                         "z_entry": round(float(pos.z_score_entry or 0.0), 3),
                         "dp_pct": round(float(vec_in.get("delta_p_pct", getattr(pos, "delta_p_entry", 0.0))) * 100.0, 3),
@@ -430,22 +430,22 @@ class GestorCajaNegra:
                         "hurst_exit": round(float(tk_out.hurst), 4) if tk_out else 0.45,
                     },
                 },
-                ahora=t_cierre,
+                ahora=t_close,
             )
 
-        icono = "[WIN]" if pnl_neto_total_usdt >= 0.0 else ("[SCRATCH]" if "SCRATCH" in str(motivo).upper() else "[LOSS]")
-        lado_str = " SHORT" if pos.side == "short" else ""
+        icon = "[WIN]" if total_net_pnl_usdt >= 0.0 else ("[SCRATCH]" if "SCRATCH" in str(motivo).upper() else "[LOSS]")
+        side_str = " SHORT" if pos.side == "short" else ""
         log_sniper(
-            f"[FRANCOTIRADOR] {icono} CIERRE{lado_str} {pos.symbol} [{motivo}] "
-            f"{ep} -> {xp} | {pnl_pct_neto:+.2f} % ({pnl_neto_total_usdt:+.4f} USDT) en {hold_seg:.0f}s"
+            f"[SNIPER] {icon} CLOSE{side_str} {pos.symbol} [{motivo}] "
+            f"{ep} -> {xp} | {net_pnl_pct:+.2f} % ({total_net_pnl_usdt:+.4f} USDT) in {hold_seg:.0f}s"
         )
         self.imprimir_panel_caja_negra()
 
         await TELEMETRIA_TG.enviar_cierre_garantizado(
             symbol=pos.symbol,
             side=pos.side,
-            pnl_pct=pnl_pct_neto,
-            pnl_usdt=pnl_neto_total_usdt,
+            pnl_pct=net_pnl_pct,
+            pnl_usdt=total_net_pnl_usdt,
             hold_seg=hold_seg,
             motivo=motivo,
             entry_price=ep,
@@ -453,37 +453,37 @@ class GestorCajaNegra:
             cosecha_50_previa=pos.cosecha_50_ejecutada,
         )
 
-        return registro
+        return record
 
     def calcular_velocidad_geometrica_g(self, ultimos_n: int = 20) -> float:
-        muestra = self.operaciones[-ultimos_n:] if self.operaciones else []
-        if not muestra:
+        sample = self.operaciones[-ultimos_n:] if self.operaciones else []
+        if not sample:
             return 0.0
-        suma_log = 0.0
-        suma_t = 0.0
-        for op in muestra:
-            ret_rel = float(op.get("pnl_usdt") or 0.0) / max(1.0, self.capital_base_usdt)
-            suma_log += math.log(max(0.01, 1.0 + ret_rel))
-            suma_t += max(1.0, float(op.get("hold_seg") or 60.0))
-        return (suma_log / (suma_t / 3600.0)) if suma_t > 0.0 else 0.0
+        sum_log = 0.0
+        sum_t = 0.0
+        for op in sample:
+            rel_ret = float(op.get("pnl_usdt") or 0.0) / max(1.0, self.capital_base_usdt)
+            sum_log += math.log(max(0.01, 1.0 + rel_ret))
+            sum_t += max(1.0, float(op.get("hold_seg") or 60.0))
+        return (sum_log / (sum_t / 3600.0)) if sum_t > 0.0 else 0.0
 
     def imprimir_panel_caja_negra(self) -> None:
         if ESTADO_RAM.patrimonio_total_usdt > 0.0:
             self.sincronizar_paridad_uta(ESTADO_RAM.patrimonio_total_usdt)
         wr = (self.wins / self.trades_totales * 100.0) if self.trades_totales > 0 else 0.0
-        bal_contable = self.capital_base_usdt + self.pnl_total_usdt
-        bal_real = ESTADO_RAM.patrimonio_total_usdt if ESTADO_RAM.patrimonio_total_usdt > 0 else bal_contable
+        book_bal = self.capital_base_usdt + self.pnl_total_usdt
+        real_bal = ESTADO_RAM.patrimonio_total_usdt if ESTADO_RAM.patrimonio_total_usdt > 0 else book_bal
         pnl_map_ratio = (self.pnl_total_usdt / self.map_promedio_usdt) if self.map_promedio_usdt > 0.0 else 0.0
 
-        l1 = "╔══════ [CAJA NEGRA] TRI-BRAIN-PHANTOM V1.0 [GOD'S ACCOMPLICE] ═══════╗"
+        l1 = "╔══════ [BLACK BOX] POUFS-BEELZEBUB-EN V5.0 [SPIRITUAL MESSAGE] ═╗"
         l2 = f"║ Trades: {self.trades_totales:<3d} (W {self.wins} / L {self.losses} / S {self.scratches_18s}) | Win Rate: {wr:5.1f} %".ljust(65) + "║"
-        l3 = f"║ PnL total: {self.pnl_total_usdt:+.4f} USDT   mejor {self.mejor_trade_usdt:+.4f} / peor {self.peor_trade_usdt:+.4f}".ljust(65) + "║"
+        l3 = f"║ Total PnL: {self.pnl_total_usdt:+.4f} USDT   best {self.mejor_trade_usdt:+.4f} / worst {self.peor_trade_usdt:+.4f}".ljust(65) + "║"
         l4 = f"║ MAP: {self.map_promedio_usdt:5.2f} USDT | PnL/MAP: {pnl_map_ratio:+.4f} | LVR: {self.lvr_acumulado_usdt:.4f}".ljust(65) + "║"
-        l5 = f"║ Balance: {bal_contable:.4f} USDT (base {self.capital_base_usdt:.2f})   real: {bal_real:.4f} USDT".ljust(65) + "║"
+        l5 = f"║ Balance: {book_bal:.4f} USDT (base {self.capital_base_usdt:.2f})   real: {real_bal:.4f} USDT".ljust(65) + "║"
         l6 = "╚════════════════════════════════════════════════════════════════╝"
 
-        for linea in (l1, l2, l3, l4, l5, l6):
-            log_sniper(linea)
+        for line in (l1, l2, l3, l4, l5, l6):
+            log_sniper(line)
 
 
 CAJA_NEGRA: GestorCajaNegra = GestorCajaNegra()

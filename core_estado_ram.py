@@ -2,13 +2,13 @@
 # -*- coding: utf-8 -*-
 """
 ==============================================================================
-ARCHIVO #04: core_estado_ram.py
-SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 -- ESTRATEGIA CHRONOS-TRIZ
+FILE #04: core_estado_ram.py
+SYSTEM: POUFS-BEELZEBUB-EN (SPIRITUAL MESSAGE) V5.0 -- CHRONOS-TRIZ STRATEGY
 ==============================================================================
-Nucleo de Memoria Compartida O(1), Contratos @dataclass, Logger Dual (CL/UTC)
-y Motor del Baul Cognitivo Forense IA (baul_ia_forense.jsonl) con Oraculo
-Contrafactual Diferido a +15.0s para auditoria de SCAR-LOCK-01..12.
-Arquitectura Single-Layer Nativa libre de envoltorios dinamicos.
+O(1) Shared-Memory Core, @dataclass Contracts, Dual Logger (CL/UTC), and
+Forensic AI Cognitive Vault Engine (baul_ia_forense.jsonl) with Deferred
++15.0s Counterfactual Oracle for auditing SCAR-LOCK-01..18.
+Single-Layer Native Architecture free of dynamic wrappers.
 ==============================================================================
 """
 from __future__ import annotations
@@ -30,11 +30,11 @@ _ARCHIVO_BAUL_IA: str = "baul_ia_forense.jsonl"
 
 
 # ==============================================================================
-# 1. CONTRATOS DE DATOS ESTRICTOS (@DATACLASS) CON ALIAS DE SEGURIDAD
+# 1. STRICT DATA CONTRACTS (@DATACLASS) WITH SAFETY ALIASES
 # ==============================================================================
 @dataclass(slots=True)
 class MetricaTick:
-    """Fotografia microestructural instantanea O(1) de un activo en el Radar 6.6 Hz."""
+    """Instantaneous O(1) microstructural snapshot of an asset in the 6.6 Hz Radar."""
     symbol: str
     bid: float = 0.0
     ask: float = 0.0
@@ -60,7 +60,7 @@ class MetricaTick:
 
 @dataclass(slots=True)
 class PermisoRegimenActivo:
-    """Vector de gobernanza asignado por el Enjambre Tri-Cortex en memoria RAM."""
+    """Governance vector assigned by the Tri-Cortex Swarm in RAM."""
     symbol: str
     modo_regimen: str = "LONG_ONLY"
     aprobado_groq: bool = True
@@ -74,10 +74,10 @@ class PermisoRegimenActivo:
 @dataclass
 class PosicionActiva:
     """
-    Estado en memoria RAM de una posicion abierta en Bybit UTA.
-    Soporta nativamente las Leyes 2 y 3 de CHRONOS-TRIZ V2.0, la Escalera
-    50/25/25 (P-06) y la telemetria de trayectoria intratrade (MFE / MAE)
-    para el Baul Cognitivo Forense IA.
+    In-memory RAM state of an open position on Bybit UTA.
+    Natively supports Laws 2 and 3 of CHRONOS-TRIZ, the 50/25/25 Convex Ladder
+    (P-06), and intratrade trajectory telemetry (MFE / MAE) for the Forensic
+    AI Cognitive Vault.
     """
     symbol: str
     side: str
@@ -92,7 +92,7 @@ class PosicionActiva:
     hurst_entry: float = 0.45
     volatilidad_entry: float = 0.0020
 
-    # Estado CHRONOS-TRIZ y Escalera Biclase 50/25/25 (P-06)
+    # CHRONOS-TRIZ and Bi-Class 50/25/25 Ladder state (P-06)
     scratch_18s_evaluado: bool = False
     scratch_18s_activo: bool = False
     cosecha_50_ejecutada: bool = False
@@ -108,19 +108,19 @@ class PosicionActiva:
     trinquete_ratchet_activo: bool = False
     trailing_activo: bool = False
 
-    # Control de orden Limit PostOnly de salida en vuelo
+    # In-flight Limit PostOnly exit order tracking
     orden_salida_id: Optional[str] = None
     orden_salida_precio: float = 0.0
     orden_salida_qty: float = 0.0
     orden_salida_ts: float = 0.0
     orden_salida_tipo: str = ""
 
-    # Cerrojo atomico anti-doble-contabilizacion
+    # Atomic anti-double-accounting lock
     cerrada: bool = False
 
-    # Contexto microestructural de entrada y anatomia intratrade (Baul Forense IA)
+    # Entry microstructural context and intratrade anatomy (Forensic AI Vault)
     p_dia_entry: float = 0.25
-    tag_percentil_entry: str = "P25_ELASTICO"
+    tag_percentil_entry: str = "P25_ELASTIC"
     ema900_dist_entry: float = 0.0
     ema900_slope_entry: float = 0.0
     delta_p_entry: float = 0.0
@@ -204,7 +204,7 @@ class PosicionActiva:
 
 @dataclass(slots=True)
 class RegistroOperacionCerrada:
-    """Registro inmutable para persistencia en tribrain_stats_v1.jsonl y despacho 1:1 a Telegram."""
+    """Immutable record for persistence in tribrain_stats_v1.jsonl and 1:1 Telegram dispatch."""
     timestamp: str
     symbol: str
     side: str
@@ -228,7 +228,7 @@ class RegistroOperacionCerrada:
 
 
 # ==============================================================================
-# 2. LOGGER DUAL DETERMINISTA Y ESCRITOR DEL BAUL FORENSE IA
+# 2. DETERMINISTIC DUAL LOGGER AND FORENSIC AI VAULT WRITER
 # ==============================================================================
 _ARGV0_RAM: str = str(sys.argv[0]) if sys.argv else ""
 _ES_DAEMON_O_SUITE: bool = any(
@@ -246,56 +246,59 @@ def formatear_sello_tiempo(ts: Optional[float] = None) -> str:
 
 def registrar_evento_baul_ia(evento: Dict[str, Any], ahora: Optional[float] = None) -> bool:
     """
-    Persiste en baul_ia_forense.jsonl un registro estructurado de alta senal
-    y cero ruido para auditoria matematica del Nucleo Cognitivo IA.
+    Persists a high-signal, zero-noise structured record to baul_ia_forense.jsonl
+    for mathematical auditing by the AI Cognitive Core.
     """
     if os.environ.get("TRIBRAIN_TEST_MODE") == "1" or not isinstance(evento, dict):
         return False
 
     t_val = float(ahora) if ahora is not None else time.time()
     dt_utc = datetime.fromtimestamp(t_val, tz=_TZ_UTC)
-    registro: Dict[str, Any] = {
+    record: Dict[str, Any] = {
         "ts_utc": dt_utc.isoformat(timespec="seconds"),
         "sello_dual": formatear_sello_tiempo(t_val),
     }
-    registro.update(evento)
+    record.update(evento)
 
     try:
-        ruta_baul = cfg.ROOT_DIR / _ARCHIVO_BAUL_IA
-        with open(ruta_baul, "a", encoding="utf-8") as f_baul:
-            f_baul.write(json.dumps(registro, ensure_ascii=False) + "\n")
+        vault_path = cfg.ROOT_DIR / _ARCHIVO_BAUL_IA
+        with open(vault_path, "a", encoding="utf-8") as f_vault:
+            f_vault.write(json.dumps(record, ensure_ascii=False) + "\n")
         return True
     except Exception:
         return False
 
 
 def log_sniper(mensaje: str, escribir_disco: bool = True) -> Optional[str]:
-    if not _ES_DAEMON_O_SUITE and "Whitelist O(1) inicializada" in str(mensaje):
+    if not _ES_DAEMON_O_SUITE and (
+        "Whitelist O(1) inicializada" in str(mensaje)
+        or "O(1) Whitelist initialized" in str(mensaje)
+    ):
         return None
 
-    sello = formatear_sello_tiempo()
-    linea = f"{sello} {mensaje}"
-    sys.stdout.write(linea + "\n")
+    stamp = formatear_sello_tiempo()
+    line = f"{stamp} {mensaje}"
+    sys.stdout.write(line + "\n")
     sys.stdout.flush()
 
     if escribir_disco:
-        es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
+        is_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
         try:
-            if es_test:
-                ruta_test = cfg.ROOT_DIR / ".test_bot_hft.log"
-                with open(ruta_test, "a", encoding="utf-8") as f_test:
-                    f_test.write(linea + "\n")
+            if is_test:
+                test_path = cfg.ROOT_DIR / ".test_bot_hft.log"
+                with open(test_path, "a", encoding="utf-8") as f_test:
+                    f_test.write(line + "\n")
             else:
-                ruta_sesion = cfg.ROOT_DIR / cfg.ARCHIVO_LOG_SESION
-                ruta_hist = cfg.ROOT_DIR / cfg.ARCHIVO_LOG_HISTORICO
-                with open(ruta_sesion, "a", encoding="utf-8") as f_ses:
-                    f_ses.write(linea + "\n")
-                with open(ruta_hist, "a", encoding="utf-8") as f_hist:
-                    f_hist.write(linea + "\n")
+                session_path = cfg.ROOT_DIR / cfg.ARCHIVO_LOG_SESION
+                hist_path = cfg.ROOT_DIR / cfg.ARCHIVO_LOG_HISTORICO
+                with open(session_path, "a", encoding="utf-8") as f_ses:
+                    f_ses.write(line + "\n")
+                with open(hist_path, "a", encoding="utf-8") as f_hist:
+                    f_hist.write(line + "\n")
         except Exception:
             pass
 
-    return linea
+    return line
 
 
 log_sniper.info = log_sniper
@@ -305,10 +308,10 @@ log_sniper.debug = log_sniper
 
 
 # ==============================================================================
-# 3. TABLA HASH DE ESTADO EN MEMORIA RAM O(1) (< 1.5 MICROSEGUNDOS)
+# 3. O(1) IN-MEMORY STATE HASH TABLE (< 1.5 MICROSECONDS)
 # ==============================================================================
 class EstadoGlobalRAM:
-    """Almacen centralizado en memoria RAM con complejidad O(1)."""
+    """Centralized in-memory RAM store with O(1) time complexity."""
 
     def __init__(self) -> None:
         self.patrimonio_total_usdt: float = cfg.CAPITAL_BASE_USDT
@@ -324,9 +327,9 @@ class EstadoGlobalRAM:
         self.eventos_caida_recientes: Dict[str, float] = {}
         self.ultimo_sl_short_precio: Dict[str, Tuple[float, float]] = {}
 
-        todos_simbolos = tuple(cfg.PARES_CAMPEONES_ALFA) + (cfg.SIMBOLO_CENTINELA_MACRO,)
+        all_symbols = tuple(cfg.PARES_CAMPEONES_ALFA) + (cfg.SIMBOLO_CENTINELA_MACRO,)
         self.ticks_ram: Dict[str, MetricaTick] = {
-            sym: MetricaTick(symbol=sym) for sym in todos_simbolos
+            sym: MetricaTick(symbol=sym) for sym in all_symbols
         }
         self.permisos_ram: Dict[str, PermisoRegimenActivo] = {
             sym: PermisoRegimenActivo(symbol=sym) for sym in cfg.PARES_CAMPEONES_ALFA
@@ -335,7 +338,7 @@ class EstadoGlobalRAM:
         self.pares_excluidos_lote: set[str] = set()
         self.cola_eventos: asyncio.Queue[Dict[str, Any]] = asyncio.Queue(maxsize=1024)
 
-        # Cola O(1) del Oraculo Contrafactual a +15.0s para el Baul Forense IA
+        # O(1) Queue for the +15.0s Counterfactual Oracle in the Forensic AI Vault
         self.auditorias_escudo_pendientes: Dict[Tuple[str, str], Dict[str, Any]] = {}
         self.ultimo_ts_auditoria_escudo: Dict[Tuple[str, str], float] = {}
 
@@ -347,46 +350,46 @@ class EstadoGlobalRAM:
         ahora: Optional[float] = None,
     ) -> Tuple[bool, str, float]:
         """
-        Lookup O(1) sub-microsegundo en la ruta critica del Radar.
-        En produccion (P-07), mantiene habilitado SHORT-SNIPER durante pausas macro.
+        Sub-microsecond O(1) lookup on the Radar critical path.
+        In production (P-07), keeps SHORT-SNIPER enabled during macro contagion pauses.
         """
         t_now = ahora if ahora is not None else time.time()
         side_norm = str(side_solicitado).lower()
-        es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
+        is_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
 
         if t_now < self.pausa_macro_hasta_ts:
-            if es_test or side_norm != "short":
-                return False, "PAUSA_CONTAGIO_MACRO", 0.0
+            if is_test or side_norm != "short":
+                return False, "MACRO_CONTAGION_PAUSE", 0.0
 
         if self.slot_ocupado or self.orden_en_vuelo_symbol is not None:
-            return False, "SLOT_OCUPADO", 0.0
+            return False, "SLOT_BUSY", 0.0
 
         if symbol in cfg.PARES_VETADOS_OOS or symbol in self.pares_excluidos_lote:
-            return False, "PAR_VETADO_O_LOTE_INDIVISIBLE", 0.0
+            return False, "PAIR_VETOED_OR_INDIVISIBLE_LOT", 0.0
 
         perm = self.permisos_ram.get(symbol)
         if perm is None:
-            return False, "SIMBOLO_NO_REGISTRADO", 0.0
+            return False, "SYMBOL_NOT_REGISTERED", 0.0
 
         if t_now < perm.cuarentena_hasta_ts:
-            restante = int(perm.cuarentena_hasta_ts - t_now)
-            return False, f"CUARENTENA_ACTIVA_{restante}S", 0.0
+            remaining = int(perm.cuarentena_hasta_ts - t_now)
+            return False, f"ACTIVE_QUARANTINE_{remaining}S", 0.0
 
         if not perm.aprobado_groq or perm.modo_regimen == "VETO_TOXIC":
-            return False, f"VETO_TRICORTEX_{perm.modo_regimen}", 0.0
+            return False, f"TRICORTEX_VETO_{perm.modo_regimen}", 0.0
 
         if side_norm == "long":
             if perm.modo_regimen == "SHORT_ONLY":
-                return False, "REGIMEN_SHORT_ONLY_ACTIVO", 0.0
+                return False, "SHORT_ONLY_REGIME_ACTIVE", 0.0
             if perm.modo_regimen == "EXTREME_Z_ONLY" and z_score_actual > -4.50:
-                return False, "EXIGE_EXTREME_Z_4.5", 0.0
+                return False, "REQUIRES_EXTREME_Z_4.5", 0.0
         elif side_norm == "short":
             if not cfg.MODO_BIDIRECCIONAL:
-                return False, "MODO_SHORT_DESACTIVADO", 0.0
+                return False, "SHORT_MODE_DISABLED", 0.0
             if perm.modo_regimen == "LONG_ONLY" and z_score_actual < 3.50:
-                return False, "REGIMEN_LONG_ONLY_ACTIVO", 0.0
+                return False, "LONG_ONLY_REGIME_ACTIVE", 0.0
 
-        return True, "APROBADO_O1", perm.sizing_mult_gemini
+        return True, "APPROVED_O1", perm.sizing_mult_gemini
 
     def encolar_auditoria_escudo_15s(
         self,
@@ -394,29 +397,29 @@ class EstadoGlobalRAM:
         side: str,
         scar_id: str,
         precio_bloqueo: float,
-        tag_percentil: str = "P50_ELASTICO",
+        tag_percentil: str = "P50_ELASTIC",
         p_dia: float = 0.50,
         detalle: str = "",
         ahora: Optional[float] = None,
     ) -> None:
         """
-        Registra en RAM un bloqueo de pre-orden (SCAR-LOCK-01..12) o cancelacion TTL
-        para evaluar exactamente 15.0s despues si salvo un Stop-Loss (True Positive
-        Shield) o si rechazo una reversion ganadora (False Rejection).
+        Records a pre-order block (SCAR-LOCK-01..18) or TTL cancellation in RAM
+        to evaluate exactly 15.0s later whether it prevented a Stop-Loss (True Positive
+        Shield) or rejected a winning mean-reversion (False Rejection).
         """
         if os.environ.get("TRIBRAIN_TEST_MODE") == "1" or precio_bloqueo <= 0.0:
             return
 
         t_now = float(ahora) if ahora is not None else time.time()
-        clave = (symbol, str(scar_id))
-        if (t_now - self.ultimo_ts_auditoria_escudo.get(clave, 0.0)) < 15.0:
+        key = (symbol, str(scar_id))
+        if (t_now - self.ultimo_ts_auditoria_escudo.get(key, 0.0)) < 15.0:
             return
 
-        self.ultimo_ts_auditoria_escudo[clave] = t_now
+        self.ultimo_ts_auditoria_escudo[key] = t_now
         tk = self.ticks_ram.get(symbol)
         tk_btc = self.ticks_ram.get(cfg.SIMBOLO_CENTINELA_MACRO)
 
-        self.auditorias_escudo_pendientes[clave] = {
+        self.auditorias_escudo_pendientes[key] = {
             "symbol": symbol,
             "side": str(side).lower(),
             "scar_id": str(scar_id),
@@ -445,8 +448,8 @@ class EstadoGlobalRAM:
         ahora: Optional[float] = None,
     ) -> int:
         """
-        Verifica en O(1) si algun bloqueo encolado para symbol cumplio >= 15.0s
-        y escribe el veredicto contrafactual en baul_ia_forense.jsonl.
+        Checks in O(1) whether any queued shield audit for `symbol` has reached >= 15.0s
+        and writes the counterfactual verdict to baul_ia_forense.jsonl.
         """
         if (
             os.environ.get("TRIBRAIN_TEST_MODE") == "1"
@@ -456,51 +459,51 @@ class EstadoGlobalRAM:
             return 0
 
         t_now = float(ahora) if ahora is not None else time.time()
-        procesadas = 0
+        processed = 0
 
-        for clave in list(self.auditorias_escudo_pendientes.keys()):
-            if clave[0] != symbol:
+        for key in list(self.auditorias_escudo_pendientes.keys()):
+            if key[0] != symbol:
                 continue
-            item = self.auditorias_escudo_pendientes.get(clave)
+            item = self.auditorias_escudo_pendientes.get(key)
             if item is None:
                 continue
-            dt_seg = t_now - float(item["ts_bloqueo"])
-            if dt_seg < 15.0:
+            dt_sec = t_now - float(item["ts_bloqueo"])
+            if dt_sec < 15.0:
                 continue
 
-            self.auditorias_escudo_pendientes.pop(clave, None)
-            p_bloq = float(item["precio_bloqueo"])
+            self.auditorias_escudo_pendientes.pop(key, None)
+            p_block = float(item["precio_bloqueo"])
             side = str(item["side"])
             ret_15s = (
-                ((precio_actual - p_bloq) / p_bloq)
+                ((precio_actual - p_block) / p_block)
                 if side == "long"
-                else ((p_bloq - precio_actual) / p_bloq)
+                else ((p_block - precio_actual) / p_block)
             )
-            nocional_ref = 25.0 if symbol in cfg.CLASE_TIER1_LIQUIDO else cfg.NOCIONAL_MAX_HIGH_BETA_USDT
+            ref_notional = 25.0 if symbol in cfg.CLASE_TIER1_LIQUIDO else cfg.NOCIONAL_MAX_HIGH_BETA_USDT
 
             if ret_15s <= -0.0015:
-                veredicto = "CAPITAL_SALVADO_TRUE_SHIELD"
-                impacto_usdt = round(abs(ret_15s) * nocional_ref, 4)
+                verdict = "CAPITAL_SAVED_TRUE_SHIELD"
+                impact_usdt = round(abs(ret_15s) * ref_notional, 4)
             elif ret_15s >= 0.0024:
-                veredicto = "OPORTUNIDAD_PERDIDA_FALSE_REJECTION"
-                impacto_usdt = -round(max(0.0, ret_15s - 0.0004) * nocional_ref, 4)
+                verdict = "MISSED_OPPORTUNITY_FALSE_REJECTION"
+                impact_usdt = -round(max(0.0, ret_15s - 0.0004) * ref_notional, 4)
             else:
-                veredicto = "RUIDO_NEUTRO_LATERAL"
-                impacto_usdt = 0.0
+                verdict = "NEUTRAL_LATERAL_NOISE"
+                impact_usdt = 0.0
 
-            evento_baul = {
+            vault_event = {
                 "tipo_evento": "AUDITORIA_ESCUDO_15S",
-                "veredicto_ia": veredicto,
+                "veredicto_ia": verdict,
                 "scar_id": item["scar_id"],
                 "symbol": symbol,
                 "side": side,
                 "tag_percentil": item["tag_percentil"],
                 "p_dia": item["p_dia"],
-                "precio_bloqueo": p_bloq,
+                "precio_bloqueo": p_block,
                 "precio_15s_despues": round(float(precio_actual), 8),
                 "excursion_15s_pct": round(ret_15s * 100.0, 4),
-                "impacto_estimado_usdt": impacto_usdt,
-                "dt_evaluacion_seg": round(dt_seg, 2),
+                "impacto_estimado_usdt": impact_usdt,
+                "dt_evaluacion_seg": round(dt_sec, 2),
                 "detalle_filtro": item["detalle"],
                 "vector_x": {
                     "z": item["z_score"],
@@ -516,31 +519,31 @@ class EstadoGlobalRAM:
                     "ofi_btc": item["ofi_btc"],
                 },
             }
-            registrar_evento_baul_ia(evento_baul, ahora=t_now)
-            procesadas += 1
+            registrar_evento_baul_ia(vault_event, ahora=t_now)
+            processed += 1
 
-        return procesadas
+        return processed
 
     def aplicar_cuarentena(self, symbol: str, duracion_seg: float, motivo: str) -> None:
         perm = self.permisos_ram.get(symbol)
         if perm is None:
             perm = PermisoRegimenActivo(symbol=symbol)
             self.permisos_ram[symbol] = perm
-        nuevo_fin = time.time() + max(0.0, float(duracion_seg))
-        if nuevo_fin > perm.cuarentena_hasta_ts:
-            perm.cuarentena_hasta_ts = nuevo_fin
+        new_end = time.time() + max(0.0, float(duracion_seg))
+        if new_end > perm.cuarentena_hasta_ts:
+            perm.cuarentena_hasta_ts = new_end
             perm.motivo = motivo
 
     def reservar_margen_atomico(self, symbol: str, margen_usdt: float) -> bool:
         if self.slot_ocupado or self.orden_en_vuelo_symbol is not None:
             return False
-        margen_req = float(margen_usdt)
-        if margen_req < cfg.MARGEN_MINIMO_OPERACION_USDT or margen_req > self.margen_libre_usdt:
+        req_margin = float(margen_usdt)
+        if req_margin < cfg.MARGEN_MINIMO_OPERACION_USDT or req_margin > self.margen_libre_usdt:
             return False
         self.slot_ocupado = True
         self.orden_en_vuelo_symbol = symbol
-        self.margen_libre_usdt = max(0.0, self.margen_libre_usdt - margen_req)
-        self.margen_bloqueado_usdt += margen_req
+        self.margen_libre_usdt = max(0.0, self.margen_libre_usdt - req_margin)
+        self.margen_bloqueado_usdt += req_margin
         return True
 
     def liberar_margen_atomico(self, symbol: str, margen_usdt: float = 0.0) -> None:

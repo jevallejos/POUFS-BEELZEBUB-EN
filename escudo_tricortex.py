@@ -2,19 +2,19 @@
 # -*- coding: utf-8 -*-
 """
 ==============================================================================
-ARCHIVO #07: escudo_tricortex.py
-SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 -- ESTRATEGIA CHRONOS-TRIZ
+FILE #07: escudo_tricortex.py
+SYSTEM: POUFS-BEELZEBUB-EN (SPIRITUAL MESSAGE) V5.0 -- CHRONOS-TRIZ STRATEGY
 ==============================================================================
-Enjambre Cognitivo Asincrono Tri-Cortex (Full-Groq LPU-First + Multi-Cloud):
-  1. Cortex 1 (Groq LPU): Matriz Direccional de Regimen (LONG_ONLY, SHORT_ONLY,
-     EXTREME_Z_ONLY, VETO_TOXIC) con Guardia Fisica Anti-LUNA y proteccion
-     Ornstein-Uhlenbeck (evita forzar SHORT_ONLY debajo de EMA900 en prod).
-  2. Cortex 2 (Groq LPU + Failover Google AI gemma-4-26b-a4b-it): Sizing
-     Anti-Fragil por Dislocacion Fisica (|Z|, Hurst, Glosten-Milgrom P-07)
-     sin doble castigo exponencial de Drawdown.
-  3. Cortex 3 (Groq LPU + Failover NVIDIA NIM): Auditoria Forense Post-Loss
-     y registro universal de barrera espacial anti-reentrada (SCAR-LOCK-11c)
-     en toda salida SHORT negativa (incluyendo MAKER_SCRATCH_18S y MAKER_UNWIND).
+Asynchronous Tri-Cortex Cognitive Swarm (Full-Groq LPU-First + Multi-Cloud):
+  1. Cortex 1 (Groq LPU): Directional Regime Matrix (LONG_ONLY, SHORT_ONLY,
+     EXTREME_Z_ONLY, VETO_TOXIC) with physical Anti-LUNA Guard and
+     Ornstein-Uhlenbeck protection (prevents forcing SHORT_ONLY below EMA900 in prod).
+  2. Cortex 2 (Groq LPU + Google AI gemma-4-26b-a4b-it Failover): Anti-Fragile
+     Sizing by Physical Dislocation (|Z|, Hurst, Glosten-Milgrom P-07)
+     without double exponential Drawdown penalty.
+  3. Cortex 3 (Groq LPU + NVIDIA NIM Failover): Post-Loss Forensic Audit
+     and universal spatial anti-reentry barrier registration (SCAR-LOCK-11c)
+     on every negative SHORT exit (including MAKER_SCRATCH_18S and MAKER_UNWIND).
 ==============================================================================
 """
 from __future__ import annotations
@@ -69,8 +69,8 @@ cfg.NVIDIA_MODEL_POOL = MODELOS_NVIDIA_PHANTOM_2026
 
 class OrquestadorTriCortex:
     """
-    Coordina los 3 cerebros de IA de forma asincrona fuera de la ruta critica
-    y mantiene actualizada en O(1) la tabla ESTADO_RAM.permisos_ram.
+    Coordinates the 3 AI cortices asynchronously off the critical path
+    and updates the ESTADO_RAM.permisos_ram hash table in O(1) time.
     """
 
     def __init__(self) -> None:
@@ -82,9 +82,9 @@ class OrquestadorTriCortex:
         self.inicializar_whitelist_ram()
 
     def inicializar_whitelist_ram(self) -> None:
-        ahora = time.time()
+        now = time.time()
         for sym in cfg.PARES_CAMPEONES_ALFA:
-            base_caida = (
+            base_drop = (
                 cfg.CAIDA_MIN_HIGH_BETA_PCT
                 if sym in cfg.CLASE_HIGH_BETA
                 else cfg.CAIDA_MIN_TIER1_PCT
@@ -94,13 +94,13 @@ class OrquestadorTriCortex:
                 modo_regimen="LONG_ONLY",
                 aprobado_groq=True,
                 sizing_mult_gemini=1.0,
-                caida_min_override_pct=base_caida,
+                caida_min_override_pct=base_drop,
                 cuarentena_hasta_ts=0.0,
                 motivo="INIT_WHITELIST_O1",
-                ts_actualizacion=ahora,
+                ts_actualizacion=now,
             )
         log_sniper(
-            f"[ESCUDO RAM] Whitelist O(1) inicializada con {len(cfg.PARES_CAMPEONES_ALFA)} pares Campeones Alfa."
+            f"[RAM SHIELD] O(1) Whitelist initialized with {len(cfg.PARES_CAMPEONES_ALFA)} Alpha Champion pairs."
         )
 
     @staticmethod
@@ -114,20 +114,20 @@ class OrquestadorTriCortex:
         if metrica.vpin >= cfg.VPIN_TOXICO_MAX and metrica.ofi_l1_l5 <= -0.50:
             return "VETO_TOXIC", False, f"VPIN_TOXIC_{metrica.vpin:.2f}"
 
-        es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
-        if es_test and (
+        is_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
+        if is_test and (
             (metrica.ema900_slope_pct <= -0.0045 or metrica.ema900_dist_pct <= -0.0220)
             and metrica.hurst > 0.52
             and metrica.ofi_l1_l5 < -0.20
         ):
             return "SHORT_ONLY", True, "BEARISH_CASCADE_SHORT_ONLY"
 
-        if not es_test:
-            # SCAR-LOCK-01 + SCAR-LOCK-11: solo activar SHORT_ONLY si el precio esta genuinamente
-            # sobreextendido sobre EMA900; si cae bajo -0.35% con Hurst >= 0.495, exigir EXTREME_Z_ONLY.
-            piso_short_reg = 0.0028 if metrica.symbol in cfg.CLASE_TIER1_LIQUIDO else 0.0036
+        if not is_test:
+            # SCAR-LOCK-01 + SCAR-LOCK-11: only activate SHORT_ONLY if price is genuinely
+            # overextended above EMA900; if it drops below -0.35% with Hurst >= 0.495, require EXTREME_Z_ONLY.
+            short_reg_floor = 0.0028 if metrica.symbol in cfg.CLASE_TIER1_LIQUIDO else 0.0036
             if (
-                metrica.ema900_dist_pct >= piso_short_reg
+                metrica.ema900_dist_pct >= short_reg_floor
                 and metrica.hurst <= 0.535
                 and metrica.ofi_l1_l5 <= -0.28
             ):
@@ -155,8 +155,8 @@ class OrquestadorTriCortex:
                 perm.aprobado_groq = False
                 perm.motivo = "ANTI_LUNA_VETO"
             log_sniper(
-                f"[ESCUDO RAM] Fallback cuantitativo veto a {symbol} "
-                f"(caida {caida_pct*100:.1f}%, OFI {ofi_actual:+.2f})"
+                f"[RAM SHIELD] Quantitative fallback veto on {symbol} "
+                f"(drop {caida_pct*100:.1f}%, OFI {ofi_actual:+.2f})"
             )
             return False
         return True
@@ -170,59 +170,59 @@ class OrquestadorTriCortex:
         volatilidad_local: float,
     ) -> Tuple[float, float, float]:
         """
-        Calcula (fraccion_kelly, margen_usdt, nocional_usdt) en O(1).
-        En produccion evita la doble penalizacion de drawdown cuando DD <= 6.0%
-        para garantizar que el lote supere siempre la guardia de cuantizacion 4x.
+        Computes (kelly_fraction, margin_usdt, notional_usdt) in O(1).
+        In production, avoids double drawdown penalization when DD <= 6.0%
+        to guarantee lot size always clears the 4x quantization guard.
         """
-        es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
+        is_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
         base_k = float(cfg.KELLY_FRACCION_BASE)
         z_abs_raw = abs(float(z_score))
 
         z_abs = min(6.5, z_abs_raw)
-        bono_z = max(-0.06, min(0.07, (z_abs - 3.20) * 0.035))
-        bono_hurst = 0.02 if float(hurst) <= 0.44 else (-0.03 if float(hurst) > 0.49 else 0.0)
-        bono_ofi = 0.015 if abs(float(ofi)) >= 0.75 else 0.0
+        z_bonus = max(-0.06, min(0.07, (z_abs - 3.20) * 0.035))
+        hurst_bonus = 0.02 if float(hurst) <= 0.44 else (-0.03 if float(hurst) > 0.49 else 0.0)
+        ofi_bonus = 0.015 if abs(float(ofi)) >= 0.75 else 0.0
 
         sigma = max(0.0005, float(volatilidad_local or 0.0020))
-        penal_vol = -0.04 if sigma > 0.0060 else 0.0
+        vol_penalty = -0.04 if sigma > 0.0060 else 0.0
 
         dd_pct = ESTADO_RAM.calcular_drawdown_actual_pct()
-        if es_test:
-            factor_dd = math.exp(-3.5 * dd_pct)
+        if is_test:
+            dd_factor = math.exp(-3.5 * dd_pct)
         else:
-            exceso_dd = max(0.0, dd_pct - 0.06)
-            factor_dd = math.exp(-2.0 * exceso_dd)
+            excess_dd = max(0.0, dd_pct - 0.06)
+            dd_factor = math.exp(-2.0 * excess_dd)
 
-        ultimas_4 = CAJA_NEGRA.operaciones[-4:] if len(CAJA_NEGRA.operaciones) >= 4 else []
-        racha_4_wins = len(ultimas_4) == 4 and all(float(op.get("pnl_usdt") or 0.0) > 0.0 for op in ultimas_4)
-        factor_antieuforia = 0.92 if racha_4_wins else 1.00
+        last_4 = CAJA_NEGRA.operaciones[-4:] if len(CAJA_NEGRA.operaciones) >= 4 else []
+        streak_4_wins = len(last_4) == 4 and all(float(op.get("pnl_usdt") or 0.0) > 0.0 for op in last_4)
+        anti_euphoria_factor = 0.92 if streak_4_wins else 1.00
 
         perm = ESTADO_RAM.permisos_ram.get(symbol)
-        mult_gemini = perm.sizing_mult_gemini if perm is not None else self.factor_global_gemini
-        if not es_test:
-            mult_gemini = max(0.92, mult_gemini)
+        gemini_mult = perm.sizing_mult_gemini if perm is not None else self.factor_global_gemini
+        if not is_test:
+            gemini_mult = max(0.92, gemini_mult)
 
-        fraccion_bruta = (base_k + bono_z + bono_hurst + bono_ofi + penal_vol) * factor_dd * factor_antieuforia * mult_gemini
-        piso_k = cfg.KELLY_FRACCION_MIN if es_test else max(0.48, cfg.KELLY_FRACCION_MIN)
-        fraccion_final = max(piso_k, min(cfg.KELLY_FRACCION_MAX, fraccion_bruta))
+        raw_fraction = (base_k + z_bonus + hurst_bonus + ofi_bonus + vol_penalty) * dd_factor * anti_euphoria_factor * gemini_mult
+        k_floor = cfg.KELLY_FRACCION_MIN if is_test else max(0.48, cfg.KELLY_FRACCION_MIN)
+        final_fraction = max(k_floor, min(cfg.KELLY_FRACCION_MAX, raw_fraction))
 
         gamma_gm = 1.0
-        if not es_test and z_abs_raw > 8.50:
-            exceso = min(1.0, (z_abs_raw - 8.50) / 10.0)
-            fraccion_final = max(piso_k, fraccion_final * (1.0 - 0.15 * exceso))
+        if not is_test and z_abs_raw > 8.50:
+            excess = min(1.0, (z_abs_raw - 8.50) / 10.0)
+            final_fraction = max(k_floor, final_fraction * (1.0 - 0.15 * excess))
             gamma_gm = max(0.65, min(1.0, math.exp(-0.08 * (z_abs_raw - 8.50))))
 
-        margen_libre = ESTADO_RAM.margen_libre_usdt
-        margen_usdt = round(margen_libre * fraccion_final, 4)
-        nocional_usdt = round(margen_usdt * cfg.APALANCAMIENTO_BASE, 4)
+        free_margin = ESTADO_RAM.margen_libre_usdt
+        margin_usdt = round(free_margin * final_fraction, 4)
+        notional_usdt = round(margin_usdt * cfg.APALANCAMIENTO_BASE, 4)
 
-        params_clase = cfg.obtener_parametros_clase(symbol)
-        tope_nocional = float(params_clase["nocional_max_usdt"]) * gamma_gm
-        if nocional_usdt > tope_nocional:
-            nocional_usdt = round(tope_nocional, 4)
-            margen_usdt = round(nocional_usdt / cfg.APALANCAMIENTO_BASE, 4)
+        class_params = cfg.obtener_parametros_clase(symbol)
+        notional_cap = float(class_params["nocional_max_usdt"]) * gamma_gm
+        if notional_usdt > notional_cap:
+            notional_usdt = round(notional_cap, 4)
+            margin_usdt = round(notional_usdt / cfg.APALANCAMIENTO_BASE, 4)
 
-        return round(fraccion_final, 4), margen_usdt, nocional_usdt
+        return round(final_fraction, 4), margin_usdt, notional_usdt
 
     @staticmethod
     def _extraer_json_seguro(texto: str) -> Dict[str, Any]:
@@ -237,21 +237,21 @@ class OrquestadorTriCortex:
             return {}
 
     async def sincronizar_cortex_groq_regimen(self) -> Dict[str, str]:
-        ahora = time.time()
-        resumen_fisico: Dict[str, Dict[str, float]] = {}
-        regimenes_finales: Dict[str, str] = {}
+        now = time.time()
+        physical_summary: Dict[str, Dict[str, float]] = {}
+        final_regimes: Dict[str, str] = {}
 
         for sym in cfg.PARES_CAMPEONES_ALFA:
             tk = ESTADO_RAM.ticks_ram.get(sym) or MetricaTick(symbol=sym)
-            modo_local, ok_local, mot_local = self.evaluar_regimen_fisico_local(tk)
+            local_mode, local_ok, local_reason = self.evaluar_regimen_fisico_local(tk)
             perm = ESTADO_RAM.permisos_ram.get(sym) or PermisoRegimenActivo(symbol=sym)
-            perm.modo_regimen = modo_local
-            perm.aprobado_groq = ok_local
-            perm.motivo = mot_local
-            perm.ts_actualizacion = ahora
+            perm.modo_regimen = local_mode
+            perm.aprobado_groq = local_ok
+            perm.motivo = local_reason
+            perm.ts_actualizacion = now
             ESTADO_RAM.permisos_ram[sym] = perm
-            regimenes_finales[sym] = modo_local
-            resumen_fisico[sym.split("/")[0]] = {
+            final_regimes[sym] = local_mode
+            physical_summary[sym.split("/")[0]] = {
                 "z": round(tk.z_score, 2),
                 "dp_pct": round(tk.delta_p_pct * 100.0, 2),
                 "ema900_pct": round(tk.ema900_dist_pct * 100.0, 2),
@@ -261,14 +261,14 @@ class OrquestadorTriCortex:
             }
 
         if os.environ.get("TRIBRAIN_TEST_MODE") == "1" or not cfg.GROQ_API_KEY:
-            return regimenes_finales
+            return final_regimes
 
-        prompt_sistema = (
-            "Eres el Cortex Tactico Direccional HFT de Tri-Brain-Phantom v1.0 (Estrategia CHRONOS-TRIZ). "
-            "Clasifica cada activo en LONG_ONLY, SHORT_ONLY, EXTREME_Z_ONLY o VETO_TOXIC segun sus metricas. "
-            "Responde UNICAMENTE un objeto JSON: {\"regimenes\": {\"ZEREBRO\": \"LONG_ONLY\", ...}}"
+        system_prompt = (
+            "You are the HFT Directional Tactical Cortex of POUFS-BEELZEBUB-EN (Spiritual Message) V5.0 (CHRONOS-TRIZ Strategy). "
+            "Classify each asset into LONG_ONLY, SHORT_ONLY, EXTREME_Z_ONLY, or VETO_TOXIC based on its metrics. "
+            "Respond ONLY with a valid JSON object: {\"regimes\": {\"ZEREBRO\": \"LONG_ONLY\", ...}}"
         )
-        prompt_usuario = json.dumps(resumen_fisico, ensure_ascii=False)
+        user_prompt = json.dumps(physical_summary, ensure_ascii=False)
         headers = {
             "Authorization": f"Bearer {cfg.GROQ_API_KEY}",
             "Content-Type": "application/json",
@@ -276,14 +276,14 @@ class OrquestadorTriCortex:
         timeout = aiohttp.ClientTimeout(total=cfg.TIMEOUT_GROQ_SEG)
 
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            for modelo in cfg.GROQ_MODEL_POOL:
+            for model in cfg.GROQ_MODEL_POOL:
                 t0 = time.perf_counter()
                 try:
                     payload = {
-                        "model": modelo,
+                        "model": model,
                         "messages": [
-                            {"role": "system", "content": prompt_sistema},
-                            {"role": "user", "content": prompt_usuario},
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
                         ],
                         "temperature": 0.0,
                         "max_tokens": 220,
@@ -297,30 +297,36 @@ class OrquestadorTriCortex:
                             continue
                         data = await resp.json()
                         self.ultimo_rtt_groq_ms = (time.perf_counter() - t0) * 1000.0
-                        contenido = (
+                        content = (
                             data.get("choices", [{}])[0]
                             .get("message", {})
                             .get("content", "")
                         )
-                        parsed = self._extraer_json_seguro(contenido)
-                        mapa_ia = parsed.get("regimenes", parsed) if isinstance(parsed, dict) else {}
+                        parsed = self._extraer_json_seguro(content)
+                        ai_map = (
+                            parsed.get("regimes")
+                            or parsed.get("regimenes")
+                            or parsed
+                            if isinstance(parsed, dict)
+                            else {}
+                        )
 
-                        aprobados_cnt = 0
+                        approved_cnt = 0
                         for sym in cfg.PARES_CAMPEONES_ALFA:
-                            corto = sym.split("/")[0]
+                            short_name = sym.split("/")[0]
                             perm = ESTADO_RAM.permisos_ram[sym]
                             if perm.modo_regimen in ("VETO_TOXIC", "SHORT_ONLY"):
                                 if perm.aprobado_groq:
-                                    aprobados_cnt += 1
+                                    approved_cnt += 1
                                 continue
-                            sugerencia = str(mapa_ia.get(corto, "LONG_ONLY")).upper()
+                            suggestion = str(ai_map.get(short_name, "LONG_ONLY")).upper()
                             tk_sym = ESTADO_RAM.ticks_ram.get(sym)
-                            toxicidad_fisica = (
+                            physical_toxicity = (
                                 tk_sym is not None
                                 and tk_sym.bid > 0.0
                                 and (tk_sym.vpin >= 0.48 or tk_sym.delta_p_pct <= -0.045)
                             )
-                            sobreextension_short_real = (
+                            real_short_overextension = (
                                 tk_sym is not None
                                 and tk_sym.bid > 0.0
                                 and tk_sym.ema900_dist_pct >= (
@@ -328,41 +334,41 @@ class OrquestadorTriCortex:
                                 )
                                 and tk_sym.ofi_l1_l5 <= -0.25
                             )
-                            if sugerencia == "VETO_TOXIC" and not toxicidad_fisica:
-                                sugerencia = "LONG_ONLY"
-                            if sugerencia == "SHORT_ONLY" and not sobreextension_short_real:
-                                sugerencia = "LONG_ONLY"
-                            if sugerencia in ("LONG_ONLY", "SHORT_ONLY", "EXTREME_Z_ONLY", "VETO_TOXIC"):
-                                perm.modo_regimen = sugerencia
-                                perm.aprobado_groq = sugerencia != "VETO_TOXIC"
-                                regimenes_finales[sym] = sugerencia
+                            if suggestion == "VETO_TOXIC" and not physical_toxicity:
+                                suggestion = "LONG_ONLY"
+                            if suggestion == "SHORT_ONLY" and not real_short_overextension:
+                                suggestion = "LONG_ONLY"
+                            if suggestion in ("LONG_ONLY", "SHORT_ONLY", "EXTREME_Z_ONLY", "VETO_TOXIC"):
+                                perm.modo_regimen = suggestion
+                                perm.aprobado_groq = suggestion != "VETO_TOXIC"
+                                final_regimes[sym] = suggestion
                             if perm.aprobado_groq:
-                                aprobados_cnt += 1
+                                approved_cnt += 1
 
                         log_sniper(
-                            f"[ESCUDO RAM TRI-CORTEX] Matriz Direccional Groq LPU ({modelo}) "
-                            f"sincronizada en {self.ultimo_rtt_groq_ms:.0f}ms: {aprobados_cnt}/{len(cfg.PARES_CAMPEONES_ALFA)} habilitados."
+                            f"[TRI-CORTEX RAM SHIELD] Groq LPU Directional Matrix ({model}) "
+                            f"synchronized in {self.ultimo_rtt_groq_ms:.0f}ms: {approved_cnt}/{len(cfg.PARES_CAMPEONES_ALFA)} enabled."
                         )
-                        return regimenes_finales
+                        return final_regimes
                 except Exception:
                     continue
 
-        return regimenes_finales
+        return final_regimes
 
     async def sincronizar_cortex_gemini_sizing(self) -> float:
-        ultimos_12 = CAJA_NEGRA.operaciones[-12:] if CAJA_NEGRA.operaciones else []
-        wins_12 = sum(1 for op in ultimos_12 if float(op.get("pnl_usdt") or 0.0) >= 0.0)
-        losses_12 = len(ultimos_12) - wins_12
-        pnl_12 = sum(float(op.get("pnl_usdt") or 0.0) for op in ultimos_12)
-        dd_actual = ESTADO_RAM.calcular_drawdown_actual_pct()
+        last_12 = CAJA_NEGRA.operaciones[-12:] if CAJA_NEGRA.operaciones else []
+        wins_12 = sum(1 for op in last_12 if float(op.get("pnl_usdt") or 0.0) >= 0.0)
+        losses_12 = len(last_12) - wins_12
+        pnl_12 = sum(float(op.get("pnl_usdt") or 0.0) for op in last_12)
+        current_dd = ESTADO_RAM.calcular_drawdown_actual_pct()
 
-        mult_base = 1.00
-        if dd_actual > 0.06:
-            mult_base = max(0.88, 1.0 - ((dd_actual - 0.06) * 1.5))
-        elif len(ultimos_12) >= 4 and losses_12 == 0:
-            mult_base = 0.94
+        base_mult = 1.00
+        if current_dd > 0.06:
+            base_mult = max(0.88, 1.0 - ((current_dd - 0.06) * 1.5))
+        elif len(last_12) >= 4 and losses_12 == 0:
+            base_mult = 0.94
 
-        self.factor_global_gemini = round(mult_base, 3)
+        self.factor_global_gemini = round(base_mult, 3)
         for sym in cfg.PARES_CAMPEONES_ALFA:
             if sym in ESTADO_RAM.permisos_ram:
                 ESTADO_RAM.permisos_ram[sym].sizing_mult_gemini = self.factor_global_gemini
@@ -371,13 +377,13 @@ class OrquestadorTriCortex:
             return self.factor_global_gemini
 
         prompt = (
-            f"Actua como Oraculo Cuantico de Riesgo (Busseti-Ryu-Boyd Kelly) para Tri-Brain-Phantom v1.0. "
-            f"Ultimos {len(ultimos_12)} trades: {wins_12}W/{losses_12}L (PnL={pnl_12:+.4f} USDT), "
-            f"Drawdown actual={dd_actual*100:.2f}%. "
-            f"Devuelve UNICAMENTE JSON: {{\"sizing_mult\": 0.95}}"
+            f"Act as the Quantum Risk Oracle (Busseti-Ryu-Boyd Kelly) for POUFS-BEELZEBUB-EN (Spiritual Message) V5.0. "
+            f"Last {len(last_12)} trades: {wins_12}W/{losses_12}L (PnL={pnl_12:+.4f} USDT), "
+            f"Current drawdown={current_dd*100:.2f}%. "
+            f"Return ONLY JSON: {{\"sizing_mult\": 0.95}}"
         )
 
-        # Prioridad 1: Full-Groq LPU-First en produccion (~150ms - 350ms)
+        # Priority 1: Full-Groq LPU-First in production (~150ms - 350ms)
         if cfg.GROQ_API_KEY:
             headers_gq = {
                 "Authorization": f"Bearer {cfg.GROQ_API_KEY}",
@@ -390,7 +396,7 @@ class OrquestadorTriCortex:
                         payload_gq = {
                             "model": mod_gq,
                             "messages": [
-                                {"role": "system", "content": "Responde UNICAMENTE con un objeto JSON valido con la clave sizing_mult (float entre 0.90 y 1.08)."},
+                                {"role": "system", "content": "Respond ONLY with a valid JSON object containing the key sizing_mult (float between 0.90 and 1.08)."},
                                 {"role": "user", "content": prompt},
                             ],
                             "temperature": 0.0,
@@ -413,27 +419,27 @@ class OrquestadorTriCortex:
                             parsed_gq = self._extraer_json_seguro(txt_gq)
                             if "sizing_mult" in parsed_gq:
                                 val = float(parsed_gq["sizing_mult"])
-                                self.factor_global_gemini = round(max(0.90, min(mult_base + 0.05, min(1.08, val))), 3)
+                                self.factor_global_gemini = round(max(0.90, min(base_mult + 0.05, min(1.08, val))), 3)
                                 for sym in cfg.PARES_CAMPEONES_ALFA:
                                     ESTADO_RAM.permisos_ram[sym].sizing_mult_gemini = self.factor_global_gemini
                             log_sniper(
-                                f"[TRI-CORTEX SIZING LPU] Oraculo groq/{mod_gq} sincronizado en "
-                                f"{self.ultimo_rtt_gemini_ms:.0f}ms (Ultimos {len(ultimos_12)} trades: "
+                                f"[TRI-CORTEX SIZING LPU] Oracle groq/{mod_gq} synchronized in "
+                                f"{self.ultimo_rtt_gemini_ms:.0f}ms (Last {len(last_12)} trades: "
                                 f"{wins_12}W/{losses_12}L | PnL={pnl_12:+.4f} USDT | Mult={self.factor_global_gemini:.2f})"
                             )
                             return self.factor_global_gemini
                     except Exception:
                         continue
 
-        # Failover Multi-Cloud: Google AI (gemma-4-26b-a4b-it / gemini-3.1-flash-lite)
+        # Multi-Cloud Failover: Google AI (gemma-4-26b-a4b-it / gemini-3.1-flash-lite)
         if not cfg.GEMINI_API_KEY:
             return self.factor_global_gemini
 
         timeout = aiohttp.ClientTimeout(total=cfg.TIMEOUT_GEMINI_SEG)
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            for modelo in cfg.GEMINI_MODEL_POOL:
+            for model in cfg.GEMINI_MODEL_POOL:
                 t0 = time.perf_counter()
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent?key={cfg.GEMINI_API_KEY}"
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={cfg.GEMINI_API_KEY}"
                 try:
                     payload = {"contents": [{"parts": [{"text": prompt}]}]}
                     async with session.post(url, json=payload) as resp:
@@ -441,21 +447,21 @@ class OrquestadorTriCortex:
                             continue
                         data = await resp.json()
                         self.ultimo_rtt_gemini_ms = (time.perf_counter() - t0) * 1000.0
-                        texto = (
+                        text = (
                             data.get("candidates", [{}])[0]
                             .get("content", {})
                             .get("parts", [{}])[0]
                             .get("text", "")
                         )
-                        parsed = self._extraer_json_seguro(texto)
+                        parsed = self._extraer_json_seguro(text)
                         if "sizing_mult" in parsed:
                             val = float(parsed["sizing_mult"])
-                            self.factor_global_gemini = round(max(0.90, min(mult_base + 0.05, min(1.08, val))), 3)
+                            self.factor_global_gemini = round(max(0.90, min(base_mult + 0.05, min(1.08, val))), 3)
                             for sym in cfg.PARES_CAMPEONES_ALFA:
                                 ESTADO_RAM.permisos_ram[sym].sizing_mult_gemini = self.factor_global_gemini
                         log_sniper(
-                            f"[TRI-CORTEX GOOGLE AI] Oraculo {modelo} sincronizado en "
-                            f"{self.ultimo_rtt_gemini_ms:.0f}ms (Ultimos {len(ultimos_12)} trades: "
+                            f"[TRI-CORTEX GOOGLE AI] Oracle {model} synchronized in "
+                            f"{self.ultimo_rtt_gemini_ms:.0f}ms (Last {len(last_12)} trades: "
                             f"{wins_12}W/{losses_12}L | PnL={pnl_12:+.4f} USDT | Mult={self.factor_global_gemini:.2f})"
                         )
                         return self.factor_global_gemini
@@ -473,7 +479,7 @@ class OrquestadorTriCortex:
         exit_price: float = 0.0,
     ) -> float:
         perm = ESTADO_RAM.permisos_ram.get(symbol)
-        base_caida = (
+        base_drop = (
             cfg.CAIDA_MIN_HIGH_BETA_PCT
             if symbol in cfg.CLASE_HIGH_BETA
             else cfg.CAIDA_MIN_TIER1_PCT
@@ -482,46 +488,46 @@ class OrquestadorTriCortex:
         if pnl_usdt >= 0.0:
             ESTADO_RAM.aplicar_cuarentena(symbol, cfg.COOLDOWN_POST_CIERRE_WIN_SEG, "COOLDOWN_POST_WIN")
             if perm is not None:
-                perm.caida_min_override_pct = base_caida
+                perm.caida_min_override_pct = base_drop
             if str(side).lower() == "short":
                 ESTADO_RAM.ultimo_sl_short_precio.pop(symbol, None)
             return cfg.COOLDOWN_POST_CIERRE_WIN_SEG
 
-        # SCAR-LOCK-11c: Sellar barrera espacial ultimo_sl_short_precio en TODA salida SHORT
-        # negativa (incluyendo MAKER_SCRATCH_18S y MAKER_UNWIND) antes de cualquier retorno.
+        # SCAR-LOCK-11c: Seal spatial barrier ultimo_sl_short_precio on EVERY negative
+        # SHORT exit (including MAKER_SCRATCH_18S and MAKER_UNWIND) prior to returning.
         side_norm = str(side).lower()
         if side_norm == "short" and exit_price > 0.0:
             ESTADO_RAM.ultimo_sl_short_precio[symbol] = (float(exit_price), time.time())
 
-        es_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
-        mot_up = str(motivo or "").upper()
-        if "SCRATCH" in mot_up:
-            duracion = 180.0 if (not es_test and side_norm == "short") else 120.0
-            ESTADO_RAM.aplicar_cuarentena(symbol, duracion, "COOLDOWN_MAKER_SCRATCH_18S")
+        is_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
+        reason_up = str(motivo or "").upper()
+        if "SCRATCH" in reason_up:
+            duration = 180.0 if (not is_test and side_norm == "short") else 120.0
+            ESTADO_RAM.aplicar_cuarentena(symbol, duration, "COOLDOWN_MAKER_SCRATCH_18S")
             if perm is not None:
-                perm.caida_min_override_pct = round(base_caida * 1.12, 5)
-            return duracion
+                perm.caida_min_override_pct = round(base_drop * 1.12, 5)
+            return duration
 
-        duracion_sl = cfg.COOLDOWN_POST_CIERRE_LOSS_SEG
-        ESTADO_RAM.aplicar_cuarentena(symbol, duracion_sl, f"CUARENTENA_POST_LOSS_{mot_up}")
+        sl_duration = cfg.COOLDOWN_POST_CIERRE_LOSS_SEG
+        ESTADO_RAM.aplicar_cuarentena(symbol, sl_duration, f"QUARANTINE_POST_LOSS_{reason_up}")
         if perm is not None:
-            perm.caida_min_override_pct = round(base_caida * 1.22, 5)
+            perm.caida_min_override_pct = round(base_drop * 1.22, 5)
 
-        if not es_test and (cfg.GROQ_API_KEY or cfg.NVIDIA_API_KEY):
+        if not is_test and (cfg.GROQ_API_KEY or cfg.NVIDIA_API_KEY):
             asyncio.create_task(self._consultar_forense_nvidia_async(symbol, pnl_usdt, motivo))
 
-        return duracion_sl
+        return sl_duration
 
     async def _consultar_forense_nvidia_async(
         self, symbol: str, pnl_usdt: float = -0.05, motivo: str = "SL"
     ) -> Optional[Dict[str, Any]]:
         prompt = (
-            f"Auditoria Forense HFT Tri-Brain-Phantom v1.0: perdida en {symbol} "
-            f"({pnl_usdt:+.4f} USDT, motivo={motivo}). Sugiere cuarentena_seg [300..600] "
-            f"en JSON: {{\"cuarentena_seg\": 360}}"
+            f"HFT Forensic Audit POUFS-BEELZEBUB-EN V5.0: loss on {symbol} "
+            f"({pnl_usdt:+.4f} USDT, reason={motivo}). Suggest quarantine_sec [300..600] "
+            f"in JSON: {{\"cuarentena_seg\": 360}}"
         )
 
-        # Prioridad 1 en Produccion: Groq LPU (<350 ms)
+        # Priority 1 in Production: Groq LPU (<350 ms)
         if cfg.GROQ_API_KEY:
             headers_gq = {
                 "Authorization": f"Bearer {cfg.GROQ_API_KEY}",
@@ -546,24 +552,28 @@ class OrquestadorTriCortex:
                                 continue
                             data_gq = await resp_gq.json()
                             rtt_gq = (time.perf_counter() - t0) * 1000.0
-                            contenido_gq = (
+                            content_gq = (
                                 data_gq.get("choices", [{}])[0]
                                 .get("message", {})
                                 .get("content", "")
                             )
-                            parsed_gq = self._extraer_json_seguro(contenido_gq)
-                            q_seg = float(parsed_gq.get("cuarentena_seg", 360.0))
+                            parsed_gq = self._extraer_json_seguro(content_gq)
+                            q_seg = float(
+                                parsed_gq.get("cuarentena_seg")
+                                or parsed_gq.get("quarantine_sec")
+                                or 360.0
+                            )
                             q_clamped = max(300.0, min(600.0, q_seg))
-                            ESTADO_RAM.aplicar_cuarentena(symbol, q_clamped, f"GROQ_FORENSE_{mod_gq}")
+                            ESTADO_RAM.aplicar_cuarentena(symbol, q_clamped, f"GROQ_FORENSIC_{mod_gq}")
                             log_sniper(
-                                f"[TRI-CORTEX FORENSE LPU] Forense {mod_gq} ({rtt_gq:.0f}ms) "
-                                f"fijo cuarentena de {q_clamped:.0f}s en {symbol}."
+                                f"[TRI-CORTEX FORENSIC LPU] Forensic {mod_gq} ({rtt_gq:.0f}ms) "
+                                f"set {q_clamped:.0f}s quarantine on {symbol}."
                             )
                             return {"symbol": symbol, "cuarentena_seg": q_clamped, "modelo": f"groq/{mod_gq}"}
                     except Exception:
                         continue
 
-        # Failover Multi-Cloud: NVIDIA NIM
+        # Multi-Cloud Failover: NVIDIA NIM
         if cfg.NVIDIA_API_KEY:
             headers = {
                 "Authorization": f"Bearer {cfg.NVIDIA_API_KEY}",
@@ -571,11 +581,11 @@ class OrquestadorTriCortex:
             }
             timeout = aiohttp.ClientTimeout(total=cfg.TIMEOUT_NVIDIA_SEG)
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                for modelo in cfg.NVIDIA_MODEL_POOL:
+                for model in cfg.NVIDIA_MODEL_POOL:
                     t0 = time.perf_counter()
                     try:
                         payload = {
-                            "model": modelo,
+                            "model": model,
                             "messages": [{"role": "user", "content": prompt}],
                             "temperature": 0.0,
                             "max_tokens": 120,
@@ -589,20 +599,24 @@ class OrquestadorTriCortex:
                                 continue
                             data = await resp.json()
                             self.ultimo_rtt_nvidia_ms = (time.perf_counter() - t0) * 1000.0
-                            contenido = (
+                            content = (
                                 data.get("choices", [{}])[0]
                                 .get("message", {})
                                 .get("content", "")
                             )
-                            parsed = self._extraer_json_seguro(contenido)
-                            q_seg = float(parsed.get("cuarentena_seg", 360.0))
-                            q_clamped = max(300.0, min(600.0, q_seg))
-                            ESTADO_RAM.aplicar_cuarentena(symbol, q_clamped, f"NVIDIA_FORENSE_{modelo}")
-                            log_sniper(
-                                f"[TRI-CORTEX NVIDIA NIM] Forense {modelo} ({self.ultimo_rtt_nvidia_ms:.0f}ms) "
-                                f"fijo cuarentena de {q_clamped:.0f}s en {symbol}."
+                            parsed = self._extraer_json_seguro(content)
+                            q_seg = float(
+                                parsed.get("cuarentena_seg")
+                                or parsed.get("quarantine_sec")
+                                or 360.0
                             )
-                            return {"symbol": symbol, "cuarentena_seg": q_clamped, "modelo": modelo}
+                            q_clamped = max(300.0, min(600.0, q_seg))
+                            ESTADO_RAM.aplicar_cuarentena(symbol, q_clamped, f"NVIDIA_FORENSIC_{model}")
+                            log_sniper(
+                                f"[TRI-CORTEX NVIDIA NIM] Forensic {model} ({self.ultimo_rtt_nvidia_ms:.0f}ms) "
+                                f"set {q_clamped:.0f}s quarantine on {symbol}."
+                            )
+                            return {"symbol": symbol, "cuarentena_seg": q_clamped, "modelo": model}
                     except Exception:
                         continue
 
@@ -610,16 +624,16 @@ class OrquestadorTriCortex:
 
     async def bucle_orquestacion_tricortex(self) -> None:
         self._running = True
-        ultimo_gemini = 0.0
+        last_gemini = 0.0
         while self._running:
             try:
-                ahora = time.time()
+                now = time.time()
                 await self.sincronizar_cortex_groq_regimen()
-                if ahora - ultimo_gemini >= cfg.CICLO_GEMINI_SIZING_SEG:
+                if now - last_gemini >= cfg.CICLO_GEMINI_SIZING_SEG:
                     await self.sincronizar_cortex_gemini_sizing()
-                    ultimo_gemini = ahora
+                    last_gemini = now
             except Exception as exc:
-                log_sniper(f"[WARN] [TRI-CORTEX LOOP] Error no fatal en bucle de fondo: {exc}")
+                log_sniper(f"[WARN] [TRI-CORTEX LOOP] Non-fatal error in background loop: {exc}")
             await asyncio.sleep(cfg.CICLO_GROQ_REGIMEN_SEG)
 
     def detener(self) -> None:

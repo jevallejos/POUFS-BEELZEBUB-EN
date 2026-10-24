@@ -2,15 +2,15 @@
 # -*- coding: utf-8 -*-
 """
 ==============================================================================
-ARCHIVO #03: config_parametros.py
-SISTEMA: TRI-BRAIN-PHANTOM (GOD'S ACCOMPLICE) V1.0 -- ESTRATEGIA CHRONOS-TRIZ
+FILE #03: config_parametros.py
+SYSTEM: POUFS-BEELZEBUB-EN (SPIRITUAL MESSAGE) V5.0 -- CHRONOS-TRIZ STRATEGY
 ==============================================================================
-Fuente Unica de Verdad (Zero-Duplicate-AST / Single-Layer Native).
-Codifica las 4 Leyes Matematicas de CHRONOS-TRIZ y las 9 Ecuaciones P-01..P-09:
-  1. Invariante Biescala de Entrada (Tunel Biclase + ML-OFI + Absorcion Post-Impulso).
-  2. Precio de Reserva con Decaimiento Temporal a los 18s (Continuous Wald Scratch).
-  3. Escalera Convexa Biclase 50/25/25 (+0.24% / +0.48% / Ghost-Runner) + Trinquete.
-  4. Bimodalidad Simetrica Long/Short gobernada por el Enjambre Tri-Cortex.
+Single Source of Truth (Zero-Duplicate-AST / Single-Layer Native).
+Encodes the 4 Mathematical Laws of CHRONOS-TRIZ and the 9 Equations P-01..P-09:
+  1. Bi-Scale Entry Invariant (Bi-Class Tunnel + ML-OFI + Post-Impulse Absorption).
+  2. Reservation Price with 18s Time-Decay (Continuous Wald Scratch).
+  3. Bi-Class 50/25/25 Convex Ladder (+0.24% / +0.48% / Ghost-Runner) + Ratchet.
+  4. Symmetric Long/Short Bimodality governed by the Tri-Cortex Swarm.
 ==============================================================================
 """
 from __future__ import annotations
@@ -23,15 +23,15 @@ from typing import Any, Dict, FrozenSet, Tuple
 from dotenv import load_dotenv
 
 # ==============================================================================
-# 1. IDENTIDAD CANONICA DEL SISTEMA Y RUTAS DE ARCHIVOS
+# 1. CANONICAL SYSTEM IDENTITY AND FILE PATHS
 # ==============================================================================
 ROOT_DIR: pathlib.Path = pathlib.Path(__file__).resolve().parent
 load_dotenv(ROOT_DIR / ".env")
 
-VERSION_SISTEMA: str = "1.0.0"
-NOMBRE_ESTRATEGIA: str = "TRI-BRAIN-PHANTOM (God's Accomplice) V1.0"
+VERSION_SISTEMA: str = "5.0.0"
+NOMBRE_ESTRATEGIA: str = "POUFS-BEELZEBUB-EN (Spiritual Message) V5.0"
 ESTRATEGIA_MATEMATICA: str = "CHRONOS-TRIZ (Stochastic Time-Decay & 50/50 Ratchet)"
-TITULO_TELEGRAM_CANONICO: str = "Motor TRI-BRAIN-PHANTOM (God's Accomplice) V1.0 [CHRONOS-TRIZ]"
+TITULO_TELEGRAM_CANONICO: str = "Engine POUFS-BEELZEBUB-EN (Spiritual Message) V5.0 [CHRONOS-TRIZ]"
 
 ARCHIVO_LOCK_PRODUCCION: str = ".tribrain.lock"
 ARCHIVO_LOCK_TEST: str = ".tribrain_test.lock"
@@ -42,7 +42,7 @@ ARCHIVO_CALIBRACION_OOS: str = "calibracion_oos.json"
 ARCHIVO_REPORTE_OOS_MD: str = "reporte_cuantico_oos.md"
 
 # ==============================================================================
-# 2. CREDENCIALES Y CONECTIVIDAD (DESDE .ENV)
+# 2. CREDENTIALS AND CONNECTIVITY (FROM .ENV)
 # ==============================================================================
 BYBIT_API_KEY: str = os.environ.get("BYBIT_API_KEY", "").strip()
 BYBIT_API_SECRET: str = os.environ.get("BYBIT_API_SECRET", "").strip()
@@ -72,7 +72,7 @@ TELEGRAM_CHAT_ID: str = (
 ).strip()
 
 # ==============================================================================
-# 3. CAPITAL BASE, APALANCAMIENTO Y DIMENSIONAMIENTO DE KELLY CONVEXO
+# 3. BASE CAPITAL, LEVERAGE, AND CONVEX KELLY SIZING
 # ==============================================================================
 CAPITAL_BASE_USDT: float = 9.8662
 APALANCAMIENTO_BASE: int = 3
@@ -88,7 +88,7 @@ FEE_MAKER_PCT: float = 0.00020
 FEE_TAKER_PCT: float = 0.00055
 
 # ==============================================================================
-# 4. UNIVERSO DE ACTIVOS: 7 CAMPEONES ALFA, CLASIFICACION BICLASE Y VETO OOS
+# 4. ASSET UNIVERSE: 7 ALPHA CHAMPIONS, BI-CLASS TAXONOMY & OOS VETO
 # ==============================================================================
 SIMBOLO_CENTINELA_MACRO: str = "BTC/USDT:USDT"
 
@@ -131,7 +131,7 @@ PARES_VETADOS_OOS: FrozenSet[str] = frozenset({
 })
 
 # ==============================================================================
-# 5. LEY 1 (CHRONOS-TRIZ): INVARIANTE BIESCALA DE ENTRADA Y ESCUDOS FISICOS
+# 5. LAW 1 (CHRONOS-TRIZ): BI-SCALE ENTRY INVARIANT AND PHYSICAL SHIELDS
 # ==============================================================================
 CADENCIA_RADAR_SEG: float = 0.150
 VENTANA_Z_TICKS: int = 60
@@ -162,7 +162,7 @@ CONTAGIO_PAUSA_MACRO_SEG: float = 90.0
 CAIDA_COLAPSO_ESTRUCTURAL_PCT: float = -0.065
 
 # ==============================================================================
-# 6. EJECUCION ZERO-REST Y ABOLICION FISICA DEL RE-QUOTE (MOALLEMI-YUAN)
+# 6. ZERO-REST EXECUTION AND PHYSICAL RE-QUOTE ABOLITION (MOALLEMI-YUAN)
 # ==============================================================================
 TTL_ORDEN_ENTRADA_SEG: float = 2.20
 PERMITIR_REQUOTE: bool = False
@@ -170,7 +170,7 @@ PENNY_JUMP_OFI_UMBRAL: float = 0.30
 OFI_ABORTAR_COLA_UMBRAL: float = -0.20
 
 # ==============================================================================
-# 7. LEY 2 Y LEY 3 (CHRONOS-TRIZ): GEOMETRIA DE SALIDA 10/10
+# 7. LAW 2 & LAW 3 (CHRONOS-TRIZ): 10/10 EXIT PAYOFF GEOMETRY
 # ==============================================================================
 MAKER_SCRATCH_TIEMPO_SEG: float = 18.0
 MAKER_SCRATCH_PNL_MAX_PCT: float = 0.0005
@@ -198,7 +198,7 @@ COOLDOWN_POST_CIERRE_WIN_SEG: float = 90.0
 COOLDOWN_POST_CIERRE_LOSS_SEG: float = 300.0
 
 # ==============================================================================
-# 8. LEY 4 (CHRONOS-TRIZ): BIMODALIDAD SIMETRICA LONG / SHORT Y TRI-CORTEX
+# 8. LAW 4 (CHRONOS-TRIZ): SYMMETRIC LONG / SHORT BIMODALITY & TRI-CORTEX
 # ==============================================================================
 MODO_BIDIRECCIONAL: bool = True
 SHORT_PUMP_SOBREEXTENSION_PCT: float = 0.0080
@@ -233,7 +233,7 @@ NVIDIA_MODEL_POOL: Tuple[str, ...] = (
 )
 
 # ==============================================================================
-# 9. HOT-RELOAD ATOMICO DESDE EVALUADOR CUANTICO OOS (SHADOW GATE CLAMPING)
+# 9. ATOMIC HOT-RELOAD FROM QUANTUM OOS EVALUATOR (SHADOW GATE CLAMPING)
 # ==============================================================================
 _ULTIMO_MTIME_OOS: float = 0.0
 
@@ -250,7 +250,7 @@ _LIMITES_SHADOW_GATE: Dict[str, Tuple[float, float]] = {
 
 
 def obtener_parametros_clase(symbol: str) -> Dict[str, float]:
-    """Devuelve los umbrales del Tunel Biclase segun el activo sea High-Beta o Tier-1."""
+    """Returns Bi-Class Tunnel thresholds depending on whether the asset is High-Beta or Tier-1."""
     if symbol in CLASE_HIGH_BETA:
         return {
             "z_umbral": Z_SCORE_UMBRAL_HIGH_BETA,
@@ -268,14 +268,16 @@ def obtener_parametros_clase(symbol: str) -> Dict[str, float]:
 
 def _aplicar_parametros_produccion_phantom() -> None:
     """
-    Aplica en una unica capa nativa los parametros calibrados de produccion
-    cuando TRIBRAIN_TEST_MODE != '1', preservando intactas las 18/18 pruebas.
-    Incluye SCAR-LOCK-10: Piso positivo de absorcion de Hawkes (I_Hawkes >= +0.05).
+    Applies calibrated production parameters in a single native layer
+    when TRIBRAIN_TEST_MODE != '1', keeping the 18/18 test suite intact.
+    Includes SCAR-LOCK-10: Positive Hawkes absorption floor (I_Hawkes >= +0.05).
     """
     if os.environ.get("TRIBRAIN_TEST_MODE", "0") == "1":
         return
     g = globals()
-    g["NOMBRE_ESTRATEGIA"] = "TRI-BRAIN-PHANTOM (God's Accomplice) V1.0"
+    g["VERSION_SISTEMA"] = "5.0.0"
+    g["NOMBRE_ESTRATEGIA"] = "POUFS-BEELZEBUB-EN (Spiritual Message) V5.0"
+    g["TITULO_TELEGRAM_CANONICO"] = "Engine POUFS-BEELZEBUB-EN (Spiritual Message) V5.0 [CHRONOS-TRIZ]"
     g["KELLY_FRACCION_BASE"] = max(0.52, min(float(g.get("KELLY_FRACCION_BASE", 0.55)), 0.58))
     g["KELLY_FRACCION_MIN"] = 0.46
     g["Z_SCORE_UMBRAL_HIGH_BETA"] = max(-3.60, min(float(g.get("Z_SCORE_UMBRAL_HIGH_BETA", -2.85)), -2.80))
@@ -309,41 +311,41 @@ def _aplicar_parametros_produccion_phantom() -> None:
 
 def recargar_calibracion_oos_si_cambio(ruta_json: pathlib.Path | None = None) -> Dict[str, Any]:
     """
-    Verifica en O(1) mediante st_mtime si calibracion_oos.json cambio en disco.
-    Aplica Shadow Gate Clamping y preserva el piso P-08 en produccion.
+    Checks in O(1) via st_mtime whether calibracion_oos.json changed on disk.
+    Applies Shadow Gate Clamping and preserves the P-08 floor in production.
     """
     global _ULTIMO_MTIME_OOS
-    objetivo = ruta_json or (ROOT_DIR / ARCHIVO_CALIBRACION_OOS)
-    if not objetivo.exists():
-        return {"recargado": False, "motivo": "ARCHIVO_NO_EXISTE"}
+    target = ruta_json or (ROOT_DIR / ARCHIVO_CALIBRACION_OOS)
+    if not target.exists():
+        return {"recargado": False, "motivo": "FILE_NOT_FOUND"}
 
     try:
-        mtime_actual = objetivo.stat().st_mtime
-        if mtime_actual <= _ULTIMO_MTIME_OOS:
-            return {"recargado": False, "motivo": "SIN_CAMBIOS"}
+        current_mtime = target.stat().st_mtime
+        if current_mtime <= _ULTIMO_MTIME_OOS:
+            return {"recargado": False, "motivo": "NO_CHANGES"}
 
-        datos = json.loads(objetivo.read_text(encoding="utf-8-sig"))
-        parametros_nuevos = datos.get("parametros", datos) if isinstance(datos, dict) else {}
-        aplicados: Dict[str, float] = {}
+        data = json.loads(target.read_text(encoding="utf-8-sig"))
+        new_params = data.get("parametros", data) if isinstance(data, dict) else {}
+        applied: Dict[str, float] = {}
         g = globals()
 
-        for clave, (v_min, v_max) in _LIMITES_SHADOW_GATE.items():
-            if clave in parametros_nuevos:
-                valor_bruto = float(parametros_nuevos[clave])
-                valor_clamped = max(v_min, min(v_max, valor_bruto))
-                g[clave] = valor_clamped
-                aplicados[clave] = valor_clamped
+        for key, (v_min, v_max) in _LIMITES_SHADOW_GATE.items():
+            if key in new_params:
+                raw_val = float(new_params[key])
+                clamped_val = max(v_min, min(v_max, raw_val))
+                g[key] = clamped_val
+                applied[key] = clamped_val
 
         if os.environ.get("TRIBRAIN_TEST_MODE", "0") != "1":
             _aplicar_parametros_produccion_phantom()
-            aplicados["KELLY_FRACCION_BASE"] = g["KELLY_FRACCION_BASE"]
-            aplicados["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
-            aplicados["OFI_MIN_ENTRADA"] = 0.12
-            aplicados["Z_SCORE_UMBRAL_HIGH_BETA"] = g["Z_SCORE_UMBRAL_HIGH_BETA"]
-            aplicados["Z_SCORE_UMBRAL_TIER1"] = g["Z_SCORE_UMBRAL_TIER1"]
+            applied["KELLY_FRACCION_BASE"] = g["KELLY_FRACCION_BASE"]
+            applied["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
+            applied["OFI_MIN_ENTRADA"] = 0.12
+            applied["Z_SCORE_UMBRAL_HIGH_BETA"] = g["Z_SCORE_UMBRAL_HIGH_BETA"]
+            applied["Z_SCORE_UMBRAL_TIER1"] = g["Z_SCORE_UMBRAL_TIER1"]
 
-        _ULTIMO_MTIME_OOS = mtime_actual
-        return {"recargado": True, "aplicados": aplicados, "mtime": mtime_actual}
+        _ULTIMO_MTIME_OOS = current_mtime
+        return {"recargado": True, "aplicados": applied, "mtime": current_mtime}
     except Exception as exc:
         return {"recargado": False, "motivo": f"ERROR: {exc}"}
 
