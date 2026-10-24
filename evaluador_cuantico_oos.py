@@ -126,6 +126,7 @@ def calcular_metricas_horizonte(operaciones: List[Dict[str, Any]]) -> Dict[str, 
             "velocidad_g_hora": 0.0,
             "sharpe_oos": 0.0,
             "ahorro_scratch_usdt": 0.0,
+            "ahorro_scratch_18s_usdt": 0.0,
         }
 
     wins = 0
@@ -217,6 +218,7 @@ def calcular_metricas_horizonte(operaciones: List[Dict[str, Any]]) -> Dict[str, 
         "velocidad_g_hora": round(expectancy * 1.5, 4),
         "sharpe_oos": round(sharpe, 2),
         "ahorro_scratch_usdt": round(scratch_savings, 4),
+        "ahorro_scratch_18s_usdt": round(scratch_savings, 4),
     }
 
 
@@ -388,7 +390,7 @@ class EvaluadorCuanticoOOS:
             "pnl_72h_usdt": m72["pnl_neto_usdt"],
             "profit_factor": m72["profit_factor"],
             "lambda_bayes": round(lambda_bayes, 2),
-            "ahorro_scratch_18s_usdt": m72["ahorro_scratch_18s_usdt"],
+            "ahorro_scratch_18s_usdt": m72["ahorro_scratch_usdt"],
             "cosechas_50_triz": int(m72["cosechas_50_triz"]),
             "significancia_estadistica": {
                 "n_operaciones_base": n_72,
