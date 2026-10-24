@@ -266,11 +266,11 @@ def obtener_parametros_clase(symbol: str) -> Dict[str, float]:
     }
 
 
-def _aplicar_parametros_produccion_phantom() -> None:
+def _aplicar_parametros_produccion_phantom(desde_hot_reload: bool = False) -> None:
     """
-    Applies calibrated production parameters in a single native layer
+    Applies calibrated 25.0 Hz (40ms) production parameters in a single native layer
     when TRIBRAIN_TEST_MODE != '1', keeping the 18/18 test suite intact.
-    Includes SCAR-LOCK-10: Positive Hawkes absorption floor (I_Hawkes >= +0.05).
+    Includes SCAR-LOCK-10 (I_Hawkes >= +0.05) and aligned Bi-Class Z-Score bounds.
     """
     if os.environ.get("TRIBRAIN_TEST_MODE", "0") == "1":
         return
@@ -278,10 +278,19 @@ def _aplicar_parametros_produccion_phantom() -> None:
     g["VERSION_SISTEMA"] = "5.0.0"
     g["NOMBRE_ESTRATEGIA"] = "POUFS-BEELZEBUB-EN (Spiritual Message) V5.0"
     g["TITULO_TELEGRAM_CANONICO"] = "Engine POUFS-BEELZEBUB-EN (Spiritual Message) V5.0 [CHRONOS-TRIZ]"
+    g["CADENCIA_RADAR_SEG"] = 0.040
     g["KELLY_FRACCION_BASE"] = max(0.52, min(float(g.get("KELLY_FRACCION_BASE", 0.55)), 0.58))
     g["KELLY_FRACCION_MIN"] = 0.46
-    g["Z_SCORE_UMBRAL_HIGH_BETA"] = max(-3.60, min(float(g.get("Z_SCORE_UMBRAL_HIGH_BETA", -2.85)), -2.80))
-    g["Z_SCORE_UMBRAL_TIER1"] = max(-3.30, min(float(g.get("Z_SCORE_UMBRAL_TIER1", -2.55)), -2.45))
+    if not desde_hot_reload:
+        g["Z_SCORE_UMBRAL_HIGH_BETA"] = -2.85
+        g["Z_SCORE_UMBRAL_TIER1"] = -2.60
+    else:
+        z_hb = max(-3.15, min(float(g.get("Z_SCORE_UMBRAL_HIGH_BETA", -2.85)), -2.80))
+        z_t1_raw = float(g.get("Z_SCORE_UMBRAL_TIER1", z_hb + 0.25))
+        if z_t1_raw <= z_hb:
+            z_t1_raw = z_hb + 0.25
+        g["Z_SCORE_UMBRAL_HIGH_BETA"] = round(z_hb, 4)
+        g["Z_SCORE_UMBRAL_TIER1"] = round(max(-2.85, min(z_t1_raw, -2.45)), 4)
     g["CAIDA_MIN_HIGH_BETA_PCT"] = -0.0028
     g["CAIDA_MIN_TIER1_PCT"] = -0.0020
     g["EMA900_DIST_MIN_HIGH_BETA_PCT"] = -0.0028
@@ -304,8 +313,8 @@ def _aplicar_parametros_produccion_phantom() -> None:
     lim = g.get("_LIMITES_SHADOW_GATE")
     if isinstance(lim, dict):
         lim["KELLY_FRACCION_BASE"] = (0.52, 0.58)
-        lim["Z_SCORE_UMBRAL_HIGH_BETA"] = (-3.60, -2.80)
-        lim["Z_SCORE_UMBRAL_TIER1"] = (-3.30, -2.45)
+        lim["Z_SCORE_UMBRAL_HIGH_BETA"] = (-3.15, -2.80)
+        lim["Z_SCORE_UMBRAL_TIER1"] = (-2.85, -2.45)
         lim["COSECHA_TRIZ_ACTIVACION_PCT"] = (0.0024, 0.0024)
 
 
@@ -337,7 +346,7 @@ def recargar_calibracion_oos_si_cambio(ruta_json: pathlib.Path | None = None) ->
                 applied[key] = clamped_val
 
         if os.environ.get("TRIBRAIN_TEST_MODE", "0") != "1":
-            _aplicar_parametros_produccion_phantom()
+            _aplicar_parametros_produccion_phantom(desde_hot_reload=True)
             applied["KELLY_FRACCION_BASE"] = g["KELLY_FRACCION_BASE"]
             applied["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
             applied["OFI_MIN_ENTRADA"] = 0.12

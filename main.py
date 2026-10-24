@@ -10,7 +10,7 @@ Asynchronous Central Orchestrator Core (uvloop + Bybit UTA WebSocket L2):
   - Pre-flight sanitizer for calibracion_oos.json (P-08) without duplicating
     root JSON keys and intelligent boot position reconciler.
   - Non-blocking parallel orchestration:
-      1. 6.6 Hz L2 WebSocket streaming (7 Alpha Champions + BTC Sentinel).
+      1. 25.0 Hz (40ms) L2 WebSocket streaming (7 Alpha Champions + BTC Sentinel).
       2. CHRONOS-TRIZ position monitoring (P-04, P-05, P-06).
       3. Tri-Cortex Swarm (Full-Groq LPU + Multi-Cloud Failover).
       4. Sub-0.5ms OOS Hot-Reload watcher and periodic Black Box telemetry.
@@ -148,12 +148,12 @@ def _sanear_json_oos_disco_phantom() -> None:
             prms["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
             prms["OFI_MIN_ENTRADA"] = 0.12
             prms["MAKER_SCRATCH_TIEMPO_SEG"] = 18.0
-            prms["Z_SCORE_UMBRAL_HIGH_BETA"] = round(
-                max(-3.60, min(-2.80, float(prms.get("Z_SCORE_UMBRAL_HIGH_BETA", -2.85)))), 2
-            )
-            prms["Z_SCORE_UMBRAL_TIER1"] = round(
-                max(-3.30, min(-2.45, float(prms.get("Z_SCORE_UMBRAL_TIER1", -2.55)))), 2
-            )
+            z_hb_san = max(-3.15, min(-2.80, float(prms.get("Z_SCORE_UMBRAL_HIGH_BETA", -2.85))))
+            z_t1_raw = float(prms.get("Z_SCORE_UMBRAL_TIER1", z_hb_san + 0.25))
+            if z_t1_raw <= z_hb_san:
+                z_t1_raw = z_hb_san + 0.25
+            prms["Z_SCORE_UMBRAL_HIGH_BETA"] = round(z_hb_san, 2)
+            prms["Z_SCORE_UMBRAL_TIER1"] = round(max(-2.85, min(-2.45, z_t1_raw)), 2)
         json_path.write_bytes((json.dumps(d, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
     except Exception:
         pass
@@ -404,8 +404,9 @@ class MotorTriBrainSniper:
         if excluded:
             log_sniper(f"[MAIN] Minimum lot filter excluded indivisible pairs: {', '.join(excluded[:8])}")
 
+        radar_hz = round(1.0 / max(0.010, float(cfg.CADENCIA_RADAR_SEG)), 1)
         log_sniper(
-            f"[MAIN] Paper Mode: {cfg.MODO_PAPER} | Strategy: {cfg.ESTRATEGIA_MATEMATICA} | "
+            f"[MAIN] Paper Mode: {cfg.MODO_PAPER} | Radar: {radar_hz:.1f}Hz ({cfg.CADENCIA_RADAR_SEG*1000:.0f}ms) | "
             f"Entry TTL: {cfg.TTL_ORDEN_ENTRADA_SEG}s (ReQuote={cfg.PERMITIR_REQUOTE}) | "
             f"Scratch: {cfg.MAKER_SCRATCH_TIEMPO_SEG:.0f}s | 50% TRIZ Harvest: +{cfg.COSECHA_TRIZ_ACTIVACION_PCT*100:.2f}% | "
             f"Internal SL: -{cfg.SL_INTERNO_PCT*100:.2f}% | Max Hold: {cfg.TIEMPO_MAX_HOLD_SEG:.0f}s"

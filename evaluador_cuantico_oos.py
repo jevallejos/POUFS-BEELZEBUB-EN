@@ -326,7 +326,7 @@ class EvaluadorCuanticoOOS:
 
         prior_kelly = 0.55
         prior_z_hb = -2.85
-        prior_z_t1 = -2.55 if is_test else -3.10
+        prior_z_t1 = -2.55 if is_test else -2.60
         prior_scratch_s = 18.0
         prior_harvest_pct = 0.0026 if is_test else 0.0024
         prior_sl_pct = abs(float(getattr(cfg, "SL_INTERNO_PCT", 0.0048)))
@@ -352,7 +352,9 @@ class EvaluadorCuanticoOOS:
 
         kelly_cal = round(((1.0 - lambda_bayes) * prior_kelly) + (lambda_bayes * obs_kelly), 4)
         z_hb_cal = round(((1.0 - lambda_bayes) * prior_z_hb) + (lambda_bayes * obs_z_hb), 4)
-        z_t1_cal = round(prior_z_t1 if is_test else min(-3.10, z_hb_cal - 0.25), 4)
+        z_t1_cal = round(
+            prior_z_t1 if is_test else max(-2.85, min(-2.50, z_hb_cal + 0.25)), 4
+        )
         scratch_cal = round(((1.0 - lambda_bayes) * prior_scratch_s) + (lambda_bayes * obs_scratch_s), 2)
 
         kelly_cal = max(0.48, min(0.62, kelly_cal))
@@ -386,7 +388,7 @@ class EvaluadorCuanticoOOS:
             "pnl_72h_usdt": m72["pnl_neto_usdt"],
             "profit_factor": m72["profit_factor"],
             "lambda_bayes": round(lambda_bayes, 2),
-            "ahorro_scratch_18s_usdt": m72["ahorro_scratch_usdt"],
+            "ahorro_scratch_18s_usdt": m72["ahorro_scratch_18s_usdt"],
             "cosechas_50_triz": int(m72["cosechas_50_triz"]),
             "significancia_estadistica": {
                 "n_operaciones_base": n_72,

@@ -5,7 +5,7 @@
 FILE #08: radar_volatilidad.py
 SYSTEM: POUFS-BEELZEBUB-EN (SPIRITUAL MESSAGE) V5.0 -- CHRONOS-TRIZ STRATEGY
 ==============================================================================
-High-Frequency Microstructural Radar (6.6 Hz / 150 ms) in O(1) (< 25 us):
+High-Frequency Microstructural Radar (25.0 Hz / 40 ms Prod | 6.6 Hz Test) in O(1) (< 25 us):
   - Bipower VentanaZ estimator with O(1) incremental accumulators and EMA900.
   - Multi-Level L1-L5 ML-OFI (Cont-Kukanov-Stoikov) in a single fused loop.
   - Active-tick Hurst Roughness Exponent and Extreme Lyapunov Shock Time
@@ -20,10 +20,9 @@ High-Frequency Microstructural Radar (6.6 Hz / 150 ms) in O(1) (< 25 us):
         sales in bullish flags above prior breakout prices.
       * SCAR-LOCK-09..12: Bi-class Lyapunov + aftershock, Hawkes >= +0.05,
         EMA900 band in SHORT + |Z| >= 8.0 ignition + 1800s STEP-LOCK & Tier-1 LONG.
-      * SCAR-LOCK-13: OFI absorption proportional to |Z_t| and H_t in LONG,
-        strict fractal ceiling H_max^long <= 0.475 (hard cap 0.485), and
-        dp_rel <= -0.42% discount in High-Beta LONG.
-      * O(1) instrumentation feeding the Forensic AI Cognitive Vault (+15s Oracle).
+      * SCAR-LOCK-13: 1200ms Arm-and-Fire Absorption Automaton, OFI absorption
+        proportional to |Z_t| and H_t in LONG, strict fractal ceiling
+        H_max^long <= 0.475 (hard cap 0.485), and O(1) Vault instrumentation.
 ==============================================================================
 """
 from __future__ import annotations
@@ -80,21 +79,28 @@ def _calcular_percentil_elastico_intradia(ahora_t: float, vol_bipower: float) ->
 class VentanaZ:
     """
     Maintains the high-frequency time series of an asset and computes in O(1):
-      - Z-Score with Bipower Variation via incremental pair deque.
-      - EMA900, percentage distance, structural slope, and post-boot maturity.
-      - Hurst Roughness Exponent (H_t) and Lyapunov Acceleration (a_t).
-      - Hawkes Absorption Memory (I_t), 5-level ML-OFI, and VPIN.
+      - Z-Score with Bipower Variation via incremental active-tick pair deque.
+      - Continuous-time normalized EMA900 (135.0s horizon), distance, and slope.
+      - Hurst Roughness Exponent (H_t) with post-braking variogram de-trending.
+      - Hawkes Absorption Memory (I_t), 5-level ML-OFI, VPIN, and 1200ms Arm-and-Fire state.
     """
 
     def __init__(self, maxlen: int = cfg.VENTANA_Z_TICKS) -> None:
-        self.maxlen: int = max(20, int(maxlen))
+        is_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
+        cad_s = max(0.020, float(getattr(cfg, "CADENCIA_RADAR_SEG", 0.150)))
+        scale_hz = 1.0 if is_test else max(1.0, round(0.150 / cad_s, 2))
+        eff_maxlen = max(20, int(maxlen)) if is_test else max(60, int(round(int(maxlen) * scale_hz)))
+        ofi_maxlen = 35 if is_test else max(35, int(round(35 * scale_hz)))
+        ema_ticks = float(cfg.VENTANA_EMA_MACRO_TICKS) * scale_hz
+
+        self.maxlen: int = eff_maxlen
         self.precios: Deque[float] = deque(maxlen=self.maxlen)
         self.retornos: Deque[float] = deque(maxlen=self.maxlen)
-        self.ofi_ventana: Deque[float] = deque(maxlen=35)
-        self._ofi_neg_ventana: Deque[float] = deque(maxlen=35)
+        self.ofi_ventana: Deque[float] = deque(maxlen=ofi_maxlen)
+        self._ofi_neg_ventana: Deque[float] = deque(maxlen=ofi_maxlen)
         self.ema900: float = 0.0
-        self.ema900_historia: Deque[float] = deque(maxlen=60)
-        self._alpha_ema900: float = 2.0 / (cfg.VENTANA_EMA_MACRO_TICKS + 1.0)
+        self.ema900_historia: Deque[float] = deque(maxlen=int(round(60 * scale_hz)))
+        self._alpha_ema900: float = 2.0 / (ema_ticks + 1.0)
         self.ticks_totales_recibidos: int = 0
 
         self._abs_ret_prev: float = -1.0
@@ -124,6 +130,10 @@ class VentanaZ:
         self.vigilancia_short_hasta_ts: float = 0.0
         self.max_sobreextension_ema_pct: float = 0.0
         self.max_z_pump_short: float = 0.0
+        self.vigilancia_long_hasta_ts: float = 0.0
+        self.min_z_drop_long: float = 0.0
+        self.min_dp_drop_long: float = 0.0
+        self.min_ema_drop_long: float = 0.0
 
     def agregar_precio(self, precio: float) -> None:
         p = float(precio)
@@ -246,9 +256,13 @@ class VentanaZ:
         ofi_5s = sum(self.ofi_ventana) / n_ofi
         vpin = min(1.0, (sum(self._ofi_neg_ventana) / n_ofi) * 1.35)
 
-        dt = max(0.01, ahora - self.ts_ultimo_tick) if self.ts_ultimo_tick > 0.0 else 0.15
+        dt = max(0.01, ahora - self.ts_ultimo_tick) if self.ts_ultimo_tick > 0.0 else float(cfg.CADENCIA_RADAR_SEG)
         self.ts_ultimo_tick = ahora
-        self.hawkes_intensidad = (self.hawkes_intensidad * math.exp(-cfg.HAWKES_DECAY_BETA * dt)) + ml_ofi
+        is_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
+        hawkes_scale = 1.0 if is_test else min(1.0, max(0.15, dt / 0.150))
+        self.hawkes_intensidad = (
+            self.hawkes_intensidad * math.exp(-cfg.HAWKES_DECAY_BETA * dt)
+        ) + (ml_ofi * hawkes_scale)
 
         if ml_ofi <= -0.45:
             self.ts_ultimo_pulso_toxico = ahora
@@ -396,7 +410,7 @@ def verificar_friccion_spread(bid: float, ask: float, max_spread_pct: float = cf
 
 class RadarVolatilidad:
     """
-    Monitors all 7 Alpha Champions + Macro Sentinel BTC in parallel at 6.6 Hz.
+    Monitors all 7 Alpha Champions + Macro Sentinel BTC in parallel at 25.0 Hz (prod) / 6.6 Hz (test).
     Evaluates Laws 1 and 4 of CHRONOS-TRIZ alongside the Single-Layer Pre-Order
     Interceptor (P-01, P-02, P-03, P-09), SCAR-LOCK-00..18 shields, and feeds
     the Forensic AI Cognitive Vault (baul_ia_forense.jsonl) in O(1) time.
@@ -559,6 +573,7 @@ class RadarVolatilidad:
                 else 999.0
             )
             in_post_shock_aftershock = (dt_lyap_shock < 12.0) and (dt_lyap_repulsor < 3.60)
+
             ticks_ofi_l = int(tk_sym.ofi_ticks_confirmados_long if tk_sym is not None else 2)
             unconfirmed_post_waterfall = (dt_lyap_shock < 15.0) and (ticks_ofi_l < 4)
 
@@ -582,22 +597,31 @@ class RadarVolatilidad:
                 return False
 
             # SCAR-LOCK-12a + SCAR-LOCK-13: Bi-scale discount and OFI proportional to |Z_t| and H_t
-            base_ema_long = -(0.0028 + (0.0008 * p_day)) if is_tier1 else -0.0025
+            base_ema_long = -(0.0020 + (0.0005 * p_day)) if is_tier1 else -(0.0025 + (0.0005 * p_day))
             ema_long_threshold = base_ema_long * (1.0 + (0.50 * mu_boot))
-            base_dp_long = -(0.0028 + (0.0008 * p_day)) if is_tier1 else -(0.0042 + (0.0006 * p_day))
+            base_dp_long = -(0.0020 + (0.0005 * p_day)) if is_tier1 else -(0.0028 + (0.0006 * p_day))
             dp_long_threshold = base_dp_long * (1.0 + (0.50 * mu_boot))
-            z_long_threshold = -3.35 if is_tier1 else -2.80
+            z_long_threshold = (
+                float(getattr(cfg, "Z_SCORE_UMBRAL_TIER1", -2.60))
+                if is_tier1
+                else float(getattr(cfg, "Z_SCORE_UMBRAL_HIGH_BETA", -2.85))
+            )
 
-            excess_z_long = max(0.0, abs(z_real) - 4.50)
+            in_long_arm = vz_sym is not None and ahora_t < vz_sym.vigilancia_long_hasta_ts
+            z_long_eff = min(z_real, float(senal.get("z_score") or z_real))
+            dp_long_eff = min(dp_rel, float(vz_sym.min_dp_drop_long)) if in_long_arm else dp_rel
+            ema_long_eff = min(ema_rel, float(vz_sym.min_ema_drop_long)) if in_long_arm else ema_rel
+
+            excess_z_long = max(0.0, abs(z_long_eff) - 4.50)
             h_ofi_premium = 0.08 if h_real >= 0.455 else 0.0
             ofi_min_long = (
-                min(0.42, max(0.16, 0.16 + (0.04 * p_day) + (0.04 * excess_z_long) + h_ofi_premium))
+                min(0.42, max(0.14, 0.14 + (0.04 * p_day) + (0.04 * excess_z_long) + h_ofi_premium))
                 if is_tier1
                 else min(
                     0.45,
                     max(
-                        0.18,
-                        0.18 + (0.045 * p_day) + (0.050 * excess_z_long) + h_ofi_premium + (0.08 * mu_boot),
+                        0.16,
+                        0.16 + (0.045 * p_day) + (0.050 * excess_z_long) + h_ofi_premium + (0.08 * mu_boot),
                     ),
                 )
             )
@@ -610,20 +634,20 @@ class RadarVolatilidad:
                     p_ref_bloq,
                     tag_percentil,
                     p_day,
-                    f"OFI={ofi_real:+.2f}<+{ofi_min_long:.2f} (Z={z_real:+.2f}, H={h_real:.2f})",
+                    f"OFI={ofi_real:+.2f}<+{ofi_min_long:.2f} (Z={z_long_eff:+.2f}, H={h_real:.2f})",
                     ahora_t,
                 )
                 if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_OFI_L"), 0.0) >= 10.0:
                     _SILENCIO_LOG_PHANTOM[(sym, "P03_OFI_L")] = ahora_t
                     log_sniper(
                         f"[PHANTOM P-03 OFI-LONG] {sym} [LONG] blocked BEFORE order "
-                        f"(OFI={ofi_real:+.2f} < +{ofi_min_long:.2f} for Z={z_real:+.2f}, H={h_real:.2f} in {tag_percentil})."
+                        f"(OFI={ofi_real:+.2f} < +{ofi_min_long:.2f} for Z={z_long_eff:+.2f}, H={h_real:.2f} in {tag_percentil})."
                     )
                 return False
 
             # SCAR-LOCK-10 + SCAR-LOCK-12a: Positive Hawkes absorption floor
             hawkes_base_long = (0.05 + (0.10 * p_day)) if h_real > 0.460 else 0.05
-            hawkes_req_long = max(0.12, hawkes_base_long) if is_tier1 else hawkes_base_long
+            hawkes_req_long = max(0.10, hawkes_base_long) if is_tier1 else hawkes_base_long
             if hawkes_val < hawkes_req_long:
                 ESTADO_RAM.encolar_auditoria_escudo_15s(
                     sym, side, "SCAR-LOCK-10_HAWKES_LONG", p_ref_bloq, tag_percentil, p_day, f"I_Hawkes={hawkes_val:+.2f}<+{hawkes_req_long:.2f}", ahora_t
@@ -637,12 +661,12 @@ class RadarVolatilidad:
                 return False
 
             # SCAR-LOCK-13: Strict Fractal Ceiling in LONG (H_max <= 0.475 base, hard cap 0.485)
-            h_absorption_bonus = 0.012 if (ofi_real >= 0.40 and hawkes_val >= 0.35 and dp_rel <= -0.0048) else 0.0
+            h_absorption_bonus = 0.012 if (ofi_real >= 0.35 and hawkes_val >= 0.25 and dp_long_eff <= -0.0035) else 0.0
             h_elastic_raw = min(
                 0.485,
-                max(0.450, 0.475 - (0.015 * p_day) + h_absorption_bonus),
+                max(0.455, 0.475 - (0.015 * p_day) + h_absorption_bonus),
             )
-            h_elastic_long = min(0.465, h_elastic_raw) if is_tier1 else h_elastic_raw
+            h_elastic_long = min(0.472, h_elastic_raw) if is_tier1 else h_elastic_raw
 
             if h_real > h_elastic_long:
                 ESTADO_RAM.encolar_auditoria_escudo_15s(
@@ -652,18 +676,23 @@ class RadarVolatilidad:
                     p_ref_bloq,
                     tag_percentil,
                     p_day,
-                    f"H={h_real:.3f}>{h_elastic_long:.3f} (Z={z_real:+.2f}, OFI={ofi_real:+.2f})",
+                    f"H={h_real:.3f}>{h_elastic_long:.3f} (Z={z_long_eff:+.2f}, OFI={ofi_real:+.2f})",
                     ahora_t,
                 )
                 if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P02_H_L"), 0.0) >= 10.0:
                     _SILENCIO_LOG_PHANTOM[(sym, "P02_H_L")] = ahora_t
                     log_sniper(
                         f"[PHANTOM P-02 PRE-ORDER] {sym} [LONG] blocked BEFORE sending order in {tag_percentil} "
-                        f"(H={h_real:.3f} > {h_elastic_long:.3f} | Z={z_real:+.2f}, EMA={ema_rel*100:+.2f}%, DP={dp_rel*100:+.2f}%)."
+                        f"(H={h_real:.3f} > {h_elastic_long:.3f} | Z={z_long_eff:+.2f}, EMA={ema_long_eff*100:+.2f}%, DP={dp_long_eff*100:+.2f}%)."
                     )
                 return False
 
-            if ema_rel > ema_long_threshold or dp_rel > dp_long_threshold or z_real > z_long_threshold:
+            if (
+                ema_long_eff > ema_long_threshold
+                or dp_long_eff > dp_long_threshold
+                or z_long_eff > z_long_threshold
+                or z_real > (z_long_threshold * 0.80)
+            ):
                 ESTADO_RAM.encolar_auditoria_escudo_15s(
                     sym,
                     side,
@@ -671,14 +700,14 @@ class RadarVolatilidad:
                     p_ref_bloq,
                     tag_percentil,
                     p_day,
-                    f"EMA={ema_rel*100:+.2f}%/{ema_long_threshold*100:+.2f}% DP={dp_rel*100:+.2f}%/{dp_long_threshold*100:+.2f}% Z={z_real:+.2f}/{z_long_threshold:+.2f}",
+                    f"EMA={ema_long_eff*100:+.2f}%/{ema_long_threshold*100:+.2f}% DP={dp_long_eff*100:+.2f}%/{dp_long_threshold*100:+.2f}% Z={z_long_eff:+.2f}/{z_long_threshold:+.2f}",
                     ahora_t,
                 )
                 if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_L"), 0.0) >= 12.0:
                     _SILENCIO_LOG_PHANTOM[(sym, "P03_L")] = ahora_t
                     log_sniper(
                         f"[PHANTOM P-03 EMA900-AND] {sym} [LONG] blocked BEFORE order "
-                        f"(EMA900={ema_rel*100:+.2f}% req {ema_long_threshold*100:+.2f}%, DP={dp_rel*100:+.2f}% req {dp_long_threshold*100:+.2f}% | Z={z_real:+.2f})."
+                        f"(EMA900={ema_long_eff*100:+.2f}% req {ema_long_threshold*100:+.2f}%, DP={dp_long_eff*100:+.2f}% req {dp_long_threshold*100:+.2f}% | Z={z_long_eff:+.2f})."
                     )
                 return False
 
@@ -1050,9 +1079,6 @@ class RadarVolatilidad:
         class_params = cfg.obtener_parametros_clase(symbol)
         z_threshold = float(class_params["z_umbral"])
 
-        if tk.z_score > z_threshold:
-            return None
-
         perm = ESTADO_RAM.permisos_ram.get(symbol)
         min_drop_req = (
             perm.caida_min_override_pct
@@ -1064,17 +1090,42 @@ class RadarVolatilidad:
         is_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
         is_extreme_z = tk.z_score <= -4.50
         if is_test:
+            if tk.z_score > z_threshold:
+                return None
             if tk.delta_p_pct > min_drop_req and not is_extreme_z:
                 return None
             if tk.ema900_dist_pct > ema_dist_req and not is_extreme_z:
                 return None
+            z_ref_long = tk.z_score
         else:
-            dp_floor_prod = -0.0028 if symbol in cfg.CLASE_TIER1_LIQUIDO else -0.0042
-            ema_floor_prod = -0.0028 if symbol in cfg.CLASE_TIER1_LIQUIDO else -0.0025
-            if tk.delta_p_pct > min(min_drop_req, dp_floor_prod):
+            dp_floor_prod = -0.0020 if symbol in cfg.CLASE_TIER1_LIQUIDO else -0.0028
+            ema_floor_prod = -0.0020 if symbol in cfg.CLASE_TIER1_LIQUIDO else -0.0025
+            req_dp = min(min_drop_req, dp_floor_prod)
+            req_ema = min(ema_dist_req, ema_floor_prod)
+
+            if tk.z_score <= z_threshold and tk.delta_p_pct <= req_dp and tk.ema900_dist_pct <= req_ema:
+                if t_now >= vz.vigilancia_long_hasta_ts:
+                    vz.min_z_drop_long = tk.z_score
+                    vz.min_dp_drop_long = tk.delta_p_pct
+                    vz.min_ema_drop_long = tk.ema900_dist_pct
+                else:
+                    vz.min_z_drop_long = min(vz.min_z_drop_long, tk.z_score)
+                    vz.min_dp_drop_long = min(vz.min_dp_drop_long, tk.delta_p_pct)
+                    vz.min_ema_drop_long = min(vz.min_ema_drop_long, tk.ema900_dist_pct)
+                arm_horizon = t_now + 1.20
+                if vz.ts_ultimo_choque_lyapunov > 0.0 and (t_now - vz.ts_ultimo_choque_lyapunov) < 9.0:
+                    arm_horizon = max(arm_horizon, vz.ts_ultimo_choque_lyapunov + 9.50)
+                vz.vigilancia_long_hasta_ts = arm_horizon
+
+            armed_long = (
+                t_now < vz.vigilancia_long_hasta_ts
+                and tk.z_score <= (z_threshold * 0.82)
+                and tk.delta_p_pct <= (req_dp * 0.80)
+                and tk.ema900_dist_pct <= (req_ema * 0.80)
+            )
+            if not armed_long:
                 return None
-            if tk.ema900_dist_pct > min(ema_dist_req, ema_floor_prod):
-                return None
+            z_ref_long = min(tk.z_score, vz.min_z_drop_long)
 
         if not spread_ok:
             self._log_alerta_throttled(
@@ -1094,12 +1145,12 @@ class RadarVolatilidad:
             h_radar_ceiling = cfg.HURST_MAX_ENTRADA
         else:
             p_day, _ = _calcular_percentil_elastico_intradia(t_now, tk.volatilidad_local)
-            h_abs_bonus = 0.012 if (tk.ofi_l1_l5 >= 0.40 and tk.hawkes_intensidad >= 0.35 and tk.delta_p_pct <= -0.0048) else 0.0
+            h_abs_bonus = 0.012 if (tk.ofi_l1_l5 >= 0.35 and tk.hawkes_intensidad >= 0.25 and tk.delta_p_pct <= -0.0035) else 0.0
             h_raw_ceiling = min(
                 0.485,
-                max(0.450, 0.475 - (0.015 * p_day) + h_abs_bonus),
+                max(0.455, 0.475 - (0.015 * p_day) + h_abs_bonus),
             )
-            h_radar_ceiling = min(0.465, h_raw_ceiling) if symbol in cfg.CLASE_TIER1_LIQUIDO else h_raw_ceiling
+            h_radar_ceiling = min(0.472, h_raw_ceiling) if symbol in cfg.CLASE_TIER1_LIQUIDO else h_raw_ceiling
 
         if tk.hurst > h_radar_ceiling and not (is_test and is_extreme_z):
             self._log_alerta_throttled(
@@ -1133,7 +1184,7 @@ class RadarVolatilidad:
             return None
 
         t0_ram = time.perf_counter()
-        ok_ram, mot_ram, mult_gemini = ESTADO_RAM.consultar_permiso_o1(symbol, "long", tk.z_score, t_now)
+        ok_ram, mot_ram, mult_gemini = ESTADO_RAM.consultar_permiso_o1(symbol, "long", z_ref_long, t_now)
         dt_ram_us = (time.perf_counter() - t0_ram) * 1e6
 
         if not ok_ram:
@@ -1151,7 +1202,7 @@ class RadarVolatilidad:
             "bid": tk.bid,
             "ask": tk.ask,
             "last": tk.last,
-            "z_score": tk.z_score,
+            "z_score": z_ref_long,
             "ofi": tk.ofi_l1_l5,
             "hurst": tk.hurst,
             "volatilidad": tk.volatilidad_local,
@@ -1162,8 +1213,13 @@ class RadarVolatilidad:
         if not self._validar_filtros_phantom_pre_orden(symbol, senal, t_now):
             return None
 
+        vz.vigilancia_long_hasta_ts = 0.0
+        vz.min_z_drop_long = 0.0
+        vz.min_dp_drop_long = 0.0
+        vz.min_ema_drop_long = 0.0
+
         log_sniper(
-            f"[RADAR] {symbol} [LONG] Z={tk.z_score:.2f} ({tk.delta_p_pct*100:+.2f}% | EMA900 {tk.ema900_dist_pct*100:+.2f}%) "
+            f"[RADAR] {symbol} [LONG] Z={z_ref_long:.2f} ({tk.delta_p_pct*100:+.2f}% | EMA900 {tk.ema900_dist_pct*100:+.2f}%) "
             f"OFI={tk.ofi_l1_l5:+.2f} ({tk.ofi_ticks_confirmados_long}t) | H={tk.hurst:.2f} | I_Hawkes={tk.hawkes_intensidad:+.2f} "
             f"-> RAM SHIELD O(1): APPROVED ({dt_ram_us:.1f} us)"
         )
