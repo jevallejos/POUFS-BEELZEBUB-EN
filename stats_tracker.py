@@ -52,6 +52,7 @@ class GestorCajaNegra:
         self.peor_trade_usdt: float = 0.0
         self.map_promedio_usdt: float = 0.0
         self.lvr_acumulado_usdt: float = 0.0
+        self.ajuste_funding_paridad_usdt: float = 0.0
         self.cargar_y_auditar_historial()
 
     def auditar_y_desduplicar_jsonl(self) -> int:
@@ -129,6 +130,7 @@ class GestorCajaNegra:
         self.mejor_trade_usdt = 0.0
         self.peor_trade_usdt = 0.0
         self.lvr_acumulado_usdt = 0.0
+        self.ajuste_funding_paridad_usdt = 0.0
         sum_map = 0.0
 
         if not self.ruta_jsonl.exists():
@@ -142,6 +144,7 @@ class GestorCajaNegra:
                 op = json.loads(line)
                 self.operaciones.append(op)
                 pnl_u = float(op.get("pnl_usdt") or 0.0)
+                ajuste_u = float(op.get("ajuste_paridad_usdt") or 0.0)
                 reason = str(op.get("motivo") or "")
                 map_u = float(
                     op.get("map_usdt")
@@ -151,6 +154,7 @@ class GestorCajaNegra:
 
                 self.trades_totales += 1
                 self.pnl_total_usdt += pnl_u
+                self.ajuste_funding_paridad_usdt = round(self.ajuste_funding_paridad_usdt + ajuste_u, 6)
                 self.lvr_acumulado_usdt += lvr_u
                 sum_map += map_u
 
@@ -178,7 +182,7 @@ class GestorCajaNegra:
         """
         Gradient Vector #4: Guarantees exact 1:1 accounting parity to the fourth
         decimal place between tribrain_stats_v1.jsonl and actual Bybit UTA equity
-        when no positions are open, without altering Win or Loss counts.
+        when no positions are open, without altering Win/Loss counts or trade PnL.
         """
         if os.environ.get("TRIBRAIN_TEST_MODE") == "1":
             return False
@@ -188,37 +192,23 @@ class GestorCajaNegra:
         if real_u <= 0.0 or abs(real_u - self.capital_base_usdt) < 1e-6:
             return False
 
-        book_balance = self.capital_base_usdt + self.pnl_total_usdt
+        book_balance = self.capital_base_usdt + self.pnl_total_usdt + self.ajuste_funding_paridad_usdt
         drift = round(real_u - book_balance, 6)
         if abs(drift) < 0.0001 or abs(drift) > 0.45:
             return False
 
-        idx_target = -1
-        for idx in range(len(self.operaciones) - 1, -1, -1):
-            op_cand = self.operaciones[idx]
-            current_pnl = float(op_cand.get("pnl_usdt") or 0.0)
-            new_pnl = round(current_pnl + drift, 6)
-            if (current_pnl < 0.0 and new_pnl < 0.0) or (current_pnl >= 0.0 and new_pnl >= 0.0):
-                idx_target = idx
-                break
-
-        if idx_target < 0:
-            return False
-
-        op_obj = self.operaciones[idx_target]
-        new_pnl_u = round(float(op_obj.get("pnl_usdt") or 0.0) + drift, 6)
-        map_u = float(op_obj.get("map_usdt") or 16.50)
-        op_obj["pnl_usdt"] = new_pnl_u
-        if map_u > 0.0:
-            op_obj["pnl_percentage"] = round((new_pnl_u / map_u) * 100.0, 4)
+        op_obj = self.operaciones[-1]
+        prev_adj = float(op_obj.get("ajuste_paridad_usdt") or 0.0)
+        op_obj["ajuste_paridad_usdt"] = round(prev_adj + drift, 6)
+        self.ajuste_funding_paridad_usdt = round(self.ajuste_funding_paridad_usdt + drift, 6)
 
         try:
             lines = [json.dumps(x, ensure_ascii=False) for x in self.operaciones]
             self.ruta_jsonl.write_text("\n".join(lines) + "\n", encoding="utf-8")
             self.cargar_y_auditar_historial()
             log_sniper(
-                f"[BLACK BOX 1:1] UTA parity synchronized to 1e-4 "
-                f"(Zero-Orphan Adjustment: {drift:+.4f} USDT -> Balance {real_u:.4f} == {real_u:.4f} USDT)."
+                f"[BLACK BOX 1:1] UTA parity synchronized to 1e-4 without mutating trade PnL "
+                f"(Funding/Parity Adjustment: {drift:+.4f} USDT -> Balance {real_u:.4f} == {real_u:.4f} USDT)."
             )
             registrar_evento_baul_ia(
                 {
@@ -360,7 +350,7 @@ class GestorCajaNegra:
             vec_map = getattr(ESTADO_RAM, "vectores_entrada_baul", None) or {}
             vec_in = vec_map.get(pos.symbol) or {}
             tk_out = ESTADO_RAM.ticks_ram.get(pos.symbol)
-            book_bal_now = round(self.capital_base_usdt + self.pnl_total_usdt, 4)
+            book_bal_now = round(self.capital_base_usdt + self.pnl_total_usdt + self.ajuste_funding_paridad_usdt, 4)
             real_bal_now = round(
                 ESTADO_RAM.patrimonio_total_usdt if ESTADO_RAM.patrimonio_total_usdt > 0 else book_bal_now,
                 4,
@@ -471,7 +461,7 @@ class GestorCajaNegra:
         if ESTADO_RAM.patrimonio_total_usdt > 0.0:
             self.sincronizar_paridad_uta(ESTADO_RAM.patrimonio_total_usdt)
         wr = (self.wins / self.trades_totales * 100.0) if self.trades_totales > 0 else 0.0
-        book_bal = self.capital_base_usdt + self.pnl_total_usdt
+        book_bal = self.capital_base_usdt + self.pnl_total_usdt + self.ajuste_funding_paridad_usdt
         real_bal = ESTADO_RAM.patrimonio_total_usdt if ESTADO_RAM.patrimonio_total_usdt > 0 else book_bal
         pnl_map_ratio = (self.pnl_total_usdt / self.map_promedio_usdt) if self.map_promedio_usdt > 0.0 else 0.0
 

@@ -529,8 +529,10 @@ class RadarVolatilidad:
                 else 999.0
             )
             in_post_shock_aftershock = (dt_lyap_shock < 12.0) and (dt_lyap_repulsor < 3.60)
+            ticks_ofi_l = int(tk_sym.ofi_ticks_confirmados_long if tk_sym is not None else 2)
+            unconfirmed_post_waterfall = (dt_lyap_shock < 15.0) and (ticks_ofi_l < 4)
 
-            if dt_lyap_shock < tau_lyap_req or in_post_shock_aftershock:
+            if dt_lyap_shock < tau_lyap_req or in_post_shock_aftershock or unconfirmed_post_waterfall:
                 ESTADO_RAM.encolar_auditoria_escudo_15s(
                     sym,
                     side,
@@ -538,14 +540,14 @@ class RadarVolatilidad:
                     p_ref_bloq,
                     tag_percentil,
                     p_day,
-                    f"dt_shock={dt_lyap_shock:.2f}s/{tau_lyap_req:.2f}s dt_rep={dt_lyap_repulsor:.2f}s",
+                    f"dt_shock={dt_lyap_shock:.2f}s/{tau_lyap_req:.2f}s dt_rep={dt_lyap_repulsor:.2f}s ofi_t={ticks_ofi_l}",
                     ahora_t,
                 )
                 if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_LYAP_BUF"), 0.0) >= 8.0:
                     _SILENCIO_LOG_PHANTOM[(sym, "P03_LYAP_BUF")] = ahora_t
                     log_sniper(
                         f"[PHANTOM P-03 LYAPUNOV-BUFFER] {sym} [LONG] blocked BEFORE order in {tag_percentil} "
-                        f"(Lyapunov shock {dt_lyap_shock:.2f}s ago < {tau_lyap_req:.2f}s | Aftershock {dt_lyap_repulsor:.2f}s ago)."
+                        f"(Lyapunov shock {dt_lyap_shock:.2f}s ago < {tau_lyap_req:.2f}s | Aftershock {dt_lyap_repulsor:.2f}s ago | OFI ticks={ticks_ofi_l})."
                     )
                 return False
 
@@ -639,7 +641,7 @@ class RadarVolatilidad:
                     p_ref_bloq,
                     tag_percentil,
                     p_day,
-                    f"EMA={ema_rel*100:+.2f}%/{ema_long_threshold*100:+.2f}% DP={dp_rel*100:+.2f}%/{dp_long_threshold*100:+.2f}%",
+                    f"EMA={ema_rel*100:+.2f}%/{ema_long_threshold*100:+.2f}% DP={dp_rel*100:+.2f}%/{dp_long_threshold*100:+.2f}% Z={z_real:+.2f}/{z_long_threshold:+.2f}",
                     ahora_t,
                 )
                 if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_L"), 0.0) >= 12.0:
@@ -745,6 +747,7 @@ class RadarVolatilidad:
                 ema_rel >= ema_short_threshold
                 and effective_overext >= ema_short_threshold
                 and ofi_real <= ofi_max_short_req
+                and z_real >= 1.80
                 and z_short_eff >= 1.80
             )
 
@@ -821,7 +824,13 @@ class RadarVolatilidad:
             if sl_prev_info is not None:
                 px_sl_prev, ts_sl_prev = sl_prev_info
                 if (ahora_t - ts_sl_prev) < 1800.0 and tk_sym is not None:
-                    if tk_sym.last >= (px_sl_prev * 0.9985) and ema_slope >= -0.0002:
+                    structural_rollover_ok = (
+                        tk_sym.last < (px_sl_prev * 0.9985)
+                        and ema_slope <= -0.0002
+                        and h_real <= 0.480
+                        and hawkes_val <= -0.50
+                    )
+                    if not structural_rollover_ok:
                         ESTADO_RAM.encolar_auditoria_escudo_15s(
                             sym,
                             side,
@@ -829,14 +838,14 @@ class RadarVolatilidad:
                             p_ref_bloq,
                             tag_percentil,
                             p_day,
-                            f"px_now={tk_sym.last}>=px_sl={px_sl_prev}",
+                            f"px_now={tk_sym.last}/px_sl={px_sl_prev} slope={ema_slope*100:+.3f}% H={h_real:.3f} I_H={hawkes_val:+.2f}",
                             ahora_t,
                         )
                         if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_STEP_SL"), 0.0) >= 15.0:
                             _SILENCIO_LOG_PHANTOM[(sym, "P03_STEP_SL")] = ahora_t
                             log_sniper(
                                 f"[PHANTOM ANTI-SQUEEZE STEP-LOCK] {sym} [SHORT] blocked after prior negative exit @ {px_sl_prev} "
-                                f"(Current price {tk_sym.last} in 1800s bullish structure)."
+                                f"(Price={tk_sym.last} | Slope={ema_slope*100:+.3f}% | H={h_real:.2f} | I_Hawkes={hawkes_val:+.2f} in 1800s lock)."
                             )
                         return False
 
@@ -972,7 +981,7 @@ class RadarVolatilidad:
             vz.max_z_pump_short = (
                 max(vz.max_z_pump_short, abs(z_score), 4.00)
                 if is_test
-                else max(vz.max_z_pump_short, abs(z_score), 3.50)
+                else max(vz.max_z_pump_short, z_score)
             )
             short_signal = await self._evaluar_gatillo_short_chronos(symbol, vz, tk, spread_ok, t_now)
             if short_signal is not None:
@@ -1176,10 +1185,10 @@ class RadarVolatilidad:
                 else abs(tk.z_score)
             )
         else:
+            if tk.z_score < 1.80:
+                return None
             if overextended_pump:
-                z_ref_short = max(tk.z_score, vz.max_z_pump_short, 3.50)
-            elif rebound_in_downtrend:
-                z_ref_short = max(tk.z_score, 3.50)
+                z_ref_short = max(tk.z_score, vz.max_z_pump_short)
             else:
                 z_ref_short = tk.z_score
             if z_ref_short < 1.80:

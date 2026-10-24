@@ -86,8 +86,9 @@ def calcular_precio_salida_maker_seguro(
     best_ask: float,
     tick_size: float,
     permitir_scratch: bool = False,
+    piso_be_estricto: bool = False,
 ) -> float:
-    """Computes a safe PostOnly Maker exit quote price respecting minimum profit floors unless scratch is allowed."""
+    """Computes a safe PostOnly Maker exit quote price respecting minimum profit or Break-Even floors unless scratch is allowed."""
     ep = float(entry_price)
     bid = float(best_bid)
     ask = float(best_ask)
@@ -99,12 +100,18 @@ def calcular_precio_salida_maker_seguro(
         if not permitir_scratch:
             winning_ceiling = ep * (1.0 - cfg.PISO_MAKER_BRUTO_MIN_PCT)
             candidate = min(candidate, winning_ceiling)
+        elif piso_be_estricto:
+            _, sl_byb_be = calcular_piso_invariante_breakeven("short", ep, tick)
+            candidate = min(candidate, sl_byb_be)
         return round(max(tick, candidate), decimals)
 
     candidate = max(ask, bid + tick) if ask > bid else ask
     if not permitir_scratch:
         winning_floor = ep * (1.0 + cfg.PISO_MAKER_BRUTO_MIN_PCT)
         candidate = max(candidate, winning_floor)
+    elif piso_be_estricto:
+        _, sl_byb_be = calcular_piso_invariante_breakeven("long", ep, tick)
+        candidate = max(candidate, sl_byb_be)
     return round(candidate, decimals)
 
 
@@ -399,7 +406,8 @@ class GestorPosiciones:
                                             tk_repeg.bid,
                                             tk_repeg.ask,
                                             tick_s,
-                                            permitir_scratch=True,
+                                            permitir_scratch=(pos.modo_cosecha_ejecutado != "FULL_MAKER_100"),
+                                            piso_be_estricto=(final_reason == "TRINQUETE_BE_MAKER"),
                                         )
                                         if abs(px_new - final_price) >= (0.5 * tick_s):
                                             try:
@@ -433,18 +441,36 @@ class GestorPosiciones:
                                 except Exception:
                                     pass
 
-                                # Gradient Vector #6a: If MAKER_UNWIND has no partial fill and > 6s remain
-                                # before 90s limit, DO NOT liquidate at Market Taker; retain in Maker custody.
+                                # Gradient Vector #6a: If MAKER_UNWIND or non-collapsing TRINQUETE_BE_MAKER
+                                # has no partial fill and > 6s remain before hold limit, retain in Maker custody.
                                 current_pos_age = pos.edad_segundos(time.time())
-                                if (
+                                tk_hold = ESTADO_RAM.ticks_ram.get(symbol)
+                                mark_hold = (
+                                    (tk_hold.bid if pos.side == "long" else tk_hold.ask)
+                                    if (tk_hold is not None and tk_hold.bid > 0.0 and tk_hold.ask > 0.0)
+                                    else final_price
+                                )
+                                pnl_hold_pct = pos.calcular_pnl_bruto_pct(mark_hold)
+                                hold_max_ref = (
+                                    cfg.TIEMPO_MAX_HOLD_TRINQUETE_SEG
+                                    if (pos.cosecha_50_ejecutada and pos.trinquete_be_armado)
+                                    else cfg.TIEMPO_MAX_HOLD_SEG
+                                )
+                                can_hold_maker = (
                                     final_reason == "MAKER_UNWIND"
+                                    or (final_reason == "TRINQUETE_BE_MAKER" and pnl_hold_pct >= -0.0012)
+                                )
+                                if (
+                                    can_hold_maker
                                     and rem_c >= (qty_close - 1e-8)
-                                    and current_pos_age < (cfg.TIEMPO_MAX_HOLD_SEG - 6.0)
+                                    and current_pos_age < (hold_max_ref - 6.0)
                                 ):
                                     pos.pre_escape_72s_enviado = False
+                                    if pos.modo_cosecha_ejecutado == "FULL_MAKER_100":
+                                        pos.modo_cosecha_ejecutado = "NONE"
                                     log_sniper(
                                         f"[PHANTOM MAKER-HOLD P-05] {symbol} PostOnly order unfilled after 4.2s "
-                                        f"(age {current_pos_age:.1f}s < 84s): retaining in Maker custody without Taker fee."
+                                        f"(age {current_pos_age:.1f}s < {hold_max_ref - 6.0:.0f}s): retaining in Maker custody without Taker fee."
                                     )
                                     return False
 
@@ -514,6 +540,13 @@ class GestorPosiciones:
                                 else:
                                     final_reason = "SL_EXCHANGE"
                                     was_maker = False
+
+            if (
+                not is_test
+                and pos.modo_cosecha_ejecutado == "FULL_MAKER_100"
+                and pos.calcular_pnl_bruto_pct(final_price) >= (2.0 * cfg.FEE_MAKER_PCT)
+            ):
+                pos.cosecha_50_ejecutada = True
 
             record = await CAJA_NEGRA.registrar_cierre_posicion(
                 pos=pos,
@@ -764,17 +797,20 @@ class GestorPosiciones:
                     )
                     if ok_4x and qty_25 >= min_qty and (pos.qty_actual - qty_25) >= min_qty:
                         close_side = "sell" if pos.side == "long" else "buy"
+                        px_25_maker = calcular_precio_salida_maker_seguro(
+                            pos.side, pos.entry_price, best_bid, best_ask, tick_size, permitir_scratch=False
+                        )
                         try:
                             ord_25 = await self.exchange.create_order(
                                 pos.symbol,
                                 "limit",
                                 close_side,
                                 qty_25,
-                                mark_price,
+                                px_25_maker,
                                 {"timeInForce": "PostOnly", "reduceOnly": True},
                             )
                             qty_25_fill, px_25_fill = await self._verificar_llenado_parcial_postonly(
-                                pos.symbol, ord_25, qty_25, mark_price
+                                pos.symbol, ord_25, qty_25, px_25_maker
                             )
                             if qty_25_fill > 0.0:
                                 pos.qty_actual = round(max(min_qty, pos.qty_actual - qty_25_fill), 8)
@@ -848,7 +884,13 @@ class GestorPosiciones:
             )
             px_close_sl = (
                 calcular_precio_salida_maker_seguro(
-                    pos.side, pos.entry_price, best_bid, best_ask, tick_size, permitir_scratch=True
+                    pos.side,
+                    pos.entry_price,
+                    best_bid,
+                    best_ask,
+                    tick_size,
+                    permitir_scratch=True,
+                    piso_be_estricto=True,
                 )
                 if use_maker_be
                 else mark_price

@@ -161,6 +161,7 @@ def calcular_metricas_horizonte(operaciones: List[Dict[str, Any]]) -> Dict[str, 
         if (
             op.get("cosecha_triz_50")
             or op.get("cosecha_50_ejecutada")
+            or str(op.get("modo_cosecha") or "").upper() == "FULL_MAKER_100"
             or "TRINQUETE" in mot
             or "TRAILING" in mot
         ):
@@ -879,7 +880,7 @@ def _calcular_deflated_sharpe_ratio(
         return 0.0, 0.0
 
     mean = sum(retornos) / n
-    var = sum((r - mean) ** 2 for r in returns_list(retornos)) / max(1, n - 1) if False else sum((r - mean) ** 2 for r in retornos) / max(1, n - 1)
+    var = sum((r - mean) ** 2 for r in retornos) / max(1, n - 1)
     std = math.sqrt(var) if var > 1e-12 else 1e-6
     sr = mean / std
 
@@ -977,6 +978,7 @@ class LaboratorioGemeloDigitalHFT:
             reason = str(op.get("motivo") or "")
             harvest_50 = 1 if (
                 op.get("cosecha_triz_50")
+                or str(op.get("modo_cosecha") or "").upper() == "FULL_MAKER_100"
                 or "TRINQUETE" in reason.upper()
                 or "TRAILING" in reason.upper()
             ) else 0
