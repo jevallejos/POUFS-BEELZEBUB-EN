@@ -165,7 +165,12 @@ verbot() {
             echo "    and return to the SSH prompt without stopping the bot or closing your terminal."
             echo "=========================================================================================="
             if [ -f "${LOG}" ]; then
-                (trap 'exit 0' INT TERM; tail -n 35 -f "${LOG}" | "${PY}" -u -c "import sys; sys.path.insert(0, '${REPO}'); import gestor_posiciones as gp; [print(gp.colorear_linea_log_mobaxterm(line), flush=True) for line in sys.stdin]" || true) || true
+                (trap 'exit 0' INT TERM; tail -n 35 -f "${LOG}" 2>/dev/null | "${PY}" -u -c "import signal, sys; signal.signal(signal.SIGINT, lambda *_: sys.exit(0)); sys.path.insert(0, '${REPO}'); import gestor_posiciones as gp
+try:
+    for line in sys.stdin:
+        print(gp.colorear_linea_log_mobaxterm(line), flush=True)
+except (KeyboardInterrupt, BrokenPipeError):
+    pass" 2>/dev/null || true) || true
             else
                 echo "Log file ${LOG} does not exist yet."
             fi

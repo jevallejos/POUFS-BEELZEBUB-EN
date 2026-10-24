@@ -182,7 +182,7 @@ class GestorCajaNegra:
         """
         Gradient Vector #4: Guarantees exact 1:1 accounting parity to the fourth
         decimal place between tribrain_stats_v1.jsonl and actual Bybit UTA equity
-        when no positions are open, without altering Win/Loss counts or trade PnL.
+        when no positions are open, without altering Win or Loss counts.
         """
         if os.environ.get("TRIBRAIN_TEST_MODE") == "1":
             return False
@@ -194,7 +194,7 @@ class GestorCajaNegra:
 
         book_balance = self.capital_base_usdt + self.pnl_total_usdt + self.ajuste_funding_paridad_usdt
         drift = round(real_u - book_balance, 6)
-        if abs(drift) < 0.0001 or abs(drift) > 0.45:
+        if abs(drift) < 0.0001 or abs(drift) > 2.50:
             return False
 
         op_obj = self.operaciones[-1]

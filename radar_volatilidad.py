@@ -135,9 +135,10 @@ class VentanaZ:
             ret = (p - p_prev) / p_prev if p_prev > 0.0 else 0.0
             self.retornos.append(ret)
             abs_r = abs(ret)
-            if self._abs_ret_prev >= 0.0:
-                self._bv_pares.append(self._abs_ret_prev * abs_r)
-            self._abs_ret_prev = abs_r
+            if abs_r > 1e-12:
+                if self._abs_ret_prev >= 0.0:
+                    self._bv_pares.append(self._abs_ret_prev * abs_r)
+                self._abs_ret_prev = abs_r
 
         self.precios.append(p)
 
@@ -318,6 +319,35 @@ class VentanaZ:
                 v_lag4 = sum(self._act_d4_sq) / n_d4
                 if v_lag1 > 1e-18 and v_lag4 > 1e-18:
                     h_act = 0.25 * math.log(v_lag4 / v_lag1) * _INV_LN2
+                    act_list = list(self._activos)
+                    m_act = len(act_list)
+                    braking_long = (
+                        self.ema900 > 0.0
+                        and p_t < self.ema900
+                        and accel_pct >= -0.00005
+                        and self.prev_ofi_instantaneo >= 0.16
+                        and self.hawkes_intensidad >= 0.05
+                    )
+                    braking_short = (
+                        self.ema900 > 0.0
+                        and p_t > self.ema900
+                        and accel_pct <= -0.00020
+                        and self.prev_ofi_instantaneo <= -0.35
+                        and self.hawkes_intensidad <= -0.45
+                    )
+                    if m_act >= 8 and (braking_long or braking_short):
+                        drift_step = (act_list[-1] - act_list[0]) / float(m_act - 1)
+                        vd1_dt = sum(
+                            ((act_list[i] - act_list[i - 1]) - drift_step) ** 2
+                            for i in range(1, m_act)
+                        ) / float(m_act - 1)
+                        vd4_dt = sum(
+                            ((act_list[i] - act_list[i - 4]) - (4.0 * drift_step)) ** 2
+                            for i in range(4, m_act)
+                        ) / float(m_act - 4)
+                        if vd1_dt > 1e-18 and vd4_dt > 1e-18:
+                            h_dt = 0.25 * math.log(vd4_dt / vd1_dt) * _INV_LN2
+                            h_act = min(h_act, (0.25 * h_act) + (0.75 * h_dt))
                     return round(max(0.20, min(0.80, h_act)), 4), round(accel_pct, 6)
             return 0.45, round(accel_pct, 6)
 
