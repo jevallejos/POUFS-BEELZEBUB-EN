@@ -184,6 +184,7 @@ class EjecutorSniper:
             ofi=ofi,
             hurst=hurst,
             volatilidad_local=volatility,
+            side=side,
         )
 
         tick_size, step_qty, min_qty = extraer_precision_y_minimos(self.exchange, symbol, bid)

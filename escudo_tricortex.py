@@ -168,6 +168,7 @@ class OrquestadorTriCortex:
         ofi: float,
         hurst: float,
         volatilidad_local: float,
+        side: str = "",
     ) -> Tuple[float, float, float]:
         """
         Computes (kelly_fraction, margin_usdt, notional_usdt) in O(1).
@@ -175,7 +176,7 @@ class OrquestadorTriCortex:
         to guarantee lot size always clears the 4x quantization guard.
         """
         is_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
-        side_norm = str(side or "long").lower()
+        side_norm = str(side).lower() if side else ("short" if float(ofi) < 0.0 else "long")
         if is_test:
             base_k = float(cfg.KELLY_FRACCION_BASE)
         else:
