@@ -120,6 +120,7 @@ class PosicionActiva:
 
     # Atomic anti-double-accounting lock
     cerrada: bool = False
+    _cierre_en_curso: bool = False
 
     # Entry microstructural context and intratrade anatomy (Forensic AI Vault)
     p_dia_entry: float = 0.25
@@ -391,6 +392,7 @@ class EstadoGlobalRAM:
         # O(1) Queue for the +15.0s Counterfactual Oracle in the Forensic AI Vault
         self.auditorias_escudo_pendientes: Dict[Tuple[str, str], Dict[str, Any]] = {}
         self.ultimo_ts_auditoria_escudo: Dict[Tuple[str, str], float] = {}
+        self.vectores_entrada_baul: Dict[str, Dict[str, Any]] = {}
 
     def consultar_permiso_o1(
         self,

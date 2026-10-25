@@ -239,7 +239,7 @@ ACTIVE_OVERLAYS: Final[Tuple[ElasticTemporalOverlay, ...]] = (
     ElasticTemporalOverlay(
         overlay_id="OVL-06_POST_SHOCK_ABSORPTION_RELEASE",
         target_param="lyap_wait_relief_seg",
-        max_delta=-3.60,
+        max_delta=-5.15,
         tau_decay_seg=5.00,
         kernel_fn=lambda ctx, _tau: (
             max(0.0, min(1.0, (0.480 - ctx.hurst) / 0.030))
@@ -362,7 +362,7 @@ class OverlayResolver:
         arm_retention = max(0.74, min(1.00, 1.00 - deltas.get("arm_retention_relief", 0.0)))
 
         # 7. Post-Shock Lyapunov Wait Relief (Clamped so wait never drops below 1.60s)
-        lyap_wait_relief = max(-3.60, min(0.0, deltas.get("lyap_wait_relief_seg", 0.0)))
+        lyap_wait_relief = max(-5.15, min(0.0, deltas.get("lyap_wait_relief_seg", 0.0)))
 
         # 8. SHORT-SNIPER Elastic EMA900, OFI, Hurst & Top-Rollover Bounds
         h_short_premium = 0.0008 if ctx.hurst >= 0.500 else 0.0
@@ -379,6 +379,7 @@ class OverlayResolver:
             ),
         )
         ema_short_threshold = base_ema_short * (1.0 + (0.45 * ctx.mu_boot))
+        overext_ofi_relief = 0.06 if (not ctx.above_squeeze_px and ctx.ema_dist_pct >= (2.2 * base_ema_short)) else 0.0
         ofi_max_short_req = -min(
             abs(base.ofi_max_clamp_short),
             max(
@@ -386,6 +387,7 @@ class OverlayResolver:
                 abs(base.ofi_base_short)
                 + (0.08 * ctx.p_day)
                 - (0.06 * cad_relief)
+                - overext_ofi_relief
                 + (0.12 if ctx.above_squeeze_px else 0.0)
                 + (0.06 * ctx.mu_boot),
             ),
@@ -430,7 +432,7 @@ class VentanaZ:
         eff_maxlen = max(20, int(maxlen)) if is_test else max(60, int(round(int(maxlen) * scale_hz)))
         ofi_maxlen = 35 if is_test else max(35, int(round(35 * scale_hz)))
         ema_ticks = float(cfg.VENTANA_EMA_MACRO_TICKS) * scale_hz
-        act_maxlen = max(20, int(maxlen))
+        act_maxlen = eff_maxlen
 
         self.maxlen: int = eff_maxlen
         self.precios: Deque[float] = deque(maxlen=self.maxlen)
@@ -523,9 +525,9 @@ class VentanaZ:
         rel_dev = (p_now - mean_p) / mean_p if mean_p > 0.0 else 0.0
 
         n_pairs = len(self._bv_pares)
-        if n_pairs >= 3:
-            sum_bv = sum(self._bv_pares) - self._bv_pares[-1]
-            sigma_bv = math.sqrt(_PI_HALF * (sum_bv / (n_pairs - 1))) if sum_bv > 0.0 else 0.0005
+        if n_pairs >= 2:
+            sum_bv = sum(self._bv_pares)
+            sigma_bv = math.sqrt(_PI_HALF * (sum_bv / n_pairs)) if sum_bv > 0.0 else 0.0005
         else:
             sigma_bv = 0.0005
 
@@ -720,7 +722,8 @@ class VentanaZ:
                             ) / float(m_sub - 4)
                             if vd1_dt > 1e-18 and vd4_dt > 1e-18:
                                 h_dt = 0.25 * math.log(vd4_dt / vd1_dt) * _INV_LN2
-                                h_act = min(h_act, (0.15 * h_act) + (0.85 * h_dt))
+                                w_dt = 0.94 if (braking_short and self.px_ultimo_anti_squeeze > 0.0 and p_t < self.px_ultimo_anti_squeeze) else 0.85
+                                h_act = min(h_act, ((1.0 - w_dt) * h_act) + (w_dt * h_dt))
                     return round(max(0.20, min(0.80, h_act)), 4), round(accel_pct, 6)
             return 0.45, round(accel_pct, 6)
 
@@ -1029,7 +1032,7 @@ class RadarVolatilidad:
             shock_mag = float(vz_sym.magnitud_ultimo_choque_lyapunov if vz_sym is not None else 0.0)
             lyap_relief = float(resolved["lyap_wait_relief"])
             tau_lyap_req = max(
-                1.60,
+                2.40,
                 4.50 + (2.00 * p_day) + (2.50 if shock_mag >= 0.0035 else 0.0) + lyap_relief,
             )
 
@@ -1270,8 +1273,9 @@ class RadarVolatilidad:
             # Physical Anti-Short-Squeeze Shield 1 with Spatial Memory px_ultimo_anti_squeeze and Elastic Band cd_sqz
             if vz_sym is not None and len(vz_sym.precios) >= 10:
                 p_now = vz_sym.precios[-1]
-                max_window = max(vz_sym.precios)
-                in_bullish_expansion = (
+                max_window = max(max(vz_sym.precios), px_sqz_prev)
+                below_sqz_rollover = (px_sqz_prev > 0.0) and (p_now <= (px_sqz_prev * 0.9975)) and (ema_slope <= 0.0010)
+                in_bullish_expansion = (not below_sqz_rollover) and (
                     ema_slope > 0.0012
                     or (ema_slope > 0.0005 and p_now >= (max_window * 0.9985))
                     or (ema_rel >= 0.0095 and ema_slope > 0.0004 and not top_rollover_confirmed)

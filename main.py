@@ -25,6 +25,8 @@ import pathlib
 import signal
 import sys
 import time
+import warnings
+warnings.filterwarnings('ignore', category=DeprecationWarning)
 from typing import Any, List, Optional
 
 import config_parametros as cfg

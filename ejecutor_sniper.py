@@ -359,6 +359,18 @@ class EjecutorSniper:
                 ofi_entry=ofi,
                 hurst_entry=hurst,
                 volatilidad_entry=volatility,
+                p_dia_entry=float(senal.get('p_dia', 0.25)),
+                tag_percentil_entry=str(senal.get('tag_percentil', 'P25_ELASTIC')),
+                ema900_dist_entry=float(senal.get('ema900_dist_pct', 0.0)),
+                ema900_slope_entry=float(senal.get('ema900_slope_pct', 0.0)),
+                delta_p_entry=float(senal.get('delta_p_pct', 0.0)),
+                lyapunov_entry=float(senal.get('lyapunov_acel_pct', 0.0)),
+                hawkes_entry=float(senal.get('hawkes_intensidad', 0.0)),
+                vpin_entry=float(senal.get('vpin', 0.0)),
+                z_btc_entry=float(senal.get('z_btc', 0.0)),
+                ofi_btc_entry=float(senal.get('ofi_btc', 0.0)),
+                kelly_fraccion_entry=float(f_kelly),
+                hurst_max_elastico_entry=float(senal.get('hurst_max_elastico', cfg.HURST_MAX_ENTRADA)),
             )
 
             ESTADO_RAM.orden_en_vuelo_symbol = None

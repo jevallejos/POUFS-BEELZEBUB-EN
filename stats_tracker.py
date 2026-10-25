@@ -178,6 +178,9 @@ class GestorCajaNegra:
 
     cargar_historial = cargar_y_auditar_historial
 
+    def sincronizar_paridad_patrimonio_real(self, balance_real_uta: float) -> bool:
+        return self.sincronizar_paridad_uta(balance_real_uta)
+
     def sincronizar_paridad_uta(self, balance_real_uta: float) -> bool:
         """
         Gradient Vector #4: Guarantees exact 1:1 accounting parity to the fourth
@@ -464,14 +467,12 @@ class GestorCajaNegra:
         book_bal = self.capital_base_usdt + self.pnl_total_usdt + self.ajuste_funding_paridad_usdt
         real_bal = ESTADO_RAM.patrimonio_total_usdt if ESTADO_RAM.patrimonio_total_usdt > 0 else book_bal
         pnl_map_ratio = (self.pnl_total_usdt / self.map_promedio_usdt) if self.map_promedio_usdt > 0.0 else 0.0
-
-        l1 = "╔══════ [BLACK BOX] POUFS-BEELZEBUB-EN V5.0 [SPIRITUAL MESSAGE] ═╗"
-        l2 = f"║ Trades: {self.trades_totales:<3d} (W {self.wins} / L {self.losses} / S {self.scratches_18s}) | Win Rate: {wr:5.1f} %".ljust(65) + "║"
-        l3 = f"║ Total PnL: {self.pnl_total_usdt:+.4f} USDT   best {self.mejor_trade_usdt:+.4f} / worst {self.peor_trade_usdt:+.4f}".ljust(65) + "║"
-        l4 = f"║ MAP: {self.map_promedio_usdt:5.2f} USDT | PnL/MAP: {pnl_map_ratio:+.4f} | LVR: {self.lvr_acumulado_usdt:.4f}".ljust(65) + "║"
-        l5 = f"║ Balance: {book_bal:.4f} USDT (base {self.capital_base_usdt:.2f})   real: {real_bal:.4f} USDT".ljust(65) + "║"
-        l6 = "╚════════════════════════════════════════════════════════════════╝"
-
+        l1 = "+==================================================================+"
+        l2 = "|" + f"  [BLACK BOX] POUFS-BEELZEBUB-EN V5.0 | Trades: {self.trades_totales:<3d} (W {self.wins}/L {self.losses}/S {self.scratches_18s}) | WR: {wr:5.1f}%".ljust(66) + "|"
+        l3 = "|" + f"  Total PnL: {self.pnl_total_usdt:+.4f} USDT   best {self.mejor_trade_usdt:+.4f} / worst {self.peor_trade_usdt:+.4f}".ljust(66) + "|"
+        l4 = "|" + f"  MAP: {self.map_promedio_usdt:5.2f} USDT | PnL/MAP: {pnl_map_ratio:+.4f} | LVR: {self.lvr_acumulado_usdt:.4f}".ljust(66) + "|"
+        l5 = "|" + f"  Balance: {book_bal:.4f} USDT (base {self.capital_base_usdt:.2f})   real: {real_bal:.4f} USDT".ljust(66) + "|"
+        l6 = "+==================================================================+"
         for line in (l1, l2, l3, l4, l5, l6):
             log_sniper(line)
 
