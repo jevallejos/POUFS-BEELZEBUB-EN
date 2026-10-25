@@ -841,6 +841,32 @@ class LaboratorioGemeloDigitalHFT:
         return vectors
 
     @staticmethod
+    def _precompilar_vectores_baul_ia(
+        vault_events: List[Dict[str, Any]],
+        start_idx: int = 1000,
+    ) -> List[Tuple[int, str, str, float, float, float, float, float, float, str, int, float]]:
+        v_out: List[Tuple[int, str, str, float, float, float, float, float, float, str, int, float]] = []
+        for offset, ev in enumerate(vault_events, start=start_idx):
+            if str(ev.get("tipo_evento") or "") != "AUDITORIA_ESCUDO_15S":
+                continue
+            verdict = str(ev.get("veredicto_ia") or "")
+            if "TRUE_SHIELD" not in verdict and "FALSE_REJECTION" not in verdict:
+                continue
+            sym = str(ev.get("symbol") or "")
+            side = str(ev.get("side") or "long").lower()
+            vx = ev.get("vector_x") or {}
+            z = float(vx.get("z") or (-3.0 if side == "long" else 3.2))
+            ofi = float(vx.get("ofi") or (0.20 if side == "long" else -0.35))
+            hurst = float(vx.get("hurst") or 0.48)
+            exc_pct = float(ev.get("excursion_15s_pct") or 0.0) / 100.0
+            p_day = float(ev.get("p_dia") or 0.50)
+            ref_notional = 25.0 if sym in cfg.CLASE_TIER1_LIQUIDO else cfg.NOCIONAL_MAX_HIGH_BETA_USDT
+            net_15s_u = (exc_pct - (2.0 * cfg.FEE_MAKER_PCT)) * ref_notional
+            reason_tag = "SL_VAULT_TRUE_SHIELD" if "TRUE_SHIELD" in verdict else "MAKER_UNWIND_VAULT_FALSE_REJ"
+            v_out.append((offset, sym, side, z, ofi, hurst, exc_pct, round(net_15s_u, 4), 15.0, reason_tag, 0, p_day))
+        return v_out
+
+    @staticmethod
     def _evaluar_combinacion_en_vectores(
         vectores: List[Tuple[int, str, str, float, float, float, float, float, float, str, int, float]],
         w1_ofi_long_min: float,
@@ -960,7 +986,7 @@ class LaboratorioGemeloDigitalHFT:
     def ejecutar_torneo_evolutivo_lab(self, n_bootstrap: int = 1500) -> Dict[str, Any]:
         t0 = time.perf_counter()
         ops, vault_events, log_counts = self.ingestar_ecosistema_logs()
-        vectors = self._precompilar_vectores_operaciones(ops)
+        vectors = self._precompilar_vectores_operaciones(ops) + self._precompilar_vectores_baul_ia(vault_events)
         n_total_hist = len(vectors)
 
         m_raw = calcular_metricas_horizonte(ops)
@@ -1047,8 +1073,23 @@ class LaboratorioGemeloDigitalHFT:
                                     }
                                 )
 
-        top_candidates.sort(key=lambda x: (x["pnl_usdt"], x["pf"], -x["max_dd_usdt"]), reverse=True)
-        finalists = top_candidates[:25]
+        top_candidates.sort(key=lambda x: (x["pnl_usdt"], x["pf"], -x["max_dd_usdt"], -x["w1_ofi_long"]), reverse=True)
+        unique_finalists: List[Dict[str, Any]] = []
+        seen_signatures: set[Tuple[int, float, float, float, float]] = set()
+        for cand_item in top_candidates:
+            sig = (
+                int(cand_item["n_trades"]),
+                float(cand_item["pnl_usdt"]),
+                float(cand_item["max_dd_usdt"]),
+                float(cand_item["w3_tp_maker_pct"]),
+                float(cand_item["w5_kelly_short"]),
+            )
+            if sig not in seen_signatures:
+                seen_signatures.add(sig)
+                unique_finalists.append(cand_item)
+            if len(unique_finalists) >= 25:
+                break
+        finalists = unique_finalists if len(unique_finalists) >= 5 else top_candidates[:25]
 
         rng = random.Random(20261023)
         validated_champions: List[Dict[str, Any]] = []

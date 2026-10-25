@@ -407,7 +407,7 @@ class GestorPosiciones:
                                             tk_repeg.ask,
                                             tick_s,
                                             permitir_scratch=(pos.modo_cosecha_ejecutado != "FULL_MAKER_100"),
-                                            piso_be_estricto=(final_reason == "TRINQUETE_BE_MAKER"),
+                                            piso_be_estricto=(final_reason == "TRINQUETE_BE_MAKER" or pos.trinquete_be_armado),
                                         )
                                         if abs(px_new - final_price) >= (0.5 * tick_s):
                                             try:
@@ -466,6 +466,7 @@ class GestorPosiciones:
                                     and current_pos_age < (hold_max_ref - 6.0)
                                 ):
                                     pos.pre_escape_72s_enviado = False
+                                    pos.orden_salida_ts = time.time()
                                     if pos.modo_cosecha_ejecutado == "FULL_MAKER_100":
                                         pos.modo_cosecha_ejecutado = "NONE"
                                     log_sniper(
@@ -738,7 +739,7 @@ class GestorPosiciones:
             stagnant_flow = (tk.ofi_5s <= 0.05) if pos.side == "long" else (tk.ofi_5s >= -0.05)
             if (
                 not pos.cosecha_50_ejecutada
-                and 42.0 <= age_sec < 72.0
+                and 42.0 <= age_sec < 72.0 and (t_now - pos.orden_salida_ts) >= 6.0
                 and pos.max_pnl_pct_alcanzado < 0.0008
                 and -0.0018 <= gross_pnl_pct < 0.0008
                 and stagnant_flow
@@ -766,7 +767,7 @@ class GestorPosiciones:
             # P-05: Pre-Escape Maker Unwind Ramp in [72.0s, 86.0s]
             if (
                 not pos.cosecha_50_ejecutada
-                and 72.0 <= age_sec <= 86.0
+                and 72.0 <= age_sec <= 86.0 and (t_now - pos.orden_salida_ts) >= 6.0
                 and -0.0022 <= gross_pnl_pct < 0.0024
             ):
                 px_u = calcular_precio_salida_maker_seguro(
@@ -1031,6 +1032,7 @@ class GestorPosiciones:
         mfe_stall_ready = (
             not is_test
             and age_sec >= 22.0
+            and (t_now - pos.orden_salida_ts) >= 6.0
             and pos.max_pnl_pct_alcanzado >= 0.0016
             and gross_pnl_pct >= 0.0013
             and ((pos.side == "long" and tk.ofi_l1_l5 <= 0.08) or (pos.side == "short" and tk.ofi_l1_l5 >= -0.08))

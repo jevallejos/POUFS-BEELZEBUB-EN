@@ -1137,7 +1137,7 @@ class RadarVolatilidad:
             eff_arm_factor = arm_ret if in_long_arm else 1.0
             ema_req_eff = min(-0.0018, ema_long_threshold * eff_arm_factor)
             dp_req_eff = min(-0.0018, dp_long_threshold * eff_arm_factor)
-            z_req_eff = min(-2.25 if is_tier1 else -2.35, z_long_threshold * eff_arm_factor)
+            z_req_eff = min(-2.15 if is_tier1 else -2.25, z_long_threshold * eff_arm_factor)
             still_discounted_below_ema = ema_rel <= (ema_long_threshold * 0.72)
             if (
                 ema_long_eff > ema_req_eff
@@ -1611,10 +1611,14 @@ class RadarVolatilidad:
             ema_check = min(tk.ema900_dist_pct, vz.min_ema_drop_long)
 
             # While armed, verify peak dislocation met threshold AND current price is still discounted below EMA900
+            is_t1_sym = symbol in cfg.CLASE_TIER1_LIQUIDO
+            z_stage1_req = min(-2.15 if is_t1_sym else -2.25, z_eff_thresh * ret_factor)
+            dp_stage1_req = min(-0.0018, req_dp * ret_factor)
+            ema_stage1_req = min(-0.0018, req_ema * ret_factor)
             armed_long = (
-                z_ref_long <= (z_eff_thresh * ret_factor)
-                and dp_check <= (req_dp * ret_factor)
-                and ema_check <= (req_ema * ret_factor)
+                z_ref_long <= z_stage1_req
+                and dp_check <= dp_stage1_req
+                and ema_check <= ema_stage1_req
                 and tk.ema900_dist_pct <= (req_ema * 0.72)
             )
             if not armed_long:

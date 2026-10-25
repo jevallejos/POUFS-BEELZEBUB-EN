@@ -335,8 +335,17 @@ def log_sniper(mensaje: str, escribir_disco: bool = True) -> Optional[str]:
     stamp = formatear_sello_tiempo()
     line = f"{stamp} {mensaje}"
     raw_line = line + "\n"
-    sys.stdout.write(raw_line)
-    sys.stdout.flush()
+    stdout_same_inode = False
+    if escribir_disco and os.environ.get("TRIBRAIN_TEST_MODE") != "1" and sys.platform != "win32":
+        try:
+            ses_f = cfg.ROOT_DIR / cfg.ARCHIVO_LOG_SESION
+            if ses_f.exists():
+                stdout_same_inode = os.fstat(sys.stdout.fileno()).st_ino == ses_f.stat().st_ino
+        except Exception:
+            stdout_same_inode = False
+    if not stdout_same_inode:
+        sys.stdout.write(raw_line)
+        sys.stdout.flush()
 
     if escribir_disco:
         is_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
