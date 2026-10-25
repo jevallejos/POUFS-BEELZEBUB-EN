@@ -602,6 +602,10 @@ class EstadoGlobalRAM:
                 self.controlador_autonomo[bias_key] = round(max(-0.040, cur_bias - 0.012), 4)
             elif verdict == "MISSED_OPPORTUNITY_FALSE_REJECTION":
                 self.controlador_autonomo[bias_key] = round(min(0.040, cur_bias + 0.015), 4)
+            else:
+                soft_rel = 0.008 if ret_15s >= 0.0010 else 0.0
+                decayed_b = (cur_bias * 0.70) + soft_rel
+                self.controlador_autonomo[bias_key] = 0.0 if abs(decayed_b) < 0.003 else round(max(-0.040, min(0.040, decayed_b)), 4)
             processed += 1
 
         return processed

@@ -379,8 +379,10 @@ class OverlayResolver:
             ),
         )
         ema_short_threshold = base_ema_short * (1.0 + (0.45 * ctx.mu_boot))
-        overext_ratio = (ctx.ema_dist_pct / max(0.0020, base_ema_short)) if not ctx.above_squeeze_px else 0.0
-        overext_ofi_relief = 0.06 * max(0.0, min(1.0, (overext_ratio - 1.35) / 0.90))
+        exhausted_top_dist = (ctx.ema_slope_pct <= 0.00075 and ctx.hawkes <= -0.55 and ctx.lyap_acel <= -0.00022)
+        overext_ratio = (ctx.ema_dist_pct / max(0.0020, base_ema_short)) if (not ctx.above_squeeze_px or exhausted_top_dist) else 0.0
+        overext_ofi_relief = (0.06 * max(0.0, min(1.0, (overext_ratio - 1.30) / 0.90))) + (0.05 if exhausted_top_dist else 0.0)
+        sqz_ofi_penalty = 0.06 if (ctx.above_squeeze_px and ctx.ema_slope_pct > 0.00075 and not exhausted_top_dist) else 0.0
         ofi_max_short_req = -min(
             abs(base.ofi_max_clamp_short),
             max(
@@ -389,7 +391,7 @@ class OverlayResolver:
                 + (0.08 * ctx.p_day)
                 - (0.06 * cad_relief)
                 - overext_ofi_relief
-                + (0.12 if ctx.above_squeeze_px else 0.0)
+                + sqz_ofi_penalty
                 + (0.06 * ctx.mu_boot),
             ),
         )
@@ -997,7 +999,7 @@ class RadarVolatilidad:
                 log_sniper(f"[PHANTOM P-01 BTC-VETO] {sym} [LONG] blocked BEFORE order (BTC OFI={ofi_btc:+.2f}, Z_BTC={z_btc:+.2f}).")
             return False
 
-        veto_btc_short = (ofi_btc > 0.35 and z_btc > 0.75) or (z_btc > 2.00)
+        veto_btc_short = (ofi_btc > 0.25 and z_btc > 0.65) or (z_btc > 1.45 and ofi_btc >= 0.0) or (z_btc > 2.00)
         if side == "short" and veto_btc_short:
             ESTADO_RAM.encolar_auditoria_escudo_15s(
                 sym, side, "P01_BTC_VETO_SHORT", p_ref_bloq, tag_percentil, p_day, f"BTC OFI={ofi_btc:+.2f} Z={z_btc:+.2f}", ahora_t
@@ -1219,15 +1221,29 @@ class RadarVolatilidad:
                 return False
 
             # Elastic Hurst Band in SHORT coupled to P_day and pump overextension (anchored to SCAR_BASE)
+            # SCAR-LOCK-10B: Symmetric Hawkes Exhaustion Gate on SHORT (prevents shorting into bullish Hawkes like Trade #101)
+            hawkes_req_short = 0.0 if ofi_real <= -0.50 else -0.05
+            if hawkes_val > hawkes_req_short:
+                ESTADO_RAM.encolar_auditoria_escudo_15s(
+                    sym, side, "SCAR-LOCK-10_HAWKES_SHORT", p_ref_bloq, tag_percentil, p_day, f"I_Hawkes={hawkes_val:+.2f}>{hawkes_req_short:+.2f}", ahora_t
+                )
+                if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_HAWKES_S"), 0.0) >= 10.0:
+                    _SILENCIO_LOG_PHANTOM[(sym, "P03_HAWKES_S")] = ahora_t
+                    log_sniper(
+                        f"[PHANTOM P-03 HAWKES-SHORT] {sym} [SHORT] blocked BEFORE order in {tag_percentil} "
+                        f"(I_Hawkes={hawkes_val:+.2f} > {hawkes_req_short:+.2f} bullish order-flow memory)."
+                    )
+                return False
             h_mod_auto = float(getattr(ESTADO_RAM, "controlador_autonomo", {}).get("hurst_cap_short_mod", SCAR_BASE.hurst_base_short_hb))
             h_base_short = (
                 SCAR_BASE.hurst_hard_cap_short_t1
                 if is_tier1
                 else (SCAR_BASE.hurst_hard_cap_short_hb if effective_overext >= 0.0055 else h_mod_auto)
             )
+            p_day_h_deduct = (0.035 * p_day) if h_base_short > 0.545 else (0.008 * p_day)
             h_max_short_prod = max(
-                SCAR_BASE.hurst_min_short,
-                min(SCAR_BASE.hurst_hard_cap_short_hb, h_base_short - (0.035 * p_day)),
+                0.520,
+                min(SCAR_BASE.hurst_hard_cap_short_hb, h_base_short - p_day_h_deduct),
             )
             cd_hurst_short = 10.0 + (14.0 * p_day)
 
@@ -1294,12 +1310,13 @@ class RadarVolatilidad:
             if vz_sym is not None and len(vz_sym.precios) >= 10:
                 p_now = vz_sym.precios[-1]
                 max_window = max(max(vz_sym.precios), px_sqz_prev)
-                below_sqz_rollover = (px_sqz_prev > 0.0) and (p_now <= (px_sqz_prev * 0.9975)) and (ema_slope <= 0.0010)
-                in_bullish_expansion = (not below_sqz_rollover) and (
+                below_sqz_rollover = (px_sqz_prev > 0.0) and (p_now <= (px_sqz_prev * 0.9985)) and (ema_slope <= 0.0010)
+                exhausted_top_rollover = (ema_slope <= 0.00075 and hawkes_val <= -0.55 and lyap_val <= -0.00022)
+                in_bullish_expansion = (not below_sqz_rollover) and (not exhausted_top_rollover) and (
                     ema_slope > 0.0012
-                    or (ema_slope > 0.0005 and p_now >= (max_window * 0.9985))
-                    or (ema_rel >= 0.0095 and ema_slope > 0.0004 and not top_rollover_confirmed)
-                    or (above_squeeze_px and ema_slope > 0.0)
+                    or (ema_slope > 0.00075 and p_now >= (max_window * 0.9985))
+                    or (ema_rel >= 0.0095 and ema_slope > 0.0005 and not top_rollover_confirmed)
+                    or (above_squeeze_px and ema_slope > 0.00075)
                 )
                 if in_bullish_expansion:
                     if (ahora_t - vz_sym.ts_ultimo_anti_squeeze) >= 180.0 or vz_sym.px_ultimo_anti_squeeze <= 0.0:

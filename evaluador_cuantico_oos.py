@@ -385,6 +385,19 @@ class EvaluadorCuanticoOOS:
             "TIEMPO_MAX_HOLD_SEG": 90.0,
         }
 
+        prev_bias_l = 0.0
+        prev_bias_s = 0.0
+        if self.ruta_calibracion.exists():
+            try:
+                d_prev = json.loads(self.ruta_calibracion.read_text(encoding="utf-8-sig"))
+                c_prev = d_prev.get("controlador_autonomo") if isinstance(d_prev, dict) else {}
+                if isinstance(c_prev, dict):
+                    bl = float(c_prev.get("sesgo_escudo_long", 0.0)) * 0.75
+                    bs = float(c_prev.get("sesgo_escudo_short", 0.0)) * 0.75
+                    prev_bias_l = 0.0 if abs(bl) < 0.004 else round(bl, 4)
+                    prev_bias_s = 0.0 if abs(bs) < 0.004 else round(bs, 4)
+            except Exception:
+                pass
         auto_ctrl: Dict[str, float] = {
             "w1_ofi_long": 0.18,
             "w2_btc_beta": 0.32,
@@ -395,6 +408,8 @@ class EvaluadorCuanticoOOS:
             "w5_kelly_long": 0.48,
             "hurst_cap_short_mod": 0.535,
             "mfe_stall_harvest_pct": 0.0013,
+            "sesgo_escudo_long": prev_bias_l,
+            "sesgo_escudo_short": prev_bias_s,
         }
         if not is_test:
             try:

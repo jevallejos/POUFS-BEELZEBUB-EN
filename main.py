@@ -374,9 +374,43 @@ class MotorTriBrainSniper:
         last_trades_cnt = CAJA_NEGRA.trades_totales
         last_vault_cnt = getattr(ESTADO_RAM, "contador_auditorias_baul", 0)
         last_auto_cal_ts = time.time()
+        watched_py = [
+            cfg.ROOT_DIR / fn
+            for fn in (
+                "config_parametros.py",
+                "core_estado_ram.py",
+                "radar_volatilidad.py",
+                "ejecutor_sniper.py",
+                "gestor_posiciones.py",
+                "escudo_tricortex.py",
+                "stats_tracker.py",
+                "evaluador_cuantico_oos.py",
+                "main.py",
+            )
+            if (cfg.ROOT_DIR / fn).exists()
+        ]
+        boot_code_mtime = max((f.stat().st_mtime for f in watched_py), default=0.0)
         while self._running:
             await asyncio.sleep(30.0)
             try:
+                if os.environ.get("TRIBRAIN_TEST_MODE") != "1":
+                    disk_code_mtime = max((f.stat().st_mtime for f in watched_py if f.exists()), default=0.0)
+                    if (
+                        disk_code_mtime > (boot_code_mtime + 1.0)
+                        and not ESTADO_RAM.slot_ocupado
+                        and not ESTADO_RAM.posiciones_activas
+                        and ESTADO_RAM.orden_en_vuelo_symbol is None
+                    ):
+                        log_sniper(
+                            "[AUTO-RESPAWN] Updated Python bytecode detected on disk with 0 open positions: "
+                            "executing atomic os.execv reload..."
+                        )
+                        await self.detener()
+                        try:
+                            (cfg.ROOT_DIR / cfg.ARCHIVO_LOCK_PRODUCCION).unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                        os.execv(sys.executable, [sys.executable, "-W", "ignore::DeprecationWarning"] + sys.argv)
                 now_m = time.time()
                 cur_trades = CAJA_NEGRA.trades_totales
                 cur_vault = getattr(ESTADO_RAM, "contador_auditorias_baul", 0)
