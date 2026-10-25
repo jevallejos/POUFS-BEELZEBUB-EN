@@ -364,7 +364,12 @@ class OrquestadorTriCortex:
     async def sincronizar_cortex_gemini_sizing(self) -> float:
         last_12 = CAJA_NEGRA.operaciones[-12:] if CAJA_NEGRA.operaciones else []
         wins_12 = sum(1 for op in last_12 if float(op.get("pnl_usdt") or 0.0) >= 0.0)
-        losses_12 = len(last_12) - wins_12
+        scratches_12 = sum(
+            1 for op in last_12
+            if -0.0250 <= float(op.get("pnl_usdt") or 0.0) < 0.0
+            and ("SCRATCH" in str(op.get("motivo") or "").upper() or "MAKER_UNWIND" in str(op.get("motivo") or "").upper())
+        )
+        losses_12 = max(0, len(last_12) - wins_12 - scratches_12)
         pnl_12 = sum(float(op.get("pnl_usdt") or 0.0) for op in last_12)
         current_dd = ESTADO_RAM.calcular_drawdown_actual_pct()
 

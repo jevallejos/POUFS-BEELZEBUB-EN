@@ -162,7 +162,7 @@ class GestorCajaNegra:
                     self.wins += 1
                 else:
                     self.losses += 1
-                    if "SCRATCH" in reason.upper():
+                    if "SCRATCH" in reason.upper() or ("MAKER_UNWIND" in reason.upper() and float(op.get("pnl_percentage") or -1.0) >= -0.14):
                         self.scratches_18s += 1
 
                 if self.trades_totales == 1:
@@ -338,7 +338,7 @@ class GestorCajaNegra:
             self.wins += 1
         else:
             self.losses += 1
-            if "SCRATCH" in str(motivo).upper():
+            if "SCRATCH" in str(motivo).upper() or ("MAKER_UNWIND" in str(motivo).upper() and net_pnl_pct >= -0.14):
                 self.scratches_18s += 1
 
         if self.trades_totales == 1:

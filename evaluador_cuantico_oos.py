@@ -174,7 +174,7 @@ def calcular_metricas_horizonte(operaciones: List[Dict[str, Any]]) -> Dict[str, 
         else:
             losses += 1
             sum_loss += abs(pnl_u)
-            if "SCRATCH" in mot:
+            if "SCRATCH" in mot or ("MAKER_UNWIND" in mot and float(op.get("pnl_percentage") or -1.0) >= -0.14):
                 scratches += 1
                 worst_sl_est = map_u * combined_sl_fee
                 scratch_savings += max(0.0, worst_sl_est - abs(pnl_u))

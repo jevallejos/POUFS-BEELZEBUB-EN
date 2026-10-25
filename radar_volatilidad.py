@@ -379,7 +379,8 @@ class OverlayResolver:
             ),
         )
         ema_short_threshold = base_ema_short * (1.0 + (0.45 * ctx.mu_boot))
-        overext_ofi_relief = 0.06 if (not ctx.above_squeeze_px and ctx.ema_dist_pct >= (2.2 * base_ema_short)) else 0.0
+        overext_ratio = (ctx.ema_dist_pct / max(0.0020, base_ema_short)) if not ctx.above_squeeze_px else 0.0
+        overext_ofi_relief = 0.06 * max(0.0, min(1.0, (overext_ratio - 1.35) / 0.90))
         ofi_max_short_req = -min(
             abs(base.ofi_max_clamp_short),
             max(
@@ -722,8 +723,9 @@ class VentanaZ:
                             ) / float(m_sub - 4)
                             if vd1_dt > 1e-18 and vd4_dt > 1e-18:
                                 h_dt = 0.25 * math.log(vd4_dt / vd1_dt) * _INV_LN2
-                                w_dt = 0.94 if (braking_short and self.px_ultimo_anti_squeeze > 0.0 and p_t < self.px_ultimo_anti_squeeze) else 0.85
-                                h_act = min(h_act, ((1.0 - w_dt) * h_act) + (w_dt * h_dt))
+                                w_dt = 0.90 if (braking_short and self.px_ultimo_anti_squeeze > 0.0 and p_t < self.px_ultimo_anti_squeeze) else 0.80
+                                h_blended = ((1.0 - w_dt) * h_act) + (w_dt * h_dt)
+                                h_act = max(h_act - 0.065, min(h_act, h_blended))
                     return round(max(0.20, min(0.80, h_act)), 4), round(accel_pct, 6)
             return 0.45, round(accel_pct, 6)
 
@@ -1184,7 +1186,7 @@ class RadarVolatilidad:
             z_short_eff = max(z_real, float(senal.get("z_score") or 0.0))
 
             # SCAR-LOCK-11b: Explosive Ignition Filter (|Z| >= 8.0 with H >= 0.480 requires strong Lyapunov braking)
-            if z_short_eff >= 8.0 and h_real >= 0.480 and lyap_val > -0.00080 and ema_rel < 0.0058:
+            if z_short_eff >= 5.2 and h_real >= 0.480 and lyap_val > -0.00140 and ema_rel < 0.0090:
                 ESTADO_RAM.encolar_auditoria_escudo_15s(
                     sym,
                     side,
@@ -1207,7 +1209,7 @@ class RadarVolatilidad:
             h_base_short = (
                 SCAR_BASE.hurst_hard_cap_short_t1
                 if is_tier1
-                else (SCAR_BASE.hurst_hard_cap_short_hb if effective_overext >= 0.0042 else SCAR_BASE.hurst_base_short_hb)
+                else (SCAR_BASE.hurst_hard_cap_short_hb if effective_overext >= 0.0055 else SCAR_BASE.hurst_base_short_hb)
             )
             h_max_short_prod = max(
                 SCAR_BASE.hurst_min_short,

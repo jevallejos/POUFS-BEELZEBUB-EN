@@ -698,7 +698,13 @@ class GestorPosiciones:
                 if gross_pnl_pct < 0.0005:
                     pos.scratch_18s_evaluado = False
                 adverse_flow = (tk.ofi_5s < -0.10) if pos.side == "long" else (tk.ofi_5s > 0.10)
-                if age_sec >= 28.0 and gross_pnl_pct <= -0.0018 and adverse_flow:
+                dead_top_24s = (
+                    age_sec >= 24.0
+                    and pos.max_pnl_pct_alcanzado <= 0.0004
+                    and -0.0018 <= gross_pnl_pct <= -0.0005
+                    and ((pos.side == "long" and tk.ofi_5s <= 0.06) or (pos.side == "short" and tk.ofi_5s >= -0.06))
+                )
+                if (age_sec >= 28.0 and gross_pnl_pct <= -0.0018 and adverse_flow) or dead_top_24s:
                     pos.scratch_18s_evaluado = True
                     pos.scratch_18s_activo = True
                     wald_price = calcular_precio_salida_maker_seguro(
@@ -739,7 +745,7 @@ class GestorPosiciones:
             stagnant_flow = (tk.ofi_5s <= 0.05) if pos.side == "long" else (tk.ofi_5s >= -0.05)
             if (
                 not pos.cosecha_50_ejecutada
-                and 42.0 <= age_sec < 72.0 and (t_now - pos.orden_salida_ts) >= 6.0
+                and 36.0 <= age_sec < 72.0 and (t_now - pos.orden_salida_ts) >= 6.0
                 and pos.max_pnl_pct_alcanzado < 0.0008
                 and -0.0018 <= gross_pnl_pct < 0.0008
                 and stagnant_flow
@@ -1291,7 +1297,11 @@ def imprimir_status_cli_verbot() -> None:
     total = len(ops)
     w = sum(1 for x in ops if float(x.get("pnl_usdt", 0.0)) >= 0.0)
     l = total - w
-    s = sum(1 for x in ops if float(x.get("pnl_usdt", 0.0)) < 0.0 and "SCRATCH" in str(x.get("motivo", "")).upper())
+    s = sum(
+        1 for x in ops
+        if float(x.get("pnl_usdt", 0.0)) < 0.0
+        and ("SCRATCH" in str(x.get("motivo", "")).upper() or ("MAKER_UNWIND" in str(x.get("motivo", "")).upper() and float(x.get("pnl_percentage", -1.0)) >= -0.14))
+    )
     triz = sum(
         1 for x in ops
         if x.get("cosecha_triz_50")
