@@ -8,21 +8,20 @@ SYSTEM: POUFS-BEELZEBUB-EN (SPIRITUAL MESSAGE) V5.0 -- CHRONOS-TRIZ STRATEGY
 High-Frequency Microstructural Radar (25.0 Hz / 40 ms Prod | 6.6 Hz Test) in O(1) (< 25 us):
   - Bipower VentanaZ estimator with O(1) incremental accumulators and EMA900.
   - Multi-Level L1-L5 ML-OFI (Cont-Kukanov-Stoikov) in a single fused loop.
-  - Active-tick Hurst Roughness Exponent and Extreme Lyapunov Shock Time
-    Buffer (SCAR-LOCK-03 + Bi-Class SCAR-LOCK-09).
+  - Elastic Active-Tick Hurst Exponent W_act(P_day) in [33, 56] and Time-Invariant
+    160ms Lyapunov Shock Buffer (SCAR-LOCK-03 + Bi-Class SCAR-LOCK-09).
   - Continuous Hourly-Bipower Elastic Band (Gradient L8..L13 - CHRONOS-TRIZ V5.0):
       * Computes in O(1) the Intraday Percentile P_day(t, sigma_BV) combining
         the 24h UTC harmonic seasonal curve (00/08/16 Funding, Asia Midday,
         London, and Wall Street NYSE) with live Bipower volatility.
       * Post-Boot Maturity Band mu_boot(n) proportional to real EMA900 tick
         population (eliminates cold-start distortions).
-      * Anti-Squeeze Spatial Memory (px_ultimo_anti_squeeze): blocks short
-        sales in bullish flags above prior breakout prices.
+      * Anti-Squeeze Spatial Memory (px_ultimo_anti_squeeze) + Clamped
+        Top-Rollover Band in SHORT-SNIPER.
       * SCAR-LOCK-09..12: Bi-class Lyapunov + aftershock, Hawkes >= +0.05,
         EMA900 band in SHORT + |Z| >= 8.0 ignition + 1800s STEP-LOCK & Tier-1 LONG.
-      * SCAR-LOCK-13: 1200ms Arm-and-Fire Absorption Automaton, OFI absorption
-        proportional to |Z_t| and H_t in LONG, strict fractal ceiling
-        H_max^long <= 0.475 (hard cap 0.485), and O(1) Vault instrumentation.
+      * SCAR-LOCK-13: 1200ms Arm-and-Fire Absorption Automaton, Fractal-Coupled
+        dp_rel discount, Clean-Fractal OFI relief, and O(1) Vault instrumentation.
 ==============================================================================
 """
 from __future__ import annotations
@@ -81,7 +80,7 @@ class VentanaZ:
     Maintains the high-frequency time series of an asset and computes in O(1):
       - Z-Score with Bipower Variation via incremental active-tick pair deque.
       - Continuous-time normalized EMA900 (135.0s horizon), distance, and slope.
-      - Hurst Roughness Exponent (H_t) with post-braking variogram de-trending.
+      - Elastic Active-Tick Hurst Exponent W_act(P_day) in [33, 56] with post-braking de-trending.
       - Hawkes Absorption Memory (I_t), 5-level ML-OFI, VPIN, and 1200ms Arm-and-Fire state.
     """
 
@@ -92,6 +91,7 @@ class VentanaZ:
         eff_maxlen = max(20, int(maxlen)) if is_test else max(60, int(round(int(maxlen) * scale_hz)))
         ofi_maxlen = 35 if is_test else max(35, int(round(35 * scale_hz)))
         ema_ticks = float(cfg.VENTANA_EMA_MACRO_TICKS) * scale_hz
+        act_maxlen = max(20, int(maxlen))
 
         self.maxlen: int = eff_maxlen
         self.precios: Deque[float] = deque(maxlen=self.maxlen)
@@ -104,13 +104,13 @@ class VentanaZ:
         self.ticks_totales_recibidos: int = 0
 
         self._abs_ret_prev: float = -1.0
-        self._bv_pares: Deque[float] = deque(maxlen=self.maxlen - 1)
+        self._bv_pares: Deque[float] = deque(maxlen=act_maxlen - 1)
         self._log_precios: Deque[float] = deque(maxlen=self.maxlen)
         self._abs_dlog1: Deque[float] = deque(maxlen=self.maxlen - 1)
         self._abs_dlog4: Deque[float] = deque(maxlen=self.maxlen - 4)
-        self._activos: Deque[float] = deque(maxlen=self.maxlen)
-        self._act_d1_sq: Deque[float] = deque(maxlen=self.maxlen - 1)
-        self._act_d4_sq: Deque[float] = deque(maxlen=self.maxlen - 4)
+        self._activos: Deque[float] = deque(maxlen=act_maxlen)
+        self._act_d1_sq: Deque[float] = deque(maxlen=act_maxlen - 1)
+        self._act_d4_sq: Deque[float] = deque(maxlen=act_maxlen - 4)
 
         self._prev_bids: List[Tuple[float, float]] = []
         self._prev_asks: List[Tuple[float, float]] = []
@@ -288,16 +288,27 @@ class VentanaZ:
         if n < 12:
             return 0.45, 0.0
 
+        t_ref = self.ts_ultimo_tick if self.ts_ultimo_tick > 0.0 else time.time()
+        is_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
+
         p_t = pts[-1]
-        p_1 = pts[-2]
-        p_2 = pts[-3]
+        if is_test:
+            p_1 = pts[-2]
+            p_2 = pts[-3]
+        else:
+            cad_s = max(0.020, float(getattr(cfg, "CADENCIA_RADAR_SEG", 0.150)))
+            step_k = max(1, min(4, int(round(0.150 / cad_s))))
+            if n >= (2 * step_k + 4):
+                p_1 = pts[-1 - step_k]
+                p_2 = pts[-1 - (2 * step_k)]
+            else:
+                p_1 = pts[-2]
+                p_2 = pts[-3]
+
         v1 = (p_t - p_1) / p_1 if p_1 > 0.0 else 0.0
         v0 = (p_1 - p_2) / p_2 if p_2 > 0.0 else 0.0
         raw_accel = v1 - v0
         accel_pct = max(0.0, raw_accel) if v1 >= 0.0 else raw_accel
-
-        t_ref = self.ts_ultimo_tick if self.ts_ultimo_tick > 0.0 else time.time()
-        is_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
 
         if is_test:
             if raw_accel <= -0.0025:
@@ -322,24 +333,30 @@ class VentanaZ:
                     self.magnitud_ultimo_choque_lyapunov = abs(raw_accel)
                 self.ts_ultimo_choque_lyapunov = t_ref
 
-            if accel_pct < cfg.LYAPUNOV_ACEL_MIN_PCT:
+            # Only arm secondary aftershock repulsor when downward step exceeds 1-tick quantization noise
+            if accel_pct < cfg.LYAPUNOV_ACEL_MIN_PCT and v1 < -0.00035:
                 self.ts_ultimo_repulsor_lyapunov = t_ref
 
         if not is_test:
-            n_d1 = len(self._act_d1_sq)
-            n_d4 = len(self._act_d4_sq)
-            if n_d1 >= 7 and n_d4 >= 4:
-                v_lag1 = sum(self._act_d1_sq) / n_d1
-                v_lag4 = sum(self._act_d4_sq) / n_d4
+            act_full = list(self._activos)
+            n_act_full = len(act_full)
+            if n_act_full >= 8:
+                w_act_elastic = max(12, min(58, int(round(32.0 + (24.0 * p_day_lyap)))))
+                act_win = act_full[-w_act_elastic:] if n_act_full > w_act_elastic else act_full
+                m_act = len(act_win)
+                v_lag1 = sum(
+                    (act_win[i] - act_win[i - 1]) ** 2 for i in range(1, m_act)
+                ) / float(m_act - 1)
+                v_lag4 = sum(
+                    (act_win[i] - act_win[i - 4]) ** 2 for i in range(4, m_act)
+                ) / float(m_act - 4)
                 if v_lag1 > 1e-18 and v_lag4 > 1e-18:
                     h_act = 0.25 * math.log(v_lag4 / v_lag1) * _INV_LN2
-                    act_list = list(self._activos)
-                    m_act = len(act_list)
                     braking_long = (
                         self.ema900 > 0.0
                         and p_t < self.ema900
                         and accel_pct >= -0.00005
-                        and self.prev_ofi_instantaneo >= 0.16
+                        and self.prev_ofi_instantaneo >= 0.14
                         and self.hawkes_intensidad >= 0.05
                     )
                     braking_short = (
@@ -347,16 +364,16 @@ class VentanaZ:
                         and p_t > self.ema900
                         and accel_pct <= -0.00020
                         and self.prev_ofi_instantaneo <= -0.35
-                        and self.hawkes_intensidad <= -0.45
+                        and self.hawkes_intensidad <= -0.40
                     )
-                    if m_act >= 8 and (braking_long or braking_short):
-                        drift_step = (act_list[-1] - act_list[0]) / float(m_act - 1)
+                    if braking_long or braking_short:
+                        drift_step = (act_win[-1] - act_win[0]) / float(m_act - 1)
                         vd1_dt = sum(
-                            ((act_list[i] - act_list[i - 1]) - drift_step) ** 2
+                            ((act_win[i] - act_win[i - 1]) - drift_step) ** 2
                             for i in range(1, m_act)
                         ) / float(m_act - 1)
                         vd4_dt = sum(
-                            ((act_list[i] - act_list[i - 4]) - (4.0 * drift_step)) ** 2
+                            ((act_win[i] - act_win[i - 4]) - (4.0 * drift_step)) ** 2
                             for i in range(4, m_act)
                         ) / float(m_act - 4)
                         if vd1_dt > 1e-18 and vd4_dt > 1e-18:
@@ -596,10 +613,20 @@ class RadarVolatilidad:
                     )
                 return False
 
-            # SCAR-LOCK-12a + SCAR-LOCK-13: Bi-scale discount and OFI proportional to |Z_t| and H_t
-            base_ema_long = -(0.0020 + (0.0005 * p_day)) if is_tier1 else -(0.0025 + (0.0005 * p_day))
+            # SCAR-LOCK-12a + SCAR-LOCK-13: Fractal-coupled bi-scale discount & clean-reversal OFI relief
+            in_long_arm = vz_sym is not None and ahora_t < vz_sym.vigilancia_long_hasta_ts
+            z_long_eff = min(z_real, float(senal.get("z_score") or z_real))
+            dp_long_eff = min(dp_rel, float(vz_sym.min_dp_drop_long)) if in_long_arm else dp_rel
+            ema_long_eff = min(ema_rel, float(vz_sym.min_ema_drop_long)) if in_long_arm else ema_rel
+
+            base_ema_long = -(0.0020 + (0.0005 * p_day)) if is_tier1 else -(0.0025 + (0.0004 * p_day))
             ema_long_threshold = base_ema_long * (1.0 + (0.50 * mu_boot))
-            base_dp_long = -(0.0020 + (0.0005 * p_day)) if is_tier1 else -(0.0028 + (0.0006 * p_day))
+            anti_97_dp_surcharge = 0.0014 if (h_real >= 0.450 or hawkes_val < 0.20) else 0.0
+            base_dp_long = (
+                -(0.0020 + (0.0005 * p_day))
+                if is_tier1
+                else -(0.0028 + (0.0006 * p_day) + anti_97_dp_surcharge)
+            )
             dp_long_threshold = base_dp_long * (1.0 + (0.50 * mu_boot))
             z_long_threshold = (
                 float(getattr(cfg, "Z_SCORE_UMBRAL_TIER1", -2.60))
@@ -607,21 +634,24 @@ class RadarVolatilidad:
                 else float(getattr(cfg, "Z_SCORE_UMBRAL_HIGH_BETA", -2.85))
             )
 
-            in_long_arm = vz_sym is not None and ahora_t < vz_sym.vigilancia_long_hasta_ts
-            z_long_eff = min(z_real, float(senal.get("z_score") or z_real))
-            dp_long_eff = min(dp_rel, float(vz_sym.min_dp_drop_long)) if in_long_arm else dp_rel
-            ema_long_eff = min(ema_rel, float(vz_sym.min_ema_drop_long)) if in_long_arm else ema_rel
-
             excess_z_long = max(0.0, abs(z_long_eff) - 4.50)
             h_ofi_premium = 0.08 if h_real >= 0.455 else 0.0
+            clean_fractal_relief = (
+                -0.035 if (h_real <= 0.440 and hawkes_val >= 0.35 and excess_z_long == 0.0) else 0.0
+            )
             ofi_min_long = (
                 min(0.42, max(0.14, 0.14 + (0.04 * p_day) + (0.04 * excess_z_long) + h_ofi_premium))
                 if is_tier1
                 else min(
                     0.45,
                     max(
-                        0.16,
-                        0.16 + (0.045 * p_day) + (0.050 * excess_z_long) + h_ofi_premium + (0.08 * mu_boot),
+                        0.15,
+                        0.18
+                        + (0.045 * p_day)
+                        + (0.050 * excess_z_long)
+                        + h_ofi_premium
+                        + clean_fractal_relief
+                        + (0.08 * mu_boot),
                     ),
                 )
             )
@@ -713,7 +743,7 @@ class RadarVolatilidad:
 
             senal["hurst_max_elastico"] = round(min(h_max_cfg, h_elastic_long), 4)
         else:
-            # Directives #1..#4 (SCAR-LOCK-08 + SCAR-LOCK-11 in SHORT):
+            # Directives #1..#4 (SCAR-LOCK-08 + SCAR-LOCK-11 in SHORT + Clamped Top-Rollover Band):
             p_now_short = float(tk_sym.last if tk_sym is not None else (senal.get("last") or 0.0))
             dt_sqz_prev = (
                 (ahora_t - vz_sym.ts_ultimo_anti_squeeze)
@@ -721,6 +751,8 @@ class RadarVolatilidad:
                 else 999.0
             )
             px_sqz_prev = float(vz_sym.px_ultimo_anti_squeeze if (vz_sym is not None and dt_sqz_prev < 180.0) else 0.0)
+            max_win_px = float(max(vz_sym.precios) if (vz_sym is not None and vz_sym.precios) else p_now_short)
+            peak_ref_px = max(max_win_px, px_sqz_prev)
             above_squeeze_px = (px_sqz_prev > 0.0) and (p_now_short >= (px_sqz_prev * 0.9992))
 
             # SCAR-LOCK-11: Lower-bounded Elastic Band for EMA900 Overextension in SHORT
@@ -802,12 +834,29 @@ class RadarVolatilidad:
                 ),
             )
 
+            rollover_drop_req = 0.0018 + (0.0005 * p_day)
+            top_rollover_confirmed = (
+                vz_sym is not None
+                and ahora_t < vz_sym.vigilancia_short_hasta_ts
+                and vz_sym.max_z_pump_short >= 2.20
+                and ema_rel >= max(0.0048, ema_short_threshold + 0.0010)
+                and peak_ref_px > 0.0
+                and p_now_short <= (peak_ref_px * (1.0 - rollover_drop_req))
+                and not above_squeeze_px
+                and h_real <= 0.465
+                and hawkes_val <= -0.45
+                and ofi_real <= ofi_max_short_req
+                and lyap_val <= cfg.SHORT_LYAPUNOV_ACEL_MAX_PCT
+            )
+
             valid_overextended_pump = (
                 ema_rel >= ema_short_threshold
                 and effective_overext >= ema_short_threshold
                 and ofi_real <= ofi_max_short_req
-                and z_real >= 1.80
-                and z_short_eff >= 1.80
+                and (
+                    (z_real >= 1.80 and z_short_eff >= 1.80)
+                    or top_rollover_confirmed
+                )
             )
 
             if not valid_overextended_pump:
@@ -836,7 +885,7 @@ class RadarVolatilidad:
                 in_bullish_expansion = (
                     ema_slope > 0.0012
                     or (ema_slope > 0.0005 and p_now >= (max_window * 0.9980))
-                    or (ema_rel >= 0.0095 and ema_slope > 0.0004)
+                    or (ema_rel >= 0.0095 and ema_slope > 0.0004 and not top_rollover_confirmed)
                     or (above_squeeze_px and ema_slope > 0.0)
                 )
                 if in_bullish_expansion:
@@ -847,7 +896,7 @@ class RadarVolatilidad:
                     vz_sym.ts_ultimo_anti_squeeze = ahora_t
 
                 cd_sqz = 16.0 + (32.0 * p_day)
-                top_reversal_confirmed = (
+                top_reversal_confirmed = top_rollover_confirmed or (
                     not in_bullish_expansion
                     and not above_squeeze_px
                     and p_now <= (max_window * 0.9988)
@@ -908,7 +957,7 @@ class RadarVolatilidad:
                             )
                         return False
 
-            senal["z_score"] = round(z_real if z_real >= 1.80 else z_short_eff, 4)
+            senal["z_score"] = round(z_real if z_real >= 1.80 else max(z_short_eff, 2.20), 4)
             senal["hurst_max_elastico"] = round(max(h_max_cfg, h_max_short_prod), 4)
 
         # Store full 18-variable entry vector in ESTADO_RAM for the Forensic AI Vault
@@ -1098,7 +1147,12 @@ class RadarVolatilidad:
                 return None
             z_ref_long = tk.z_score
         else:
-            dp_floor_prod = -0.0020 if symbol in cfg.CLASE_TIER1_LIQUIDO else -0.0028
+            anti_97_surcharge = 0.0014 if (tk.hurst >= 0.450 or tk.hawkes_intensidad < 0.20) else 0.0
+            dp_floor_prod = (
+                -0.0020
+                if symbol in cfg.CLASE_TIER1_LIQUIDO
+                else -(0.0028 + anti_97_surcharge)
+            )
             ema_floor_prod = -0.0020 if symbol in cfg.CLASE_TIER1_LIQUIDO else -0.0025
             req_dp = min(min_drop_req, dp_floor_prod)
             req_ema = min(ema_dist_req, ema_floor_prod)
@@ -1271,7 +1325,20 @@ class RadarVolatilidad:
                 else abs(tk.z_score)
             )
         else:
-            if tk.z_score < 1.80:
+            p_day_s, _ = _calcular_percentil_elastico_intradia(t_now, tk.volatilidad_local)
+            max_win_px = float(max(vz.precios) if vz.precios else tk.last)
+            peak_ref_px = max(max_win_px, vz.px_ultimo_anti_squeeze)
+            rollover_drop_req = 0.0018 + (0.0005 * p_day_s)
+            top_rollover_active = (
+                overextended_pump
+                and vz.max_z_pump_short >= 2.20
+                and tk.ema900_dist_pct >= 0.0048
+                and peak_ref_px > 0.0
+                and tk.last <= (peak_ref_px * (1.0 - rollover_drop_req))
+                and tk.hurst <= 0.465
+                and tk.hawkes_intensidad <= -0.45
+            )
+            if tk.z_score < 1.80 and not top_rollover_active:
                 return None
             if overextended_pump:
                 z_ref_short = max(tk.z_score, vz.max_z_pump_short)
