@@ -38,3 +38,7 @@ reporte_cuantico_oos.md
 Thumbs.db
 .vscode/
 .idea/
+# SSH Private Keys
+*.ppk
+*.pem
+*.key
