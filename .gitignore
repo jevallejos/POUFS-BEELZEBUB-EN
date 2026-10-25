@@ -1,44 +1,49 @@
-# ==============================================================================
-# POUFS-BEELZEBUB-EN (SPIRITUAL MESSAGE) V5.0 -- SECRETS & STATE ARMOR
-# ==============================================================================
-
-# 1. Credentials and Secrets (STRICTLY FORBIDDEN TO COMMIT TO GITHUB)
-.env
-.env.*
-*.pem
-*.key
-
-# 2. Virtual Environments and Python Bytecode Cache
+# Entornos virtuales y paquetes de Python
 venv/
 .venv/
-ENV/
+env/
 __pycache__/
 *.py[cod]
-*.class
-.pytest_cache/
-.mypy_cache/
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# 3. Transactional State, Telemetry, Forensic Vault, and Production Locks
-*.lock
-.tribrain.lock
-.tribrain_test.lock
-*.log
-bot_hft.log
-bot_hft_h.log
-.test_bot_hft.log
-*.jsonl
-tribrain_stats_v1.jsonl
-baul_ia_forense.jsonl
-calibracion_oos.json
-reporte_lab_ia.json
-reporte_cuantico_oos.md
-
-# 4. Operating System / IDE Artifacts
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
-# SSH Private Keys
+# Credenciales, Secretos y Llaves Privadas SSH (NUNCA SUBIR A GITHUB)
+.env
+.env.*
 *.ppk
 *.pem
 *.key
+*.pub
+
+# Archivos de bloqueo, logs en vivo y telemetria local
+.tribrain.lock
+.tribrain_test.lock
+bot_hft.log
+bot_hft_h.log
+.test_bot_hft.log
+tribrain_stats_v1.jsonl
+baul_ia_forense.jsonl
+reporte_cuantico_oos.md
+reporte_lab_ia.json
+
+# Configuraciones de IDE y sistema operativo
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

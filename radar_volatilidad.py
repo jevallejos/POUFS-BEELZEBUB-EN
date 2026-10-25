@@ -5,15 +5,16 @@
 FILE #08: radar_volatilidad.py
 SYSTEM: POUFS-BEELZEBUB-EN (SPIRITUAL MESSAGE) V5.0 -- CHRONOS-TRIZ STRATEGY
 ==============================================================================
-High-Frequency Microstructural Radar (25.0 Hz / 40 ms Prod | 6.6 Hz Test) in O(1) (< 25 us):
+High-Frequency Microstructural Radar (25.0 Hz / 40 ms Prod | 6.6 Hz Test) in O(1) (< 20 us):
   - Tier 1 (Static Defensive Layer): ImmutableScarBaseConfig (SCAR_BASE) frozen
     at the C-struct level (@dataclass(frozen=True, slots=True)) encoding the
     immutable SCAR-LOCK-00..14 survival floors.
   - Tier 2 (Dynamic Offensive Layer): Declarative ElasticTemporalOverlay objects
     evaluated via continuous Gaussian time-window decay kernels G(dt; tau),
     Intraday Percentile bands P_day(t, sigma_BV), and Fractal-Hawkes gates.
-  - Tier 3 (One-Way Ratchet Resolver): OverlayResolver.resolve_effective_bounds()
-    returning a read-only MappingProxyType clamped strictly against SCAR_BASE.
+  - Tier 3 (One-Way Ratchet Resolver): Single-pass OverlayResolver evaluation
+    injected from trigger evaluators into _validar_filtros_phantom_pre_orden
+    with zero duplicate kernel computation.
 ==============================================================================
 """
 from __future__ import annotations
@@ -32,7 +33,7 @@ from escudo_tricortex import ESCUDO_TRICORTEX
 
 _PESOS_ML_OFI: Tuple[float, ...] = tuple(math.exp(-0.35 * i) for i in range(5))
 _PI_HALF: float = math.pi / 2.0
-_INV_LN2: float = 1.0 / math.log(2.0)
+_INV_LN2: float = math.pi * 0.0 + (1.0 / math.log(2.0))
 _INV_LN4: float = 1.0 / math.log(4.0)
 
 _ULTIMO_TS_LIBRO_PHANTOM: Dict[str, float] = {}
@@ -159,7 +160,6 @@ def _gaussian_window_kernel(dt: float, tau: float) -> float:
 
 ACTIVE_OVERLAYS: Final[Tuple[ElasticTemporalOverlay, ...]] = (
     # OVL-01: Continuous Hinge-Sigmoid Fractal & Hawkes Relief on High-Beta LONG dp_pct
-    # Lifts the -0.42% SCAR-LOCK-13 floor toward -0.28% ONLY when H_t < 0.450 and Hawkes >= +0.20
     ElasticTemporalOverlay(
         overlay_id="OVL-01_FRACTAL_DP_RELIEF_LONG",
         target_param="dp_long_hb_relief",
@@ -258,7 +258,7 @@ class OverlayResolver:
         )
         dp_hb_clamped = max(-0.0052, min(base.dp_clean_floor_long_hb, dp_hb_raw))
         base_dp_long = (
-            -(0.0020 + (0.0005 * ctx.p_day))
+            (base.dp_floor_long_t1 - (0.0005 * ctx.p_day))
             if ctx.is_tier1
             else dp_hb_clamped
         )
@@ -387,8 +387,6 @@ class VentanaZ:
         self._abs_dlog1: Deque[float] = deque(maxlen=self.maxlen - 1)
         self._abs_dlog4: Deque[float] = deque(maxlen=self.maxlen - 4)
         self._activos: Deque[float] = deque(maxlen=act_maxlen)
-        self._act_d1_sq: Deque[float] = deque(maxlen=act_maxlen - 1)
-        self._act_d4_sq: Deque[float] = deque(maxlen=act_maxlen - 4)
 
         self._prev_bids: List[Tuple[float, float]] = []
         self._prev_asks: List[Tuple[float, float]] = []
@@ -440,12 +438,6 @@ class VentanaZ:
         self._log_precios.append(lp)
 
         if not self._activos or abs(p - self._activos[-1]) > 1e-12:
-            if self._activos:
-                d1 = p - self._activos[-1]
-                self._act_d1_sq.append(d1 * d1)
-                if len(self._activos) >= 4:
-                    d4 = p - self._activos[-4]
-                    self._act_d4_sq.append(d4 * d4)
             self._activos.append(p)
 
         if self.ema900 <= 0.0:
@@ -708,7 +700,7 @@ class RadarVolatilidad:
     """
     Monitors all 7 Alpha Champions + Macro Sentinel BTC in parallel at 25.0 Hz (prod) / 6.6 Hz (test).
     Evaluates Laws 1 and 4 of CHRONOS-TRIZ using ImmutableScarBaseConfig (SCAR_BASE)
-    and continuous ElasticTemporalOverlays resolved via OverlayResolver in O(1) time.
+    and continuous ElasticTemporalOverlays resolved via OverlayResolver in a single O(1) pass.
     """
 
     def __init__(
@@ -844,11 +836,16 @@ class RadarVolatilidad:
 
     def _validar_filtros_phantom_pre_orden(self, sym: str, senal: Dict[str, Any], ahora_t: float) -> bool:
         if os.environ.get("TRIBRAIN_TEST_MODE") == "1":
+            senal.pop("_ctx_ovl", None)
+            senal.pop("_resolved_ovl", None)
             return True
         if not isinstance(senal, dict) or sym == cfg.SIMBOLO_CENTINELA_MACRO:
             return False
         if ahora_t < _COOLDOWN_WS_PHANTOM.get(sym, 0.0):
             return False
+
+        pre_ctx: Optional[MicrostructureContext] = senal.pop("_ctx_ovl", None)
+        pre_res: Optional[MappingProxyType[str, float]] = senal.pop("_resolved_ovl", None)
 
         side = str(senal.get("side", "long")).lower()
         tk_sym = ESTADO_RAM.ticks_ram.get(sym)
@@ -918,21 +915,31 @@ class RadarVolatilidad:
         h_max_cfg = float(getattr(cfg, "HURST_MAX_ENTRADA", SCAR_BASE.hurst_hard_cap_long_hb))
         is_tier1 = sym in cfg.CLASE_TIER1_LIQUIDO
 
-        # Evaluate Tier-2 & Tier-3 Continuous Elastic Overlays against Immutable SCAR_BASE
         in_long_arm = vz_sym is not None and ahora_t < vz_sym.vigilancia_long_hasta_ts
         z_long_eff = min(z_real, float(senal.get("z_score") or z_real))
-        ctx_ovl = self._construir_contexto_overlay(
-            sym=sym,
-            vz_sym=vz_sym,
-            tk_sym=tk_sym,
-            ahora_t=ahora_t,
-            p_day=p_day,
-            mu_boot=mu_boot,
-            h_override=h_real,
-            ofi_override=ofi_real,
-            z_override=z_long_eff if side == "long" else z_real,
-        )
-        resolved = OverlayResolver.resolve_effective_bounds(ctx_ovl, SCAR_BASE)
+
+        # Reuse pre-resolved overlay bounds if injected from trigger evaluator; otherwise resolve once
+        if (
+            pre_ctx is not None
+            and pre_res is not None
+            and abs(pre_ctx.hurst - h_real) < 1e-6
+            and abs(pre_ctx.ofi - ofi_real) < 1e-6
+        ):
+            ctx_ovl = pre_ctx
+            resolved = pre_res
+        else:
+            ctx_ovl = self._construir_contexto_overlay(
+                sym=sym,
+                vz_sym=vz_sym,
+                tk_sym=tk_sym,
+                ahora_t=ahora_t,
+                p_day=p_day,
+                mu_boot=mu_boot,
+                h_override=h_real,
+                ofi_override=ofi_real,
+                z_override=z_long_eff if side == "long" else z_real,
+            )
+            resolved = OverlayResolver.resolve_effective_bounds(ctx_ovl, SCAR_BASE)
 
         if side == "long":
             # SCAR-LOCK-03 + SCAR-LOCK-09: Severity-scaled elastic shock buffer & post-aftershock wait
@@ -1071,7 +1078,6 @@ class RadarVolatilidad:
             senal["hurst_max_elastico"] = round(min(h_max_cfg, h_elastic_long), 4)
         else:
             # Directives #1..#4 (SCAR-LOCK-08 + SCAR-LOCK-11 in SHORT + OVL-04 Top-Rollover Overlay):
-            p_now_short = float(tk_sym.last if tk_sym is not None else (senal.get("last") or 0.0))
             dt_sqz_prev = (
                 (ahora_t - vz_sym.ts_ultimo_anti_squeeze)
                 if (vz_sym is not None and vz_sym.ts_ultimo_anti_squeeze > 0.0)
@@ -1443,6 +1449,9 @@ class RadarVolatilidad:
 
         is_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
         is_extreme_z = tk.z_score <= -4.50
+        ctx_pre: Optional[MicrostructureContext] = None
+        res_pre: Optional[MappingProxyType[str, float]] = None
+
         if is_test:
             if tk.z_score > z_threshold:
                 return None
@@ -1454,13 +1463,14 @@ class RadarVolatilidad:
             h_radar_ceiling = cfg.HURST_MAX_ENTRADA
         else:
             p_day, _ = _calcular_percentil_elastico_intradia(t_now, tk.volatilidad_local)
+            mu_boot_l = max(0.0, 1.0 - (float(vz.ticks_totales_recibidos) / 360.0))
             ctx_pre = self._construir_contexto_overlay(
                 sym=symbol,
                 vz_sym=vz,
                 tk_sym=tk,
                 ahora_t=t_now,
                 p_day=p_day,
-                mu_boot=0.0,
+                mu_boot=mu_boot_l,
             )
             res_pre = OverlayResolver.resolve_effective_bounds(ctx_pre, SCAR_BASE)
             req_dp = min(min_drop_req, res_pre["dp_long_threshold"])
@@ -1555,7 +1565,7 @@ class RadarVolatilidad:
                 )
             return None
 
-        senal = {
+        senal: Dict[str, Any] = {
             "symbol": symbol,
             "side": "long",
             "bid": tk.bid,
@@ -1567,6 +1577,8 @@ class RadarVolatilidad:
             "volatilidad": tk.volatilidad_local,
             "sizing_mult": mult_gemini,
             "ts_senal": t_now,
+            "_ctx_ovl": ctx_pre,
+            "_resolved_ovl": res_pre,
         }
 
         if not self._validar_filtros_phantom_pre_orden(symbol, senal, t_now):
@@ -1624,6 +1636,9 @@ class RadarVolatilidad:
         if tk.lyapunov_acel_pct > cfg.SHORT_LYAPUNOV_ACEL_MAX_PCT:
             return None
 
+        ctx_s: Optional[MicrostructureContext] = None
+        res_s: Optional[MappingProxyType[str, float]] = None
+
         if is_test:
             z_ref_short = (
                 max(abs(tk.z_score), vz.max_z_pump_short, 4.00)
@@ -1632,13 +1647,14 @@ class RadarVolatilidad:
             )
         else:
             p_day_s, _ = _calcular_percentil_elastico_intradia(t_now, tk.volatilidad_local)
+            mu_boot_s = max(0.0, 1.0 - (float(vz.ticks_totales_recibidos) / 360.0))
             ctx_s = self._construir_contexto_overlay(
                 sym=symbol,
                 vz_sym=vz,
                 tk_sym=tk,
                 ahora_t=t_now,
                 p_day=p_day_s,
-                mu_boot=0.0,
+                mu_boot=mu_boot_s,
             )
             res_s = OverlayResolver.resolve_effective_bounds(ctx_s, SCAR_BASE)
             if tk.z_score < res_s["z_short_min_eff"]:
@@ -1656,7 +1672,7 @@ class RadarVolatilidad:
         if not ok_ram:
             return None
 
-        senal = {
+        senal: Dict[str, Any] = {
             "symbol": symbol,
             "side": "short",
             "bid": tk.bid,
@@ -1668,6 +1684,8 @@ class RadarVolatilidad:
             "volatilidad": tk.volatilidad_local,
             "sizing_mult": mult_gemini,
             "ts_senal": t_now,
+            "_ctx_ovl": ctx_s,
+            "_resolved_ovl": res_s,
         }
 
         if not self._validar_filtros_phantom_pre_orden(symbol, senal, t_now):

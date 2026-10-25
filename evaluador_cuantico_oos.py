@@ -198,6 +198,7 @@ def calcular_metricas_horizonte(operaciones: List[Dict[str, Any]]) -> Dict[str, 
     var_r = sum((r - mean_r) ** 2 for r in returns) / max(1, n_total - 1)
     std_r = math.sqrt(var_r) if var_r > 1e-12 else 1e-6
     sharpe = (mean_r / std_r) * math.sqrt(n_total) if n_total > 1 else 0.0
+    saved_rounded = round(scratch_savings, 4)
 
     return {
         "n_trades": float(n_total),
@@ -217,8 +218,8 @@ def calcular_metricas_horizonte(operaciones: List[Dict[str, Any]]) -> Dict[str, 
         "max_drawdown_pct": round(max_dd_pct, 2),
         "velocidad_g_hora": round(expectancy * 1.5, 4),
         "sharpe_oos": round(sharpe, 2),
-        "ahorro_scratch_usdt": round(scratch_savings, 4),
-        "ahorro_scratch_18s_usdt": round(scratch_savings, 4),
+        "ahorro_scratch_usdt": saved_rounded,
+        "ahorro_scratch_18s_usdt": saved_rounded,
     }
 
 
@@ -254,7 +255,7 @@ class EvaluadorCuanticoOOS:
             or kwargs.get("ruta_md_oos")
         )
 
-        for _, v_kw in kwargs.items():
+        for v_kw in kwargs.values():
             if v_kw is None:
                 continue
             s_kw = str(v_kw)
@@ -296,8 +297,8 @@ class EvaluadorCuanticoOOS:
         md_txt = "\n".join(lines) + "\n"
         try:
             self.ruta_reporte_md.write_text(md_txt, encoding="utf-8")
-        except Exception:
-            pass
+        except Exception as exc:
+            log_sniper(f"[WARN] [OOS EVALUATOR] Could not write Markdown report: {exc}")
         return md_txt
 
     def calibrar_parametros_walk_forward(
@@ -494,372 +495,217 @@ calcular_calibracion_walk_forward = ejecutar_evaluacion_oos
 
 
 # ==============================================================================
-# 2. CANONICAL N=97 REAL TRADES SEED FOR LOCAL MODE IN ANTIGRAVITY IDE
+# 2. COMPACT TABLE-DRIVEN N=97 REAL TRADES SEED FOR LOCAL --LAB MODE
 # ==============================================================================
+def _fila_semilla(
+    ts: str,
+    symbol: str,
+    side: str,
+    z: float,
+    ofi: float,
+    hurst: float,
+    pnl_pct: float,
+    pnl_u: float,
+    ep: float,
+    xp: float,
+    qty: float,
+    motivo: str,
+    hold_s: float,
+    fees_u: float,
+    map_u: float,
+    lvr_u: float = 0.0,
+    harvest_50: bool = False,
+) -> Dict[str, Any]:
+    return {
+        "timestamp": ts,
+        "symbol": symbol,
+        "side": side,
+        "z_score_entry": z,
+        "ofi_entry": ofi,
+        "hurst_entry": hurst,
+        "pnl_percentage": pnl_pct,
+        "pnl_usdt": pnl_u,
+        "entry_price": ep,
+        "exit_price": xp,
+        "qty": qty,
+        "motivo": motivo,
+        "hold_seg": hold_s,
+        "fees_usdt": fees_u,
+        "map_usdt": map_u,
+        "lvr_usdt": lvr_u,
+        "cosecha_triz_50": harvest_50,
+    }
+
+
 def _construir_semilla_97_trades_reales() -> List[Dict[str, Any]]:
     """
     Reconstructs the exact distribution of the N=97 certified real trades
     from sniper-singapur (40W / 57L / 16 Scratches / 26 Harvests, Net PnL +0.7969 USDT)
-    when tribrain_stats_v1.jsonl is not downloaded locally on Windows.
+    when tribrain_stats_v1.jsonl is not present locally.
     """
-    seed: List[Dict[str, Any]] = []
+    seed: List[Dict[str, Any]] = [
+        _fila_semilla(
+            "2026-10-20T03:15:00+00:00", "ZEREBRO/USDT:USDT", "short",
+            5.42, -0.78, 0.44, 14.95, 2.4710, 0.0365, 0.0310, 452.0,
+            "CHAIN_JAIL_TP_MAX", 68.0, 0.0066, 16.50, 0.0001, True,
+        )
+    ]
 
-    # 1. ZEREBRO [SHORT]: 34 Trades (19W / 15L, Mean H = 0.467, Net PnL = +1.8622 USDT)
-    seed.append({
-        "timestamp": "2026-10-20T03:15:00+00:00",
-        "symbol": "ZEREBRO/USDT:USDT",
-        "side": "short",
-        "z_score_entry": 5.42,
-        "ofi_entry": -0.78,
-        "hurst_entry": 0.44,
-        "pnl_percentage": 14.95,
-        "pnl_usdt": 2.4710,
-        "entry_price": 0.0365,
-        "exit_price": 0.0310,
-        "qty": 452.0,
-        "motivo": "CHAIN_JAIL_TP_MAX",
-        "hold_seg": 68.0,
-        "fees_usdt": 0.0066,
-        "map_usdt": 16.50,
-        "lvr_usdt": 0.0001,
-        "cosecha_triz_50": True,
-    })
     for i in range(18):
-        seed.append({
-            "timestamp": f"2026-10-21T{(i % 24):02d}:12:00+00:00",
-            "symbol": "ZEREBRO/USDT:USDT",
-            "side": "short",
-            "z_score_entry": round(3.85 + (i % 5) * 0.35, 2),
-            "ofi_entry": round(-0.48 - (i % 4) * 0.08, 2),
-            "hurst_entry": round(0.43 + (i % 5) * 0.01, 3),
-            "pnl_percentage": 0.22,
-            "pnl_usdt": 0.0352,
-            "entry_price": 0.0310,
-            "exit_price": 0.03092,
-            "qty": 532.0,
-            "motivo": "TRINQUETE_BE_MAKER" if (i % 2 == 0) else "MAKER_UNWIND",
-            "hold_seg": float(28 + (i % 30)),
-            "fees_usdt": 0.0090,
-            "map_usdt": 16.50,
-            "lvr_usdt": 0.0,
-            "cosecha_triz_50": True,
-        })
-    losses_zs = [
+        seed.append(
+            _fila_semilla(
+                f"2026-10-21T{(i % 24):02d}:12:00+00:00", "ZEREBRO/USDT:USDT", "short",
+                round(3.85 + (i % 5) * 0.35, 2), round(-0.48 - (i % 4) * 0.08, 2),
+                round(0.43 + (i % 5) * 0.01, 3), 0.22, 0.0352, 0.0310, 0.03092, 532.0,
+                "TRINQUETE_BE_MAKER" if (i % 2 == 0) else "MAKER_UNWIND",
+                float(28 + (i % 30)), 0.0090, 16.50, 0.0, True,
+            )
+        )
+
+    for ts_s, z_v, ofi_v, h_v, pnl_v, hold_v, mot_v in (
         ("2026-10-21T08:10:00+00:00", 2.90, -0.32, 0.49, -0.0914, 2.0, "SL_INTERNO_CHRONOS"),
         ("2026-10-22T09:15:00+00:00", 3.40, -0.36, 0.51, -0.0890, 9.0, "SL_INTERNO_CHRONOS"),
         ("2026-10-23T04:57:19+00:00", 8.21, -0.58, 0.52, -0.0860, 18.0, "SL_INTERNO_CHRONOS"),
         ("2026-10-23T14:23:33+00:00", 8.95, -0.66, 0.49, -0.0138, 72.0, "MAKER_UNWIND"),
         ("2026-10-23T14:39:22+00:00", 4.18, -0.44, 0.49, -0.0439, 59.0, "MAKER_SCRATCH_18S"),
-    ]
-    for ts_s, z_v, ofi_v, h_v, pnl_v, hold_v, mot_v in losses_zs:
-        seed.append({
-            "timestamp": ts_s,
-            "symbol": "ZEREBRO/USDT:USDT",
-            "side": "short",
-            "z_score_entry": z_v,
-            "ofi_entry": ofi_v,
-            "hurst_entry": h_v,
-            "pnl_percentage": round((pnl_v / 16.5) * 100.0, 2),
-            "pnl_usdt": pnl_v,
-            "entry_price": 0.0305,
-            "exit_price": 0.0306,
-            "qty": 540.0,
-            "motivo": mot_v,
-            "hold_seg": hold_v,
-            "fees_usdt": 0.0085,
-            "map_usdt": 16.50,
-            "lvr_usdt": 0.0,
-            "cosecha_triz_50": False,
-        })
+    ):
+        seed.append(
+            _fila_semilla(
+                ts_s, "ZEREBRO/USDT:USDT", "short", z_v, ofi_v, h_v,
+                round((pnl_v / 16.5) * 100.0, 2), pnl_v, 0.0305, 0.0306, 540.0,
+                mot_v, hold_v, 0.0085, 16.50,
+            )
+        )
+
     for i in range(10):
-        seed.append({
-            "timestamp": f"2026-10-21T{(10 + i):02d}:30:00+00:00",
-            "symbol": "ZEREBRO/USDT:USDT",
-            "side": "short",
-            "z_score_entry": 3.55,
-            "ofi_entry": -0.39,
-            "hurst_entry": 0.48,
-            "pnl_percentage": -0.55,
-            "pnl_usdt": -0.09183,
-            "entry_price": 0.0310,
-            "exit_price": 0.03115,
-            "qty": 532.0,
-            "motivo": "MAKER_SCRATCH_18S" if i < 5 else "SL_INTERNO_CHRONOS",
-            "hold_seg": 19.0 if i < 5 else 31.0,
-            "fees_usdt": 0.0080,
-            "map_usdt": 16.50,
-            "lvr_usdt": 0.0,
-            "cosecha_triz_50": False,
-        })
+        seed.append(
+            _fila_semilla(
+                f"2026-10-21T{(10 + i):02d}:30:00+00:00", "ZEREBRO/USDT:USDT", "short",
+                3.55, -0.39, 0.48, -0.55, -0.09183, 0.0310, 0.03115, 532.0,
+                "MAKER_SCRATCH_18S" if i < 5 else "SL_INTERNO_CHRONOS",
+                19.0 if i < 5 else 31.0, 0.0080, 16.50,
+            )
+        )
 
-    # 2. ARB [SHORT]: 14 Trades (6W / 8L, Mean H = 0.590, Net PnL = +0.1424 USDT)
     for i in range(6):
-        seed.append({
-            "timestamp": f"2026-10-21T{(2 + i):02d}:20:00+00:00",
-            "symbol": "ARB/USDT:USDT",
-            "side": "short",
-            "z_score_entry": 4.20,
-            "ofi_entry": -0.55,
-            "hurst_entry": 0.52,
-            "pnl_percentage": 0.48,
-            "pnl_usdt": 0.0904,
-            "entry_price": 0.5200,
-            "exit_price": 0.5175,
-            "qty": 36.0,
-            "motivo": "MAKER_UNWIND",
-            "hold_seg": 38.0,
-            "fees_usdt": 0.0075,
-            "map_usdt": 18.72,
-            "lvr_usdt": 0.0,
-            "cosecha_triz_50": True,
-        })
+        seed.append(
+            _fila_semilla(
+                f"2026-10-21T{(2 + i):02d}:20:00+00:00", "ARB/USDT:USDT", "short",
+                4.20, -0.55, 0.52, 0.48, 0.0904, 0.5200, 0.5175, 36.0,
+                "MAKER_UNWIND", 38.0, 0.0075, 18.72, 0.0, True,
+            )
+        )
+
     for i in range(8):
-        seed.append({
-            "timestamp": f"2026-10-21T{(12 + i):02d}:40:00+00:00",
-            "symbol": "ARB/USDT:USDT",
-            "side": "short",
-            "z_score_entry": 3.45,
-            "ofi_entry": -0.38,
-            "hurst_entry": 0.62,
-            "pnl_percentage": -0.28,
-            "pnl_usdt": -0.0500,
-            "entry_price": 0.5200,
-            "exit_price": 0.5214,
-            "qty": 36.0,
-            "motivo": "MAKER_SCRATCH_18S" if i < 4 else "MAKER_UNWIND",
-            "hold_seg": 19.0 if i < 4 else 74.0,
-            "fees_usdt": 0.0075,
-            "map_usdt": 18.72,
-            "lvr_usdt": 0.0,
-            "cosecha_triz_50": False,
-        })
+        seed.append(
+            _fila_semilla(
+                f"2026-10-21T{(12 + i):02d}:40:00+00:00", "ARB/USDT:USDT", "short",
+                3.45, -0.38, 0.62, -0.28, -0.0500, 0.5200, 0.5214, 36.0,
+                "MAKER_SCRATCH_18S" if i < 4 else "MAKER_UNWIND",
+                19.0 if i < 4 else 74.0, 0.0075, 18.72,
+            )
+        )
 
-    # 3. XRP [LONG] (1L: -0.0022), TAO [SHORT] (1L: -0.0174), ARB [LONG] (3L: -0.1443), INJ (1W/7L: -0.5800)
-    seed.append({
-        "timestamp": "2026-10-22T18:04:41+00:00",
-        "symbol": "XRP/USDT:USDT",
-        "side": "long",
-        "z_score_entry": -3.18,
-        "ofi_entry": 0.16,
-        "hurst_entry": 0.48,
-        "pnl_percentage": -0.01,
-        "pnl_usdt": -0.0022,
-        "entry_price": 0.5310,
-        "exit_price": 0.5310,
-        "qty": 32.0,
-        "motivo": "MAKER_UNWIND",
-        "hold_seg": 72.0,
-        "fees_usdt": 0.0068,
-        "map_usdt": 16.99,
-        "lvr_usdt": 0.0,
-        "cosecha_triz_50": False,
-    })
-    seed.append({
-        "timestamp": "2026-10-22T11:10:00+00:00",
-        "symbol": "TAO/USDT:USDT",
-        "side": "short",
-        "z_score_entry": 3.60,
-        "ofi_entry": -0.42,
-        "hurst_entry": 0.45,
-        "pnl_percentage": -0.10,
-        "pnl_usdt": -0.0174,
-        "entry_price": 510.0,
-        "exit_price": 510.5,
-        "qty": 0.033,
-        "motivo": "MAKER_SCRATCH_18S",
-        "hold_seg": 19.0,
-        "fees_usdt": 0.0067,
-        "map_usdt": 16.83,
-        "lvr_usdt": 0.0,
-        "cosecha_triz_50": False,
-    })
+    seed.append(
+        _fila_semilla(
+            "2026-10-22T18:04:41+00:00", "XRP/USDT:USDT", "long",
+            -3.18, 0.16, 0.48, -0.01, -0.0022, 0.5310, 0.5310, 32.0,
+            "MAKER_UNWIND", 72.0, 0.0068, 16.99,
+        )
+    )
+    seed.append(
+        _fila_semilla(
+            "2026-10-22T11:10:00+00:00", "TAO/USDT:USDT", "short",
+            3.60, -0.42, 0.45, -0.10, -0.0174, 510.0, 510.5, 0.033,
+            "MAKER_SCRATCH_18S", 19.0, 0.0067, 16.83,
+        )
+    )
+
     for pnl_arb_l in (-0.0520, -0.0555, -0.0368):
-        seed.append({
-            "timestamp": "2026-10-23T09:26:05+00:00",
-            "symbol": "ARB/USDT:USDT",
-            "side": "long",
-            "z_score_entry": -3.22,
-            "ofi_entry": 0.15,
-            "hurst_entry": 0.477,
-            "pnl_percentage": -0.25,
-            "pnl_usdt": pnl_arb_l,
-            "entry_price": 0.5150,
-            "exit_price": 0.5138,
-            "qty": 33.0,
-            "motivo": "MAKER_UNWIND",
-            "hold_seg": 83.0,
-            "fees_usdt": 0.0068,
-            "map_usdt": 17.00,
-            "lvr_usdt": 0.0,
-            "cosecha_triz_50": False,
-        })
-    seed.append({
-        "timestamp": "2026-10-20T12:00:00+00:00",
-        "symbol": "INJ/USDT:USDT",
-        "side": "short",
-        "z_score_entry": 3.90,
-        "ofi_entry": -0.50,
-        "hurst_entry": 0.46,
-        "pnl_percentage": 0.25,
-        "pnl_usdt": 0.0412,
-        "entry_price": 20.0,
-        "exit_price": 19.95,
-        "qty": 0.82,
-        "motivo": "MAKER_UNWIND",
-        "hold_seg": 35.0,
-        "fees_usdt": 0.0065,
-        "map_usdt": 16.40,
-        "lvr_usdt": 0.0,
-        "cosecha_triz_50": False,
-    })
-    for i in range(3):
-        seed.append({
-            "timestamp": f"2026-10-20T1{3+i}:00:00+00:00",
-            "symbol": "INJ/USDT:USDT",
-            "side": "short",
-            "z_score_entry": 3.20,
-            "ofi_entry": -0.36,
-            "hurst_entry": 0.49,
-            "pnl_percentage": -0.52,
-            "pnl_usdt": -0.0860,
-            "entry_price": 20.0,
-            "exit_price": 20.10,
-            "qty": 0.82,
-            "motivo": "SL_INTERNO_CHRONOS",
-            "hold_seg": 22.0,
-            "fees_usdt": 0.0120,
-            "map_usdt": 16.40,
-            "lvr_usdt": 0.0,
-            "cosecha_triz_50": False,
-        })
-    for i in range(4):
-        seed.append({
-            "timestamp": f"2026-10-20T1{6+i}:00:00+00:00",
-            "symbol": "INJ/USDT:USDT",
-            "side": "long",
-            "z_score_entry": -3.30,
-            "ofi_entry": 0.14,
-            "hurst_entry": 0.536,
-            "pnl_percentage": -0.55,
-            "pnl_usdt": -0.0908,
-            "entry_price": 20.0,
-            "exit_price": 19.89,
-            "qty": 0.82,
-            "motivo": "SL_INTERNO_CHRONOS",
-            "hold_seg": 18.0,
-            "fees_usdt": 0.0120,
-            "map_usdt": 16.40,
-            "lvr_usdt": 0.0,
-            "cosecha_triz_50": False,
-        })
+        seed.append(
+            _fila_semilla(
+                "2026-10-23T09:26:05+00:00", "ARB/USDT:USDT", "long",
+                -3.22, 0.15, 0.477, -0.25, pnl_arb_l, 0.5150, 0.5138, 33.0,
+                "MAKER_UNWIND", 83.0, 0.0068, 17.00,
+            )
+        )
 
-    # 4. ZEREBRO [LONG]: 36 Trades (14W / 22L, Mean H = 0.505, Net PnL = -0.4637 USDT)
-    seed.append({
-        "timestamp": "2026-10-23T05:27:08+00:00",
-        "symbol": "ZEREBRO/USDT:USDT",
-        "side": "long",
-        "z_score_entry": -4.63,
-        "ofi_entry": 0.50,
-        "hurst_entry": 0.39,
-        "pnl_percentage": 0.17,
-        "pnl_usdt": 0.0283,
-        "entry_price": 0.0301,
-        "exit_price": 0.03016,
-        "qty": 548.0,
-        "motivo": "TRINQUETE_BE_MAKER",
-        "hold_seg": 49.0,
-        "fees_usdt": 0.0095,
-        "map_usdt": 16.50,
-        "lvr_usdt": 0.0,
-        "cosecha_triz_50": True,
-    })
-    seed.append({
-        "timestamp": "2026-10-23T05:35:09+00:00",
-        "symbol": "ZEREBRO/USDT:USDT",
-        "side": "long",
-        "z_score_entry": -3.83,
-        "ofi_entry": 0.25,
-        "hurst_entry": 0.43,
-        "pnl_percentage": 0.55,
-        "pnl_usdt": 0.0913,
-        "entry_price": 0.0299,
-        "exit_price": 0.03008,
-        "qty": 551.0,
-        "motivo": "MAKER_UNWIND",
-        "hold_seg": 39.0,
-        "fees_usdt": 0.0066,
-        "map_usdt": 16.50,
-        "lvr_usdt": 0.0,
-        "cosecha_triz_50": False,
-    })
+    seed.append(
+        _fila_semilla(
+            "2026-10-20T12:00:00+00:00", "INJ/USDT:USDT", "short",
+            3.90, -0.50, 0.46, 0.25, 0.0412, 20.0, 19.95, 0.82,
+            "MAKER_UNWIND", 35.0, 0.0065, 16.40,
+        )
+    )
+    for i in range(3):
+        seed.append(
+            _fila_semilla(
+                f"2026-10-20T1{3+i}:00:00+00:00", "INJ/USDT:USDT", "short",
+                3.20, -0.36, 0.49, -0.52, -0.0860, 20.0, 20.10, 0.82,
+                "SL_INTERNO_CHRONOS", 22.0, 0.0120, 16.40,
+            )
+        )
+    for i in range(4):
+        seed.append(
+            _fila_semilla(
+                f"2026-10-20T1{6+i}:00:00+00:00", "INJ/USDT:USDT", "long",
+                -3.30, 0.14, 0.536, -0.55, -0.0908, 20.0, 19.89, 0.82,
+                "SL_INTERNO_CHRONOS", 18.0, 0.0120, 16.40,
+            )
+        )
+
+    seed.append(
+        _fila_semilla(
+            "2026-10-23T05:27:08+00:00", "ZEREBRO/USDT:USDT", "long",
+            -4.63, 0.50, 0.39, 0.17, 0.0283, 0.0301, 0.03016, 548.0,
+            "TRINQUETE_BE_MAKER", 49.0, 0.0095, 16.50, 0.0, True,
+        )
+    )
+    seed.append(
+        _fila_semilla(
+            "2026-10-23T05:35:09+00:00", "ZEREBRO/USDT:USDT", "long",
+            -3.83, 0.25, 0.43, 0.55, 0.0913, 0.0299, 0.03008, 551.0,
+            "MAKER_UNWIND", 39.0, 0.0066, 16.50,
+        )
+    )
+
     for i in range(12):
-        seed.append({
-            "timestamp": f"2026-10-22T{(i % 20):02d}:15:00+00:00",
-            "symbol": "ZEREBRO/USDT:USDT",
-            "side": "long",
-            "z_score_entry": round(-3.55 - (i % 4) * 0.35, 2),
-            "ofi_entry": round(0.24 + (i % 4) * 0.06, 2),
-            "hurst_entry": round(0.41 + (i % 5) * 0.01, 3),
-            "pnl_percentage": 0.26,
-            "pnl_usdt": 0.04216,
-            "entry_price": 0.0305,
-            "exit_price": 0.03060,
-            "qty": 540.0,
-            "motivo": "TRINQUETE_BE_MAKER" if (i % 3 == 0) else "MAKER_UNWIND",
-            "hold_seg": float(25 + (i % 25)),
-            "fees_usdt": 0.0080,
-            "map_usdt": 16.50,
-            "lvr_usdt": 0.0,
-            "cosecha_triz_50": bool(i % 3 == 0),
-        })
-    losses_zl = [
+        seed.append(
+            _fila_semilla(
+                f"2026-10-22T{(i % 20):02d}:15:00+00:00", "ZEREBRO/USDT:USDT", "long",
+                round(-3.55 - (i % 4) * 0.35, 2), round(0.24 + (i % 4) * 0.06, 2),
+                round(0.41 + (i % 5) * 0.01, 3), 0.26, 0.04216, 0.0305, 0.03060, 540.0,
+                "TRINQUETE_BE_MAKER" if (i % 3 == 0) else "MAKER_UNWIND",
+                float(25 + (i % 25)), 0.0080, 16.50, 0.0, bool(i % 3 == 0),
+            )
+        )
+
+    for ts_l, z_l, ofi_l, h_l, pnl_l, hold_l, mot_l, cos_l in (
         ("2026-10-22T04:10:00+00:00", -4.10, 0.19, 0.52, -0.1683, 2.0, "SL_INTERNO_CHRONOS", False),
         ("2026-10-22T15:20:00+00:00", -4.86, 0.14, 0.51, -0.0984, 9.0, "SL_INTERNO_CHRONOS", False),
         ("2026-10-23T07:09:01+00:00", -3.41, 0.37, 0.50, -0.0659, 14.0, "SL_INTERNO_CHRONOS", False),
         ("2026-10-23T10:57:08+00:00", -5.55, 0.48, 0.50, -0.0918, 9.0, "SL_INTERNO_CHRONOS", False),
         ("2026-10-23T16:59:51+00:00", -4.12, 0.31, 0.44, -0.0017, 21.0, "TRINQUETE_BE_MAKER", True),
         ("2026-10-23T19:13:19+00:00", -6.67, 0.16, 0.49, -0.1077, 3.0, "SL_INTERNO_CHRONOS", False),
-    ]
-    for ts_l, z_l, ofi_l, h_l, pnl_l, hold_l, mot_l, cos_l in losses_zl:
-        seed.append({
-            "timestamp": ts_l,
-            "symbol": "ZEREBRO/USDT:USDT",
-            "side": "long",
-            "z_score_entry": z_l,
-            "ofi_entry": ofi_l,
-            "hurst_entry": h_l,
-            "pnl_percentage": round((pnl_l / 16.50) * 100.0, 2),
-            "pnl_usdt": pnl_l,
-            "entry_price": 0.0298,
-            "exit_price": 0.02965,
-            "qty": 553.0,
-            "motivo": mot_l,
-            "hold_seg": hold_l,
-            "fees_usdt": 0.0110,
-            "map_usdt": 16.50,
-            "lvr_usdt": 0.0,
-            "cosecha_triz_50": cos_l,
-        })
+    ):
+        seed.append(
+            _fila_semilla(
+                ts_l, "ZEREBRO/USDT:USDT", "long", z_l, ofi_l, h_l,
+                round((pnl_l / 16.50) * 100.0, 2), pnl_l, 0.0298, 0.02965, 553.0,
+                mot_l, hold_l, 0.0110, 16.50, 0.0, cos_l,
+            )
+        )
+
     for i in range(16):
-        seed.append({
-            "timestamp": f"2026-10-22T{(5 + (i % 18)):02d}:45:00+00:00",
-            "symbol": "ZEREBRO/USDT:USDT",
-            "side": "long",
-            "z_score_entry": -3.15,
-            "ofi_entry": 0.14 if i < 10 else 0.21,
-            "hurst_entry": 0.53 if i < 12 else 0.46,
-            "pnl_percentage": -0.21,
-            "pnl_usdt": -0.03471,
-            "entry_price": 0.0302,
-            "exit_price": 0.03012,
-            "qty": 546.0,
-            "motivo": "MAKER_SCRATCH_18S" if i < 5 else ("MAKER_UNWIND" if i < 11 else "SL_INTERNO_CHRONOS"),
-            "hold_seg": 18.5 if i < 5 else (62.0 if i < 11 else 27.0),
-            "fees_usdt": 0.0080,
-            "map_usdt": 16.50,
-            "lvr_usdt": 0.0,
-            "cosecha_triz_50": False,
-        })
+        seed.append(
+            _fila_semilla(
+                f"2026-10-22T{(5 + (i % 18)):02d}:45:00+00:00", "ZEREBRO/USDT:USDT", "long",
+                -3.15, 0.14 if i < 10 else 0.21, 0.53 if i < 12 else 0.46,
+                -0.21, -0.03471, 0.0302, 0.03012, 546.0,
+                "MAKER_SCRATCH_18S" if i < 5 else ("MAKER_UNWIND" if i < 11 else "SL_INTERNO_CHRONOS"),
+                18.5 if i < 5 else (62.0 if i < 11 else 27.0), 0.0080, 16.50,
+            )
+        )
 
     return seed
 
@@ -1292,8 +1138,8 @@ class LaboratorioGemeloDigitalHFT:
             self.ruta_salida_lab.write_text(
                 json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            log_sniper(f"[WARN] [LAB] Could not save {self.ruta_salida_lab.name}: {exc}")
 
         self._imprimir_reporte_lab_consola(summary)
         return summary

@@ -5,7 +5,8 @@
 FILE #04: core_estado_ram.py
 SYSTEM: POUFS-BEELZEBUB-EN (SPIRITUAL MESSAGE) V5.0 -- CHRONOS-TRIZ STRATEGY
 ==============================================================================
-O(1) Shared-Memory Core, @dataclass Contracts, Dual Logger (CL/UTC), and
+O(1) Shared-Memory Core, @dataclass Contracts, Dual Logger (CL/UTC) with
+Inode-Verified Persistent Line-Buffered I/O Descriptors (25.0 Hz Ready), and
 Forensic AI Cognitive Vault Engine (baul_ia_forense.jsonl) with Deferred
 +15.0s Counterfactual Oracle for auditing SCAR-LOCK-01..18.
 Single-Layer Native Architecture free of dynamic wrappers.
@@ -14,13 +15,15 @@ Single-Layer Native Architecture free of dynamic wrappers.
 from __future__ import annotations
 
 import asyncio
+import atexit
 import json
 import os
+import pathlib
 import sys
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, TextIO, Tuple
 
 import config_parametros as cfg
 
@@ -34,7 +37,7 @@ _ARCHIVO_BAUL_IA: str = "baul_ia_forense.jsonl"
 # ==============================================================================
 @dataclass(slots=True)
 class MetricaTick:
-    """Instantaneous O(1) microstructural snapshot of an asset in the 6.6 Hz Radar."""
+    """Instantaneous O(1) microstructural snapshot of an asset in the 25.0 Hz Radar."""
     symbol: str
     bid: float = 0.0
     ask: float = 0.0
@@ -228,12 +231,65 @@ class RegistroOperacionCerrada:
 
 
 # ==============================================================================
-# 2. DETERMINISTIC DUAL LOGGER AND FORENSIC AI VAULT WRITER
+# 2. DETERMINISTIC DUAL LOGGER AND INODE-VERIFIED PERSISTENT I/O POOL
 # ==============================================================================
 _ARGV0_RAM: str = str(sys.argv[0]) if sys.argv else ""
 _ES_DAEMON_O_SUITE: bool = any(
     _k in _ARGV0_RAM for _k in ("main.py", "test_tribrain", "evaluador_cuantico")
 )
+_POOL_DESCRIPTORES_LOG: Dict[str, Tuple[TextIO, int]] = {}
+
+
+def _cerrar_descriptores_log() -> None:
+    """Flushes and closes all cached log file descriptors cleanly upon process exit."""
+    for key in list(_POOL_DESCRIPTORES_LOG.keys()):
+        entry = _POOL_DESCRIPTORES_LOG.pop(key, None)
+        if entry is not None:
+            fh, _ = entry
+            try:
+                fh.flush()
+                fh.close()
+            except Exception:
+                pass
+
+
+atexit.register(_cerrar_descriptores_log)
+
+
+def _escribir_linea_persistente(ruta: pathlib.Path, linea_con_salto: str) -> None:
+    """
+    Writes a log or JSONL line using a persistent line-buffered descriptor on
+    Linux production (eliminating open/close syscall churn at 25.0 Hz) while
+    using immediate context-managed close in test mode or Windows.
+    """
+    if os.environ.get("TRIBRAIN_TEST_MODE") == "1" or sys.platform == "win32":
+        with open(ruta, "a", encoding="utf-8") as f_tmp:
+            f_tmp.write(linea_con_salto)
+        return
+
+    key = str(ruta)
+    entry = _POOL_DESCRIPTORES_LOG.get(key)
+    if entry is not None:
+        fh, cached_ino = entry
+        try:
+            st = os.stat(key)
+            if st.st_ino == cached_ino and not fh.closed:
+                fh.write(linea_con_salto)
+                return
+        except FileNotFoundError:
+            pass
+        except Exception:
+            pass
+        try:
+            fh.close()
+        except Exception:
+            pass
+        _POOL_DESCRIPTORES_LOG.pop(key, None)
+
+    fh_new = open(ruta, "a", encoding="utf-8", buffering=1)
+    ino_new = os.fstat(fh_new.fileno()).st_ino
+    _POOL_DESCRIPTORES_LOG[key] = (fh_new, ino_new)
+    fh_new.write(linea_con_salto)
 
 
 def formatear_sello_tiempo(ts: Optional[float] = None) -> str:
@@ -262,8 +318,7 @@ def registrar_evento_baul_ia(evento: Dict[str, Any], ahora: Optional[float] = No
 
     try:
         vault_path = cfg.ROOT_DIR / _ARCHIVO_BAUL_IA
-        with open(vault_path, "a", encoding="utf-8") as f_vault:
-            f_vault.write(json.dumps(record, ensure_ascii=False) + "\n")
+        _escribir_linea_persistente(vault_path, json.dumps(record, ensure_ascii=False) + "\n")
         return True
     except Exception:
         return False
@@ -278,23 +333,18 @@ def log_sniper(mensaje: str, escribir_disco: bool = True) -> Optional[str]:
 
     stamp = formatear_sello_tiempo()
     line = f"{stamp} {mensaje}"
-    sys.stdout.write(line + "\n")
+    raw_line = line + "\n"
+    sys.stdout.write(raw_line)
     sys.stdout.flush()
 
     if escribir_disco:
         is_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
         try:
             if is_test:
-                test_path = cfg.ROOT_DIR / ".test_bot_hft.log"
-                with open(test_path, "a", encoding="utf-8") as f_test:
-                    f_test.write(line + "\n")
+                _escribir_linea_persistente(cfg.ROOT_DIR / ".test_bot_hft.log", raw_line)
             else:
-                session_path = cfg.ROOT_DIR / cfg.ARCHIVO_LOG_SESION
-                hist_path = cfg.ROOT_DIR / cfg.ARCHIVO_LOG_HISTORICO
-                with open(session_path, "a", encoding="utf-8") as f_ses:
-                    f_ses.write(line + "\n")
-                with open(hist_path, "a", encoding="utf-8") as f_hist:
-                    f_hist.write(line + "\n")
+                _escribir_linea_persistente(cfg.ROOT_DIR / cfg.ARCHIVO_LOG_SESION, raw_line)
+                _escribir_linea_persistente(cfg.ROOT_DIR / cfg.ARCHIVO_LOG_HISTORICO, raw_line)
         except Exception:
             pass
 
