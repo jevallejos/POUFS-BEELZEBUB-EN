@@ -745,7 +745,7 @@ class GestorPosiciones:
             stagnant_flow = (tk.ofi_5s <= 0.05) if pos.side == "long" else (tk.ofi_5s >= -0.05)
             if (
                 not pos.cosecha_50_ejecutada
-                and 36.0 <= age_sec < 72.0 and (t_now - pos.orden_salida_ts) >= 6.0
+                and float(getattr(ESTADO_RAM, "controlador_autonomo", {}).get("w4_unwind_seg", 36.0)) <= age_sec < 72.0 and (t_now - pos.orden_salida_ts) >= 6.0
                 and pos.max_pnl_pct_alcanzado < 0.0008
                 and -0.0018 <= gross_pnl_pct < 0.0008
                 and stagnant_flow
@@ -1039,8 +1039,8 @@ class GestorPosiciones:
             not is_test
             and age_sec >= 22.0
             and (t_now - pos.orden_salida_ts) >= 6.0
-            and pos.max_pnl_pct_alcanzado >= 0.0016
-            and gross_pnl_pct >= 0.0013
+            and pos.max_pnl_pct_alcanzado >= 0.0015
+            and gross_pnl_pct >= float(getattr(ESTADO_RAM, "controlador_autonomo", {}).get("mfe_stall_harvest_pct", 0.0013))
             and ((pos.side == "long" and tk.ofi_l1_l5 <= 0.08) or (pos.side == "short" and tk.ofi_l1_l5 >= -0.08))
         )
         if (

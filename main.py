@@ -166,9 +166,6 @@ def _sanear_json_oos_disco_phantom() -> None:
 
             expected_updates = {
                 "KELLY_FRACCION_BASE": kelly_san,
-                "COSECHA_TRIZ_ACTIVACION_PCT": 0.0024,
-                "OFI_MIN_ENTRADA": 0.12,
-                "MAKER_SCRATCH_TIEMPO_SEG": 18.0,
                 "Z_SCORE_UMBRAL_HIGH_BETA": z_hb_san,
                 "Z_UMBRAL_HIGH_BETA": z_hb_san,
                 "Z_SCORE_UMBRAL_TIER1": z_t1_san,
@@ -374,14 +371,31 @@ class MotorTriBrainSniper:
 
     async def _bucle_mantenimiento_y_hot_reload(self) -> None:
         last_panel = time.time()
+        last_trades_cnt = CAJA_NEGRA.trades_totales
+        last_vault_cnt = getattr(ESTADO_RAM, "contador_auditorias_baul", 0)
+        last_auto_cal_ts = time.time()
         while self._running:
             await asyncio.sleep(30.0)
             try:
+                now_m = time.time()
+                cur_trades = CAJA_NEGRA.trades_totales
+                cur_vault = getattr(ESTADO_RAM, "contador_auditorias_baul", 0)
+                if (
+                    cur_trades != last_trades_cnt
+                    or (cur_vault - last_vault_cnt) >= 4
+                    or (now_m - last_auto_cal_ts) >= 900.0
+                ):
+                    last_trades_cnt = cur_trades
+                    last_vault_cnt = cur_vault
+                    last_auto_cal_ts = now_m
+                    from evaluador_cuantico_oos import EvaluadorCuanticoOOS
+                    ev_auto = EvaluadorCuanticoOOS(repo_dir=cfg.ROOT_DIR)
+                    await asyncio.to_thread(ev_auto.calibrar_parametros_walk_forward, None, 72.0, True)
                 res_oos = cfg.recargar_calibracion_oos_si_cambio()
                 if res_oos.get("recargado"):
                     log_sniper(
-                        f"[HOT-RELOAD OOS] Parameters hot-reloaded from {cfg.ARCHIVO_CALIBRACION_OOS}: "
-                        f"{res_oos.get('aplicados')}"
+                        f"[HOT-RELOAD OOS] Autonomous parameters synchronized from {cfg.ARCHIVO_CALIBRACION_OOS}: "
+                        f"{res_oos.get('aplicados')} | Ctrl={getattr(ESTADO_RAM, 'controlador_autonomo', {})}"
                     )
                 now = time.time()
                 if now - last_panel >= 300.0:

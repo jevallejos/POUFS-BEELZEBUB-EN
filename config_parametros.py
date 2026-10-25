@@ -295,7 +295,17 @@ def _aplicar_parametros_produccion_phantom(desde_hot_reload: bool = False) -> No
     g["CAIDA_MIN_TIER1_PCT"] = -0.0020
     g["EMA900_DIST_MIN_HIGH_BETA_PCT"] = -0.0028
     g["EMA900_DIST_MIN_TIER1_PCT"] = -0.0020
-    g["OFI_MIN_ENTRADA"] = 0.12
+    if not desde_hot_reload:
+        g["OFI_MIN_ENTRADA"] = 0.12
+        g["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
+        g["MAKER_SCRATCH_TIEMPO_SEG"] = 18.0
+        g["SL_INTERNO_PCT"] = 0.0048
+        g["TIEMPO_MAX_HOLD_SEG"] = 90.0
+    else:
+        g["OFI_MIN_ENTRADA"] = round(max(0.10, min(0.25, float(g.get("OFI_MIN_ENTRADA", 0.12)))), 4)
+        g["COSECHA_TRIZ_ACTIVACION_PCT"] = round(max(0.0020, min(0.0044, float(g.get("COSECHA_TRIZ_ACTIVACION_PCT", 0.0024)))), 5)
+        g["MAKER_SCRATCH_TIEMPO_SEG"] = round(max(14.0, min(24.0, float(g.get("MAKER_SCRATCH_TIEMPO_SEG", 18.0)))), 2)
+        g["SL_INTERNO_PCT"] = round(max(0.0030, min(0.0052, abs(float(g.get("SL_INTERNO_PCT", 0.0048))))), 5)
     g["OFI_TICKS_CONFIRMACION"] = 2
     g["HURST_MAX_ENTRADA"] = 0.485
     g["LYAPUNOV_ACEL_MIN_PCT"] = -0.00022
@@ -306,16 +316,12 @@ def _aplicar_parametros_produccion_phantom(desde_hot_reload: bool = False) -> No
     g["SHORT_OFI_AGOTAMIENTO_MAX"] = -0.35
     g["SHORT_LYAPUNOV_ACEL_MAX_PCT"] = -0.00022
     g["TTL_ORDEN_ENTRADA_SEG"] = 3.80
-    g["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
-    g["MAKER_SCRATCH_TIEMPO_SEG"] = 18.0
-    g["SL_INTERNO_PCT"] = 0.0048
-    g["TIEMPO_MAX_HOLD_SEG"] = 90.0
     lim = g.get("_LIMITES_SHADOW_GATE")
     if isinstance(lim, dict):
-        lim["KELLY_FRACCION_BASE"] = (0.52, 0.58)
-        lim["Z_SCORE_UMBRAL_HIGH_BETA"] = (-3.15, -2.80)
+        lim["KELLY_FRACCION_BASE"] = (0.48, 0.60)
+        lim["Z_SCORE_UMBRAL_HIGH_BETA"] = (-3.15, -2.75)
         lim["Z_SCORE_UMBRAL_TIER1"] = (-2.85, -2.45)
-        lim["COSECHA_TRIZ_ACTIVACION_PCT"] = (0.0024, 0.0024)
+        lim["COSECHA_TRIZ_ACTIVACION_PCT"] = (0.0020, 0.0044)
 
 
 def recargar_calibracion_oos_si_cambio(ruta_json: pathlib.Path | None = None) -> Dict[str, Any]:
@@ -348,10 +354,23 @@ def recargar_calibracion_oos_si_cambio(ruta_json: pathlib.Path | None = None) ->
         if os.environ.get("TRIBRAIN_TEST_MODE", "0") != "1":
             _aplicar_parametros_produccion_phantom(desde_hot_reload=True)
             applied["KELLY_FRACCION_BASE"] = g["KELLY_FRACCION_BASE"]
-            applied["COSECHA_TRIZ_ACTIVACION_PCT"] = 0.0024
-            applied["OFI_MIN_ENTRADA"] = 0.12
+            applied["COSECHA_TRIZ_ACTIVACION_PCT"] = g["COSECHA_TRIZ_ACTIVACION_PCT"]
+            applied["OFI_MIN_ENTRADA"] = g["OFI_MIN_ENTRADA"]
             applied["Z_SCORE_UMBRAL_HIGH_BETA"] = g["Z_SCORE_UMBRAL_HIGH_BETA"]
             applied["Z_SCORE_UMBRAL_TIER1"] = g["Z_SCORE_UMBRAL_TIER1"]
+            auto_blk = data.get("controlador_autonomo") if isinstance(data, dict) else None
+            if isinstance(auto_blk, dict):
+                try:
+                    import sys as _sys
+                    ram_mod = _sys.modules.get("core_estado_ram")
+                    if ram_mod is not None and hasattr(ram_mod, "ESTADO_RAM"):
+                        ctrl = getattr(ram_mod.ESTADO_RAM, "controlador_autonomo", None)
+                        if isinstance(ctrl, dict):
+                            for k_a, v_a in auto_blk.items():
+                                if isinstance(v_a, (int, float)):
+                                    ctrl[str(k_a)] = float(v_a)
+                except Exception:
+                    pass
 
         _ULTIMO_MTIME_OOS = current_mtime
         return {"recargado": True, "aplicados": applied, "mtime": current_mtime}

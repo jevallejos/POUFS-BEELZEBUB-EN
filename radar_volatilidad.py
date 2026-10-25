@@ -973,7 +973,9 @@ class RadarVolatilidad:
         ofi_btc = float(tk_btc.ofi_l1_l5 if (tk_btc and tk_btc.last > 0.0) else 0.0)
         z_btc = float(tk_btc.z_score if (tk_btc and tk_btc.last > 0.0) else 0.0)
 
-        ofi_phantom = (0.68 * ofi_real + 0.32 * ofi_btc) if abs(ofi_btc) > 1e-6 else ofi_real
+        ctrl_ram = getattr(ESTADO_RAM, "controlador_autonomo", {})
+        w_btc = float(ctrl_ram.get("w2_btc_beta", 0.32))
+        ofi_phantom = ((1.0 - w_btc) * ofi_real + w_btc * ofi_btc) if abs(ofi_btc) > 1e-6 else ofi_real
         senal["ofi_phantom"] = round(ofi_phantom, 4)
 
         veto_btc_long = (ofi_btc < -0.35 and z_btc < -0.75) or (z_btc < -1.80)
@@ -1075,7 +1077,8 @@ class RadarVolatilidad:
             ema_long_threshold = resolved["ema_long_threshold"]
             dp_long_threshold = resolved["dp_long_threshold"]
             z_long_threshold = resolved["z_long_threshold"]
-            ofi_min_long = resolved["ofi_min_long"]
+            bias_l = float(getattr(ESTADO_RAM, "controlador_autonomo", {}).get("sesgo_escudo_long", 0.0))
+            ofi_min_long = max(0.12, round(float(resolved["ofi_min_long"]) - bias_l, 4))
             h_elastic_long = resolved["h_elastic_long"]
             arm_ret = resolved["arm_retention"]
 
@@ -1177,7 +1180,8 @@ class RadarVolatilidad:
             above_squeeze_px = ctx_ovl.above_squeeze_px
 
             ema_short_threshold = resolved["ema_short_threshold"]
-            ofi_max_short_req = resolved["ofi_max_short_req"]
+            bias_s = float(getattr(ESTADO_RAM, "controlador_autonomo", {}).get("sesgo_escudo_short", 0.0))
+            ofi_max_short_req = min(-0.28, round(float(resolved["ofi_max_short_req"]) + bias_s, 4))
             z_short_min_eff = resolved["z_short_min_eff"]
             top_rollover_confirmed = (resolved["top_rollover_flag"] > 0.5) and (ofi_real <= ofi_max_short_req)
 
@@ -1206,10 +1210,11 @@ class RadarVolatilidad:
                 return False
 
             # Elastic Hurst Band in SHORT coupled to P_day and pump overextension (anchored to SCAR_BASE)
+            h_mod_auto = float(getattr(ESTADO_RAM, "controlador_autonomo", {}).get("hurst_cap_short_mod", SCAR_BASE.hurst_base_short_hb))
             h_base_short = (
                 SCAR_BASE.hurst_hard_cap_short_t1
                 if is_tier1
-                else (SCAR_BASE.hurst_hard_cap_short_hb if effective_overext >= 0.0055 else SCAR_BASE.hurst_base_short_hb)
+                else (SCAR_BASE.hurst_hard_cap_short_hb if effective_overext >= 0.0055 else h_mod_auto)
             )
             h_max_short_prod = max(
                 SCAR_BASE.hurst_min_short,

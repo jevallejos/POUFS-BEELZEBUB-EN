@@ -381,7 +381,67 @@ class EvaluadorCuanticoOOS:
             "TIEMPO_MAX_HOLD_SEG": 90.0,
         }
 
+        auto_ctrl: Dict[str, float] = {
+            "w1_ofi_long": 0.18,
+            "w2_btc_beta": 0.32,
+            "w3_tp_maker_pct": prior_harvest_pct,
+            "w4_unwind_seg": 36.0,
+            "w4_sl_decay_pct": 0.0032,
+            "w5_kelly_short": 0.58,
+            "w5_kelly_long": 0.48,
+            "hurst_cap_short_mod": 0.535,
+            "mfe_stall_harvest_pct": 0.0013,
+        }
+        if not is_test:
+            try:
+                lab_auto = LaboratorioGemeloDigitalHFT(repo_dir=self.repo_dir)
+                ops_l, vault_l, _ = lab_auto.ingestar_ecosistema_logs()
+                vecs_l = lab_auto._precompilar_vectores_operaciones(ops_l) + lab_auto._precompilar_vectores_baul_ia(vault_l)
+                best_pnl = -999.0
+                best_cfg = None
+                for w1_c in (0.16, 0.18, 0.20, 0.22):
+                    for w2_c in (0.25, 0.32, 0.35):
+                        for w4_t_c in (34.0, 36.0, 42.0):
+                            for k_s_c, k_l_c in ((0.58, 0.48), (0.60, 0.45)):
+                                r_u, w_c, l_c, _, dd_u = lab_auto._evaluar_combinacion_en_vectores(
+                                    vecs_l, w1_c, w2_c, 0.0038, w4_t_c, -0.0030, k_s_c, k_l_c
+                                )
+                                if (w_c + l_c) >= 20:
+                                    score_c = sum(r_u) - (0.35 * dd_u)
+                                    if score_c > best_pnl:
+                                        best_pnl = score_c
+                                        best_cfg = (w1_c, w2_c, w4_t_c, k_s_c, k_l_c, r_u)
+                if best_cfg is not None:
+                    w1_b, w2_b, w4_b, ks_b, kl_b, ret_b = best_cfg
+                    _, dsr_b = _calcular_deflated_sharpe_ratio(ret_b, 72)
+                    g_auto = min(1.0, max(0.35, dsr_b * lambda_bayes))
+                    auto_ctrl["w1_ofi_long"] = round((1.0 - g_auto) * 0.18 + g_auto * w1_b, 4)
+                    auto_ctrl["w2_btc_beta"] = round((1.0 - g_auto) * 0.30 + g_auto * w2_b, 4)
+                    auto_ctrl["w4_unwind_seg"] = round((1.0 - g_auto) * 40.0 + g_auto * w4_b, 1)
+                    auto_ctrl["w5_kelly_short"] = round((1.0 - g_auto) * 0.56 + g_auto * ks_b, 4)
+                    auto_ctrl["w5_kelly_long"] = round((1.0 - g_auto) * 0.48 + g_auto * kl_b, 4)
+                # Analyze Vault MFE/MAE & Short Hurst anatomy to self-correct H cap and MFE stall
+                short_losses_high_h = [
+                    op for op in ops_l
+                    if str(op.get("side") or "").lower() == "short"
+                    and float(op.get("pnl_usdt") or 0.0) < 0.0
+                    and float(op.get("hurst_entry") or 0.45) >= 0.530
+                ]
+                if len(short_losses_high_h) >= 2:
+                    auto_ctrl["hurst_cap_short_mod"] = 0.525
+                trades_vault = [e for e in vault_l if e.get("tipo_evento") == "TRADE_COMPLETO"]
+                mfes = [
+                    float((e.get("anatomia_intratrade") or {}).get("mfe_max_pnl_pct") or 0.0) / 100.0
+                    for e in trades_vault[-15:]
+                ]
+                mfes_pos = [x for x in mfes if 0.0012 <= x < 0.0024]
+                if mfes_pos:
+                    avg_mfe = sum(mfes_pos) / len(mfes_pos)
+                    auto_ctrl["mfe_stall_harvest_pct"] = round(max(0.0011, min(0.0016, avg_mfe * 0.78)), 5)
+            except Exception:
+                pass
         payload: Dict[str, Any] = {
+            "controlador_autonomo": auto_ctrl,
             "timestamp_utc": datetime.fromtimestamp(t_now, tz=timezone.utc).isoformat(timespec="seconds"),
             "sello_dual": formatear_sello_tiempo(t_now),
             "epoch_ts": round(t_now, 3),

@@ -402,6 +402,20 @@ class EstadoGlobalRAM:
         self.auditorias_escudo_pendientes: Dict[Tuple[str, str], Dict[str, Any]] = {}
         self.ultimo_ts_auditoria_escudo: Dict[Tuple[str, str], float] = {}
         self.vectores_entrada_baul: Dict[str, Dict[str, Any]] = {}
+        self.contador_auditorias_baul: int = 0
+        self.controlador_autonomo: Dict[str, float] = {
+            "w1_ofi_long": 0.18,
+            "w2_btc_beta": 0.32,
+            "w3_tp_maker_pct": 0.0024,
+            "w4_unwind_seg": 36.0,
+            "w4_sl_decay_pct": 0.0032,
+            "w5_kelly_short": 0.58,
+            "w5_kelly_long": 0.48,
+            "hurst_cap_short_mod": 0.535,
+            "mfe_stall_harvest_pct": 0.0013,
+            "sesgo_escudo_long": 0.0,
+            "sesgo_escudo_short": 0.0,
+        }
 
     def consultar_permiso_o1(
         self,
@@ -581,6 +595,13 @@ class EstadoGlobalRAM:
                 },
             }
             registrar_evento_baul_ia(vault_event, ahora=t_now)
+            self.contador_auditorias_baul += 1
+            bias_key = "sesgo_escudo_long" if side == "long" else "sesgo_escudo_short"
+            cur_bias = float(self.controlador_autonomo.get(bias_key, 0.0))
+            if verdict == "CAPITAL_SAVED_TRUE_SHIELD":
+                self.controlador_autonomo[bias_key] = round(max(-0.040, cur_bias - 0.012), 4)
+            elif verdict == "MISSED_OPPORTUNITY_FALSE_REJECTION":
+                self.controlador_autonomo[bias_key] = round(min(0.040, cur_bias + 0.015), 4)
             processed += 1
 
         return processed

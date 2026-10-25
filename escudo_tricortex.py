@@ -181,7 +181,10 @@ class OrquestadorTriCortex:
             base_k = float(cfg.KELLY_FRACCION_BASE)
         else:
             # W5 Champion #1 Asymmetric Kelly: 58% base on high-expectancy SHORT vs 48% on LONG
-            base_k = 0.58 if side_norm == "short" else min(float(cfg.KELLY_FRACCION_BASE), 0.48)
+            ctrl_k = getattr(ESTADO_RAM, "controlador_autonomo", {})
+            k_s_dyn = float(ctrl_k.get("w5_kelly_short", 0.58))
+            k_l_dyn = float(ctrl_k.get("w5_kelly_long", 0.48))
+            base_k = k_s_dyn if side_norm == "short" else min(float(cfg.KELLY_FRACCION_BASE), k_l_dyn)
         z_abs_raw = abs(float(z_score))
 
         z_abs = min(6.5, z_abs_raw)
