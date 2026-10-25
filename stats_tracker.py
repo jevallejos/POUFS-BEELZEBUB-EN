@@ -195,8 +195,8 @@ class GestorCajaNegra:
         if real_u <= 0.0 or abs(real_u - self.capital_base_usdt) < 1e-6:
             return False
 
-        book_balance = self.capital_base_usdt + self.pnl_total_usdt + self.ajuste_funding_paridad_usdt
-        drift = round(real_u - book_balance, 6)
+        book_balance = round(self.capital_base_usdt + self.pnl_total_usdt + self.ajuste_funding_paridad_usdt, 4)
+        drift = round(round(real_u, 4) - book_balance, 6)
         if abs(drift) < 0.00004 or abs(drift) > 2.50:
             return False
 

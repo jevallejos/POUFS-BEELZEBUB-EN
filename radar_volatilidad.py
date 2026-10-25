@@ -1134,11 +1134,15 @@ class RadarVolatilidad:
                     )
                 return False
 
-            still_discounted_below_ema = ema_rel <= (ema_long_threshold * arm_ret)
+            eff_arm_factor = arm_ret if in_long_arm else 1.0
+            ema_req_eff = min(-0.0018, ema_long_threshold * eff_arm_factor)
+            dp_req_eff = min(-0.0018, dp_long_threshold * eff_arm_factor)
+            z_req_eff = min(-2.25 if is_tier1 else -2.35, z_long_threshold * eff_arm_factor)
+            still_discounted_below_ema = ema_rel <= (ema_long_threshold * 0.72)
             if (
-                ema_long_eff > ema_long_threshold
-                or dp_long_eff > dp_long_threshold
-                or z_long_eff > z_long_threshold
+                ema_long_eff > ema_req_eff
+                or dp_long_eff > dp_req_eff
+                or z_long_eff > z_req_eff
                 or not still_discounted_below_ema
             ):
                 ESTADO_RAM.encolar_auditoria_escudo_15s(
@@ -1148,14 +1152,14 @@ class RadarVolatilidad:
                     p_ref_bloq,
                     tag_percentil,
                     p_day,
-                    f"EMA={ema_long_eff*100:+.2f}%/{ema_long_threshold*100:+.2f}% DP={dp_long_eff*100:+.2f}%/{dp_long_threshold*100:+.2f}% Z={z_long_eff:+.2f}/{z_long_threshold:+.2f}",
+                    f"EMA={ema_long_eff*100:+.2f}%/{ema_req_eff*100:+.2f}% DP={dp_long_eff*100:+.2f}%/{dp_req_eff*100:+.2f}% Z={z_long_eff:+.2f}/{z_req_eff:+.2f}",
                     ahora_t,
                 )
                 if ahora_t - _SILENCIO_LOG_PHANTOM.get((sym, "P03_L"), 0.0) >= 12.0:
                     _SILENCIO_LOG_PHANTOM[(sym, "P03_L")] = ahora_t
                     log_sniper(
                         f"[PHANTOM P-03 EMA900-AND] {sym} [LONG] blocked BEFORE order "
-                        f"(EMA900={ema_long_eff*100:+.2f}% req {ema_long_threshold*100:+.2f}%, DP={dp_long_eff*100:+.2f}% req {dp_long_threshold*100:+.2f}% | Z={z_long_eff:+.2f})."
+                        f"(EMA900={ema_long_eff*100:+.2f}% req {ema_req_eff*100:+.2f}%, DP={dp_long_eff*100:+.2f}% req {dp_req_eff*100:+.2f}% | Z={z_long_eff:+.2f} req {z_req_eff:+.2f})."
                     )
                 return False
 
