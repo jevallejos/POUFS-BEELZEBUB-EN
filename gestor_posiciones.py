@@ -1289,7 +1289,7 @@ def imprimir_status_cli_verbot() -> None:
     total = len(ops)
     w = sum(1 for x in ops if float(x.get("pnl_usdt", 0.0)) >= 0.0)
     l = total - w
-    s = sum(1 for x in ops if "SCRATCH" in str(x.get("motivo", "")).upper())
+    s = sum(1 for x in ops if float(x.get("pnl_usdt", 0.0)) < 0.0 and "SCRATCH" in str(x.get("motivo", "")).upper())
     triz = sum(
         1 for x in ops
         if x.get("cosecha_triz_50")
