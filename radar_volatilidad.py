@@ -1326,12 +1326,16 @@ class RadarVolatilidad:
                     vz_sym.ts_ultimo_anti_squeeze = ahora_t
 
                 cd_sqz = 12.0 + (24.0 * p_day)
-                top_reversal_confirmed = top_rollover_confirmed or (
-                    not in_bullish_expansion
-                    and not above_squeeze_px
-                    and p_now <= (max_window * 0.9990)
-                    and lyap_val <= cfg.SHORT_LYAPUNOV_ACEL_MAX_PCT
-                    and ofi_real <= ofi_max_short_req
+                top_reversal_confirmed = (
+                    top_rollover_confirmed
+                    or ((below_sqz_rollover or exhausted_top_rollover) and ofi_real <= ofi_max_short_req)
+                    or (
+                        not in_bullish_expansion
+                        and not above_squeeze_px
+                        and p_now <= (max_window * 0.9990)
+                        and lyap_val <= cfg.SHORT_LYAPUNOV_ACEL_MAX_PCT
+                        and ofi_real <= ofi_max_short_req
+                    )
                 )
 
                 if in_bullish_expansion or (

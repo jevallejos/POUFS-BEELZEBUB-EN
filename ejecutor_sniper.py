@@ -252,6 +252,7 @@ class EjecutorSniper:
             ord_status = str((order or {}).get("status") or "open").lower()
 
             poll_step = min(0.15, max(0.04, ttl_max / 5.0))
+            repeg_entrada_ejecutado = False
             while ord_status not in ("closed", "canceled", "cancelled", "rejected"):
                 elapsed = time.time() - t_queue_start
                 if elapsed >= ttl_max:
@@ -264,6 +265,47 @@ class EjecutorSniper:
                     if side == "short" and current_tk.ofi_l1_l5 > abs(cfg.OFI_ABORTAR_COLA_UMBRAL):
                         break
 
+                if (
+                    not is_test
+                    and not repeg_entrada_ejecutado
+                    and elapsed >= 1.20
+                    and filled_qty <= 0.0
+                    and current_tk is not None
+                    and current_tk.bid > 0.0
+                    and current_tk.ask > 0.0
+                ):
+                    px_new_in = calcular_precio_penny_jump(
+                        side, current_tk.bid, current_tk.ask, tick_size, current_tk.ofi_l1_l5
+                    )
+                    drift_in = (
+                        ((px_new_in - quote_price) / quote_price)
+                        if side == "long"
+                        else ((quote_price - px_new_in) / quote_price)
+                    )
+                    flow_still_strong = (
+                        (side == "long" and current_tk.ofi_l1_l5 >= 0.20 and current_tk.hawkes_intensidad >= 0.08)
+                        or (side == "short" and current_tk.ofi_l1_l5 <= -0.30 and current_tk.hawkes_intensidad <= -0.08)
+                    )
+                    if 0.0 < drift_in <= 0.0008 and flow_still_strong and current_tk.hurst <= 0.485:
+                        repeg_entrada_ejecutado = True
+                        try:
+                            await self.exchange.cancel_order(order_id, symbol)
+                            ord_rp = await self.exchange.create_order(
+                                symbol, "limit", side_order, qty, px_new_in, params_postonly
+                            )
+                            new_oid = str((ord_rp or {}).get("id") or "")
+                            if new_oid:
+                                order_id = new_oid
+                                quote_price = px_new_in
+                                fill_price = px_new_in
+                                ord_status = str((ord_rp or {}).get("status") or "open").lower()
+                                filled_qty = float((ord_rp or {}).get("filled") or 0.0)
+                                log_sniper(
+                                    f"[{side_label}] [PASSIVE ALIGN 1.2S] {symbol} aligned 1x to {px_new_in} "
+                                    f"(drift +{drift_in*100:.3f}%, OFI={current_tk.ofi_l1_l5:+.2f}, H={current_tk.hurst:.2f})"
+                                )
+                        except Exception:
+                            pass
                 await asyncio.sleep(poll_step)
                 try:
                     ord_state = await self.exchange.fetch_order(order_id, symbol, {"acknowledged": True})
