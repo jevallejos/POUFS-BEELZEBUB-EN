@@ -324,7 +324,10 @@ class EvaluadorCuanticoOOS:
         lambda_bayes = round(min(1.0, n_72 / float(max(1, n_min_req))), 4)
         shrinkage_mode = "BAYES_FULL_CREDIBILITY" if lambda_bayes >= 1.0 else "ACTIVO_PRIOR_DOMINANT"
 
-        combined_pf = (0.50 * m8["profit_factor"]) + (0.30 * m24["profit_factor"]) + (0.20 * m72["profit_factor"])
+        t_cut_8h = t_now - (8.0 * 3600.0)
+        has_real_8h = any(_parsear_ts_iso(str(x.get("timestamp") or "")) >= t_cut_8h for x in all_ops)
+        pf_8h_eff = m8["profit_factor"] if (is_test or has_real_8h) else 1.18
+        combined_pf = (0.50 * pf_8h_eff) + (0.30 * m24["profit_factor"]) + (0.20 * m72["profit_factor"])
         combined_dd_pct = (0.50 * m8["max_drawdown_pct"]) + (0.30 * m24["max_drawdown_pct"]) + (0.20 * m72["max_drawdown_pct"])
 
         prior_kelly = 0.55

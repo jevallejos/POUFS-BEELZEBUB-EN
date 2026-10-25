@@ -197,7 +197,7 @@ class GestorCajaNegra:
 
         book_balance = self.capital_base_usdt + self.pnl_total_usdt + self.ajuste_funding_paridad_usdt
         drift = round(real_u - book_balance, 6)
-        if abs(drift) < 0.0001 or abs(drift) > 2.50:
+        if abs(drift) < 0.00004 or abs(drift) > 2.50:
             return False
 
         op_obj = self.operaciones[-1]

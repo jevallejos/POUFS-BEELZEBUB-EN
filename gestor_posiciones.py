@@ -1011,11 +1011,17 @@ class GestorPosiciones:
                 if closed_s:
                     return "MAKER_SCRATCH_18S"
 
-        # Phase 2 Maker Shield at 32s: locks in Break-Even prior to passive exit quote
+        # Phase 2 Maker Shield (32s at +0.20% OR >=22s MFE-Stall harvest when MFE >= +0.16% and PnL >= +0.13%)
+        mfe_stall_ready = (
+            not is_test
+            and age_sec >= 22.0
+            and pos.max_pnl_pct_alcanzado >= 0.0016
+            and gross_pnl_pct >= 0.0013
+            and ((pos.side == "long" and tk.ofi_l1_l5 <= 0.08) or (pos.side == "short" and tk.ofi_l1_l5 >= -0.08))
+        )
         if (
             not pos.cosecha_50_ejecutada
-            and age_sec >= cfg.ESCUDO_MAKER_FASE2_SEG
-            and gross_pnl_pct >= cfg.PISO_MAKER_BRUTO_MIN_PCT
+            and ((age_sec >= cfg.ESCUDO_MAKER_FASE2_SEG and gross_pnl_pct >= cfg.PISO_MAKER_BRUTO_MIN_PCT) or mfe_stall_ready)
         ):
             if not is_test and not pos.trinquete_be_armado:
                 sl_int_be, sl_byb_be = calcular_piso_invariante_breakeven(
@@ -1026,7 +1032,9 @@ class GestorPosiciones:
                 await self._ajustar_sl_servidor_bybit(pos, sl_byb_be)
 
             phase2_price = calcular_precio_salida_maker_seguro(
-                pos.side, pos.entry_price, best_bid, best_ask, tick_size, permitir_scratch=False
+                pos.side, pos.entry_price, best_bid, best_ask, tick_size,
+                permitir_scratch=bool(mfe_stall_ready),
+                piso_be_estricto=bool(mfe_stall_ready),
             )
             log_sniper(
                 f"[SNIPER] [DIAMOND] {pos.symbol} Phase 2 Maker Shield PostOnly executed @ {phase2_price} "
