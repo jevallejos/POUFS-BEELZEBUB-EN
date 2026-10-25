@@ -10,8 +10,9 @@ High-Frequency Microstructural Radar (25.0 Hz / 40 ms Prod | 6.6 Hz Test) in O(1
     at the C-struct level (@dataclass(frozen=True, slots=True)) encoding the
     immutable SCAR-LOCK-00..14 survival floors.
   - Tier 2 (Dynamic Offensive Layer): Declarative ElasticTemporalOverlay objects
-    evaluated via continuous Gaussian time-window decay kernels G(dt; tau),
-    Intraday Percentile bands P_day(t, sigma_BV), and Fractal-Hawkes gates.
+    (OVL-01..OVL-06) evaluated via continuous Gaussian time-window decay kernels
+    G(dt; tau), Intraday Percentile bands P_day(t, sigma_BV), and Fractal-Hawkes
+    absorption gates (synchronizing Arm-and-Fire retention with SCAR-LOCK-09).
   - Tier 3 (One-Way Ratchet Resolver): Single-pass OverlayResolver evaluation
     injected from trigger evaluators into _validar_filtros_phantom_pre_orden
     with zero duplicate kernel computation.
@@ -33,7 +34,7 @@ from escudo_tricortex import ESCUDO_TRICORTEX
 
 _PESOS_ML_OFI: Tuple[float, ...] = tuple(math.exp(-0.35 * i) for i in range(5))
 _PI_HALF: float = math.pi / 2.0
-_INV_LN2: float = math.pi * 0.0 + (1.0 / math.log(2.0))
+_INV_LN2: float = 1.0 / math.log(2.0)
 _INV_LN4: float = 1.0 / math.log(4.0)
 
 _ULTIMO_TS_LIBRO_PHANTOM: Dict[str, float] = {}
@@ -129,6 +130,7 @@ class MicrostructureContext:
     lyap_acel: float
     dt_since_long_peak: float
     dt_since_short_peak: float
+    dt_since_lyap_shock: float
     max_z_pump_short: float
     drop_from_squeeze_peak_pct: float
     above_squeeze_px: bool
@@ -167,35 +169,40 @@ ACTIVE_OVERLAYS: Final[Tuple[ElasticTemporalOverlay, ...]] = (
         tau_decay_seg=1.20,
         kernel_fn=lambda ctx, _tau: (
             1.0
-            if (not ctx.is_tier1 and ctx.hurst < 0.450 and ctx.hawkes >= 0.20)
+            if (not ctx.is_tier1 and ctx.hurst < 0.455 and ctx.hawkes >= 0.15)
             else (
-                max(0.0, min(1.0, (0.450 - ctx.hurst) / 0.015))
-                * max(0.0, min(1.0, (ctx.hawkes - 0.15) / 0.10))
+                max(0.0, min(1.0, (0.465 - ctx.hurst) / 0.020))
+                * max(0.0, min(1.0, (ctx.hawkes - 0.08) / 0.12))
                 if not ctx.is_tier1
                 else 0.0
             )
         ),
     ),
-    # OVL-02: Clean-Fractal OFI Relief on High-Beta LONG (Unlocks Vault Event #09 at H<=0.440, Hawkes>=0.35)
+    # OVL-02: Clean-Fractal OFI Relief on High-Beta LONG (Unlocks Vault Event #09 at H<=0.445, Hawkes>=0.25)
     ElasticTemporalOverlay(
         overlay_id="OVL-02_CLEAN_FRACTAL_OFI_RELIEF",
         target_param="ofi_long_hb_relief",
         max_delta=-0.035,
         tau_decay_seg=1.20,
         kernel_fn=lambda ctx, _tau: (
-            max(0.0, min(1.0, (0.445 - ctx.hurst) / 0.015))
-            * max(0.0, min(1.0, (ctx.hawkes - 0.25) / 0.12))
-            if (not ctx.is_tier1 and ctx.hurst <= 0.442 and ctx.hawkes >= 0.30 and abs(ctx.z_score) < 4.50)
+            max(0.0, min(1.0, (0.450 - ctx.hurst) / 0.018))
+            * max(0.0, min(1.0, (ctx.hawkes - 0.20) / 0.15))
+            if (not ctx.is_tier1 and ctx.hurst <= 0.448 and ctx.hawkes >= 0.22 and abs(ctx.z_score) < 4.50)
             else 0.0
         ),
     ),
-    # OVL-03: 1200ms Continuous Gaussian Arm-and-Fire Hysteresis Decay on LONG Retention
+    # OVL-03: Shock-Synchronized Continuous Gaussian Arm-and-Fire Hysteresis Decay on LONG Retention
+    # Uses tau=3.20s (up to 11.2s active window) when recovering from a Lyapunov shock so retention
+    # never expires before SCAR-LOCK-09 opens, and tau=0.95s during normal dips.
     ElasticTemporalOverlay(
         overlay_id="OVL-03_GAUSSIAN_ARM_AND_FIRE_LONG",
         target_param="arm_retention_relief",
-        max_delta=+0.20,
-        tau_decay_seg=0.65,
-        kernel_fn=lambda ctx, tau: _gaussian_window_kernel(ctx.dt_since_long_peak, tau),
+        max_delta=+0.22,
+        tau_decay_seg=0.95,
+        kernel_fn=lambda ctx, tau: _gaussian_window_kernel(
+            ctx.dt_since_long_peak,
+            3.20 if ctx.dt_since_lyap_shock < 12.0 else tau,
+        ),
     ),
     # OVL-04: Post-Squeeze Top-Rollover Capture Window in SHORT-SNIPER (Gaussian 45s Decay)
     ElasticTemporalOverlay(
@@ -217,14 +224,30 @@ ACTIVE_OVERLAYS: Final[Tuple[ElasticTemporalOverlay, ...]] = (
             else 0.0
         ),
     ),
-    # OVL-05: Off-Peak Valley Absorption Bonus on Fractal Hurst Ceiling (When OFI>=0.35, Hawkes>=0.25)
+    # OVL-05: Absorption Bonus on Fractal Hurst Ceiling (When OFI>=0.30, Hawkes>=0.20)
     ElasticTemporalOverlay(
         overlay_id="OVL-05_ABSORPTION_HURST_BONUS_LONG",
         target_param="hurst_long_bonus",
         max_delta=+0.012,
         tau_decay_seg=1.00,
         kernel_fn=lambda ctx, _tau: (
-            1.0 if (ctx.ofi >= 0.35 and ctx.hawkes >= 0.25 and ctx.dp_pct <= -0.0035) else 0.0
+            1.0 if (ctx.ofi >= 0.30 and ctx.hawkes >= 0.20 and ctx.dp_pct <= -0.0028) else 0.0
+        ),
+    ),
+    # OVL-06: Institutional Absorption Release on SCAR-LOCK-09 Lyapunov Wait (Unlocks Event #18 ARB)
+    # When braking is 100% complete (lyap_acel >= -0.00005), fractal is ultra-clean (H <= 0.445),
+    # and institutional buying is dominant (OFI >= +0.35, Hawkes >= +0.20), compresses wait by up to 3.20s.
+    ElasticTemporalOverlay(
+        overlay_id="OVL-06_POST_SHOCK_ABSORPTION_RELEASE",
+        target_param="lyap_wait_relief_seg",
+        max_delta=-3.20,
+        tau_decay_seg=4.00,
+        kernel_fn=lambda ctx, _tau: (
+            max(0.0, min(1.0, (0.448 - ctx.hurst) / 0.025))
+            * max(0.0, min(1.0, (ctx.ofi - 0.30) / 0.25))
+            * max(0.0, min(1.0, (ctx.hawkes - 0.15) / 0.15))
+            if (ctx.lyap_acel >= -0.00005 and ctx.hurst <= 0.445 and ctx.ofi >= 0.35 and ctx.hawkes >= 0.20)
+            else 0.0
         ),
     ),
 )
@@ -310,10 +333,13 @@ class OverlayResolver:
             min(base.hurst_hard_cap_long_t1, h_raw_long) if ctx.is_tier1 else h_raw_long
         )
 
-        # 5. Gaussian Arm-and-Fire Retention Factor in [0.80, 1.00]
-        arm_retention = max(0.80, min(1.00, 1.00 - deltas.get("arm_retention_relief", 0.0)))
+        # 5. Gaussian Arm-and-Fire Retention Factor in [0.78, 1.00]
+        arm_retention = max(0.78, min(1.00, 1.00 - deltas.get("arm_retention_relief", 0.0)))
 
-        # 6. SHORT-SNIPER Elastic EMA900, OFI, Hurst & Top-Rollover Bounds
+        # 6. Post-Shock Lyapunov Wait Relief (Clamped so wait never drops below 2.00s)
+        lyap_wait_relief = max(-3.20, min(0.0, deltas.get("lyap_wait_relief_seg", 0.0)))
+
+        # 7. SHORT-SNIPER Elastic EMA900, OFI, Hurst & Top-Rollover Bounds
         h_short_premium = 0.0010 if ctx.hurst >= 0.480 else 0.0
         sqz_short_premium = 0.0010 if ctx.above_squeeze_px else 0.0
         base_ema_short = min(
@@ -346,6 +372,7 @@ class OverlayResolver:
             "ofi_min_long": round(ofi_min_long, 4),
             "h_elastic_long": round(h_elastic_long, 4),
             "arm_retention": round(arm_retention, 4),
+            "lyap_wait_relief": round(lyap_wait_relief, 4),
             "ema_short_threshold": round(ema_short_threshold, 6),
             "ofi_max_short_req": round(ofi_max_short_req, 4),
             "z_short_min_eff": round(z_short_min_eff, 4),
@@ -626,16 +653,16 @@ class VentanaZ:
                     braking_long = (
                         self.ema900 > 0.0
                         and p_t < self.ema900
-                        and accel_pct >= -0.00005
-                        and self.prev_ofi_instantaneo >= 0.14
-                        and self.hawkes_intensidad >= 0.05
+                        and accel_pct >= -0.00018
+                        and self.prev_ofi_instantaneo >= 0.10
+                        and (self.hawkes_intensidad >= -0.05 or self.ticks_ofi_long >= 2)
                     )
                     braking_short = (
                         self.ema900 > 0.0
                         and p_t > self.ema900
-                        and accel_pct <= -0.00020
-                        and self.prev_ofi_instantaneo <= -0.35
-                        and self.hawkes_intensidad <= -0.40
+                        and accel_pct <= -0.00018
+                        and self.prev_ofi_instantaneo <= -0.30
+                        and (self.hawkes_intensidad <= -0.25 or self.ticks_ofi_short >= 2)
                     )
                     if braking_long or braking_short:
                         drift_step = (act_win[-1] - act_win[0]) / float(m_act - 1)
@@ -649,7 +676,7 @@ class VentanaZ:
                         ) / float(m_act - 4)
                         if vd1_dt > 1e-18 and vd4_dt > 1e-18:
                             h_dt = 0.25 * math.log(vd4_dt / vd1_dt) * _INV_LN2
-                            h_act = min(h_act, (0.25 * h_act) + (0.75 * h_dt))
+                            h_act = min(h_act, (0.20 * h_act) + (0.80 * h_dt))
                     return round(max(0.20, min(0.80, h_act)), 4), round(accel_pct, 6)
             return 0.45, round(accel_pct, 6)
 
@@ -769,6 +796,11 @@ class RadarVolatilidad:
             if (vz_sym is not None and vz_sym.ts_pico_short > 0.0 and ahora_t < vz_sym.vigilancia_short_hasta_ts)
             else 999.0
         )
+        dt_lyap_shock = (
+            max(0.0, ahora_t - vz_sym.ts_ultimo_choque_lyapunov)
+            if (vz_sym is not None and vz_sym.ts_ultimo_choque_lyapunov > 0.0)
+            else 999.0
+        )
         max_z_short = float(vz_sym.max_z_pump_short if vz_sym is not None else 0.0)
 
         return MicrostructureContext(
@@ -786,6 +818,7 @@ class RadarVolatilidad:
             lyap_acel=lyap_v,
             dt_since_long_peak=dt_long_peak,
             dt_since_short_peak=dt_short_peak,
+            dt_since_lyap_shock=dt_lyap_shock,
             max_z_pump_short=max_z_short,
             drop_from_squeeze_peak_pct=drop_from_peak,
             above_squeeze_px=above_sqz,
@@ -918,7 +951,6 @@ class RadarVolatilidad:
         in_long_arm = vz_sym is not None and ahora_t < vz_sym.vigilancia_long_hasta_ts
         z_long_eff = min(z_real, float(senal.get("z_score") or z_real))
 
-        # Reuse pre-resolved overlay bounds if injected from trigger evaluator; otherwise resolve once
         if (
             pre_ctx is not None
             and pre_res is not None
@@ -942,24 +974,30 @@ class RadarVolatilidad:
             resolved = OverlayResolver.resolve_effective_bounds(ctx_ovl, SCAR_BASE)
 
         if side == "long":
-            # SCAR-LOCK-03 + SCAR-LOCK-09: Severity-scaled elastic shock buffer & post-aftershock wait
+            # SCAR-LOCK-03 + SCAR-LOCK-09 + OVL-06 Institutional Absorption Release
             dt_lyap_shock = (
                 (ahora_t - vz_sym.ts_ultimo_choque_lyapunov)
                 if (vz_sym is not None and vz_sym.ts_ultimo_choque_lyapunov > 0.0)
                 else 999.0
             )
             shock_mag = float(vz_sym.magnitud_ultimo_choque_lyapunov if vz_sym is not None else 0.0)
-            tau_lyap_req = 4.50 + (2.00 * p_day) + (3.00 if shock_mag >= 0.0035 else 0.0)
+            lyap_relief = float(resolved["lyap_wait_relief"])
+            tau_lyap_req = max(
+                2.00,
+                4.50 + (2.00 * p_day) + (3.00 if shock_mag >= 0.0035 else 0.0) + lyap_relief,
+            )
 
             dt_lyap_repulsor = (
                 (ahora_t - vz_sym.ts_ultimo_repulsor_lyapunov)
                 if (vz_sym is not None and vz_sym.ts_ultimo_repulsor_lyapunov > 0.0)
                 else 999.0
             )
-            in_post_shock_aftershock = (dt_lyap_shock < 12.0) and (dt_lyap_repulsor < 3.60)
+            aftershock_limit = 1.80 if lyap_relief < -1.0 else 3.60
+            in_post_shock_aftershock = (dt_lyap_shock < 12.0) and (dt_lyap_repulsor < aftershock_limit)
 
             ticks_ofi_l = int(tk_sym.ofi_ticks_confirmados_long if tk_sym is not None else 2)
-            unconfirmed_post_waterfall = (dt_lyap_shock < 15.0) and (ticks_ofi_l < 4)
+            req_ticks_post_shock = 3 if (lyap_relief < -0.50 or (ofi_real >= 0.35 and hawkes_val >= 0.20 and h_real <= 0.445)) else 4
+            unconfirmed_post_waterfall = (dt_lyap_shock < 15.0) and (ticks_ofi_l < req_ticks_post_shock)
 
             if dt_lyap_shock < tau_lyap_req or in_post_shock_aftershock or unconfirmed_post_waterfall:
                 ESTADO_RAM.encolar_auditoria_escudo_15s(
@@ -1299,6 +1337,7 @@ class RadarVolatilidad:
             "hurst_max_elastico": float(senal.get("hurst_max_elastico", h_max_cfg)),
             "overlay_arm_retention": resolved["arm_retention"],
             "overlay_top_rollover": resolved["top_rollover_flag"],
+            "overlay_lyap_relief": resolved["lyap_wait_relief"],
         }
         return True
 
@@ -1462,6 +1501,26 @@ class RadarVolatilidad:
             z_ref_long = tk.z_score
             h_radar_ceiling = cfg.HURST_MAX_ENTRADA
         else:
+            is_t1_sym = symbol in cfg.CLASE_TIER1_LIQUIDO
+            arm_dp_floor = SCAR_BASE.dp_floor_long_t1 if is_t1_sym else SCAR_BASE.dp_clean_floor_long_hb
+            arm_ema_floor = SCAR_BASE.ema_floor_long_t1 if is_t1_sym else SCAR_BASE.ema_floor_long_hb
+
+            # Arm 1200ms / 9.50s post-shock absorption window as soon as price pierces clean class floors
+            if tk.z_score <= z_threshold and tk.delta_p_pct <= arm_dp_floor and tk.ema900_dist_pct <= arm_ema_floor:
+                if t_now >= vz.vigilancia_long_hasta_ts:
+                    vz.min_z_drop_long = tk.z_score
+                    vz.min_dp_drop_long = tk.delta_p_pct
+                    vz.min_ema_drop_long = tk.ema900_dist_pct
+                else:
+                    vz.min_z_drop_long = min(vz.min_z_drop_long, tk.z_score)
+                    vz.min_dp_drop_long = min(vz.min_dp_drop_long, tk.delta_p_pct)
+                    vz.min_ema_drop_long = min(vz.min_ema_drop_long, tk.ema900_dist_pct)
+                vz.ts_pico_long = t_now
+                arm_horizon = t_now + 1.80
+                if vz.ts_ultimo_choque_lyapunov > 0.0 and (t_now - vz.ts_ultimo_choque_lyapunov) < 12.0:
+                    arm_horizon = max(arm_horizon, vz.ts_ultimo_choque_lyapunov + 11.20)
+                vz.vigilancia_long_hasta_ts = arm_horizon
+
             p_day, _ = _calcular_percentil_elastico_intradia(t_now, tk.volatilidad_local)
             mu_boot_l = max(0.0, 1.0 - (float(vz.ticks_totales_recibidos) / 360.0))
             ctx_pre = self._construir_contexto_overlay(
@@ -1476,32 +1535,16 @@ class RadarVolatilidad:
             req_dp = min(min_drop_req, res_pre["dp_long_threshold"])
             req_ema = min(ema_dist_req, res_pre["ema_long_threshold"])
             h_radar_ceiling = res_pre["h_elastic_long"]
+            ret_factor = res_pre["arm_retention"]
 
-            if tk.z_score <= z_threshold and tk.delta_p_pct <= req_dp and tk.ema900_dist_pct <= req_ema:
-                if t_now >= vz.vigilancia_long_hasta_ts:
-                    vz.min_z_drop_long = tk.z_score
-                    vz.min_dp_drop_long = tk.delta_p_pct
-                    vz.min_ema_drop_long = tk.ema900_dist_pct
-                else:
-                    vz.min_z_drop_long = min(vz.min_z_drop_long, tk.z_score)
-                    vz.min_dp_drop_long = min(vz.min_dp_drop_long, tk.delta_p_pct)
-                    vz.min_ema_drop_long = min(vz.min_ema_drop_long, tk.ema900_dist_pct)
-                vz.ts_pico_long = t_now
-                arm_horizon = t_now + 1.20
-                if vz.ts_ultimo_choque_lyapunov > 0.0 and (t_now - vz.ts_ultimo_choque_lyapunov) < 9.0:
-                    arm_horizon = max(arm_horizon, vz.ts_ultimo_choque_lyapunov + 9.50)
-                vz.vigilancia_long_hasta_ts = arm_horizon
-
-            dt_arm = max(0.0, t_now - vz.ts_pico_long) if vz.ts_pico_long > 0.0 else 999.0
-            g_arm = _gaussian_window_kernel(dt_arm, 0.65)
-            ret_z = 1.0 - (0.18 * g_arm)
-            ret_dp = 1.0 - (0.20 * g_arm)
+            dp_check = min(tk.delta_p_pct, vz.min_dp_drop_long) if t_now < vz.vigilancia_long_hasta_ts else tk.delta_p_pct
+            ema_check = min(tk.ema900_dist_pct, vz.min_ema_drop_long) if t_now < vz.vigilancia_long_hasta_ts else tk.ema900_dist_pct
 
             armed_long = (
                 t_now < vz.vigilancia_long_hasta_ts
-                and tk.z_score <= (z_threshold * ret_z)
-                and tk.delta_p_pct <= (req_dp * ret_dp)
-                and tk.ema900_dist_pct <= (req_ema * ret_dp)
+                and tk.z_score <= (z_threshold * ret_factor)
+                and dp_check <= (req_dp * ret_factor)
+                and ema_check <= (req_ema * ret_factor)
             )
             if not armed_long:
                 return None
