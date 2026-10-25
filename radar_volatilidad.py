@@ -95,7 +95,7 @@ class ImmutableScarBaseConfig:
     dp_floor_long_t1: float = -0.0020
     ema_floor_long_hb: float = -0.0025
     ema_floor_long_t1: float = -0.0020
-    ofi_base_long_hb: float = 0.18
+    ofi_base_long_hb: float = 0.20
     ofi_min_clamp_long_hb: float = 0.15
     ofi_base_long_t1: float = 0.14
     ema_base_short: float = 0.0032
@@ -971,7 +971,7 @@ class RadarVolatilidad:
         ofi_btc = float(tk_btc.ofi_l1_l5 if (tk_btc and tk_btc.last > 0.0) else 0.0)
         z_btc = float(tk_btc.z_score if (tk_btc and tk_btc.last > 0.0) else 0.0)
 
-        ofi_phantom = (0.75 * ofi_real + 0.25 * ofi_btc) if abs(ofi_btc) > 1e-6 else ofi_real
+        ofi_phantom = (0.68 * ofi_real + 0.32 * ofi_btc) if abs(ofi_btc) > 1e-6 else ofi_real
         senal["ofi_phantom"] = round(ofi_phantom, 4)
 
         veto_btc_long = (ofi_btc < -0.35 and z_btc < -0.75) or (z_btc < -1.80)

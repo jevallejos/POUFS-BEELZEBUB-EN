@@ -718,11 +718,27 @@ class GestorPosiciones:
                     if closed_w:
                         return "MAKER_SCRATCH_18S"
 
-            # P-05b (SCAR-LOCK-12b): Early Stagnation Maker Unwind at 45.0s for dead positions
+            # W4 SL Time-Decay at 28s: tightens internal SL from -0.48% to -0.32% if stagnant without impulse
+            if (
+                not pos.cosecha_50_ejecutada
+                and not pos.trinquete_be_armado
+                and age_sec >= 28.0
+                and pos.max_pnl_pct_alcanzado < 0.0010
+            ):
+                dec_decimals = max(0, int(round(-math.log10(tick_size)))) if tick_size < 1.0 else 0
+                sl_decay_px = round(
+                    pos.entry_price * (1.0 + 0.0032) if pos.side == "short" else pos.entry_price * (1.0 - 0.0032),
+                    dec_decimals,
+                )
+                if (pos.side == "long" and sl_decay_px > pos.sl_interno_price) or (
+                    pos.side == "short" and sl_decay_px < pos.sl_interno_price
+                ):
+                    pos.sl_interno_price = sl_decay_px
+            # P-05b + W4 (SCAR-LOCK-12b): Early Stagnation Maker Unwind at 42.0s for dead positions
             stagnant_flow = (tk.ofi_5s <= 0.05) if pos.side == "long" else (tk.ofi_5s >= -0.05)
             if (
                 not pos.cosecha_50_ejecutada
-                and 45.0 <= age_sec < 72.0
+                and 42.0 <= age_sec < 72.0
                 and pos.max_pnl_pct_alcanzado < 0.0008
                 and -0.0018 <= gross_pnl_pct < 0.0008
                 and stagnant_flow

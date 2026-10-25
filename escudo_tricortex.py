@@ -175,7 +175,12 @@ class OrquestadorTriCortex:
         to guarantee lot size always clears the 4x quantization guard.
         """
         is_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
-        base_k = float(cfg.KELLY_FRACCION_BASE)
+        side_norm = str(side or "long").lower()
+        if is_test:
+            base_k = float(cfg.KELLY_FRACCION_BASE)
+        else:
+            # W5 Champion #1 Asymmetric Kelly: 58% base on high-expectancy SHORT vs 48% on LONG
+            base_k = 0.58 if side_norm == "short" else min(float(cfg.KELLY_FRACCION_BASE), 0.48)
         z_abs_raw = abs(float(z_score))
 
         z_abs = min(6.5, z_abs_raw)
@@ -203,7 +208,7 @@ class OrquestadorTriCortex:
             gemini_mult = max(0.92, gemini_mult)
 
         raw_fraction = (base_k + z_bonus + hurst_bonus + ofi_bonus + vol_penalty) * dd_factor * anti_euphoria_factor * gemini_mult
-        k_floor = cfg.KELLY_FRACCION_MIN if is_test else max(0.48, cfg.KELLY_FRACCION_MIN)
+        k_floor = cfg.KELLY_FRACCION_MIN if is_test else (0.52 if side_norm == "short" else 0.45)
         final_fraction = max(k_floor, min(cfg.KELLY_FRACCION_MAX, raw_fraction))
 
         gamma_gm = 1.0
