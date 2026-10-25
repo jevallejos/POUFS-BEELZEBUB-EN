@@ -723,9 +723,18 @@ class VentanaZ:
                             ) / float(m_sub - 4)
                             if vd1_dt > 1e-18 and vd4_dt > 1e-18:
                                 h_dt = 0.25 * math.log(vd4_dt / vd1_dt) * _INV_LN2
-                                w_dt = 0.90 if (braking_short and self.px_ultimo_anti_squeeze > 0.0 and p_t < self.px_ultimo_anti_squeeze) else 0.80
-                                h_blended = ((1.0 - w_dt) * h_act) + (w_dt * h_dt)
-                                h_act = max(h_act - 0.065, min(h_act, h_blended))
+                                confirmed_v_bottom_long = (
+                                    braking_long
+                                    and accel_pct >= -0.00015
+                                    and self.prev_ofi_instantaneo >= 0.12
+                                    and self.hawkes_intensidad >= 0.05
+                                )
+                                if confirmed_v_bottom_long:
+                                    h_act = min(h_act, (0.12 * h_act) + (0.88 * h_dt))
+                                else:
+                                    w_dt = 0.90 if (braking_short and self.px_ultimo_anti_squeeze > 0.0 and p_t < self.px_ultimo_anti_squeeze) else 0.80
+                                    h_blended = ((1.0 - w_dt) * h_act) + (w_dt * h_dt)
+                                    h_act = max(h_act - 0.065, min(h_act, h_blended))
                     return round(max(0.20, min(0.80, h_act)), 4), round(accel_pct, 6)
             return 0.45, round(accel_pct, 6)
 
