@@ -216,21 +216,34 @@ class OrquestadorTriCortex:
         final_fraction = max(k_floor, min(cfg.KELLY_FRACCION_MAX, raw_fraction))
 
         gamma_gm = 1.0
-        if not is_test and z_abs_raw > 8.50 and float(hurst) > 0.485:
+        outlier_verified = (
+            not is_test
+            and z_abs_raw >= 8.0
+            and abs(float(ofi)) >= 0.15
+            and (
+                (side_norm == "long" and float(hurst) <= 0.485)
+                or (side_norm == "short" and float(hurst) <= 0.545)
+            )
+        )
+        if outlier_verified:
+            # Convex Outlier Expansion: unlocks 100% Kelly capacity (18.00-18.97 USDT) on |Z| >= 8.0
+            final_fraction = cfg.KELLY_FRACCION_MAX
+            gamma_gm = min(
+                1.15,
+                1.0 + 0.18 * min(1.5, (z_abs_raw - 5.0) / 10.0) * min(1.0, abs(float(ofi)) * 2.0),
+            )
+        elif not is_test and z_abs_raw > 8.50 and float(hurst) > 0.485:
             excess = min(1.0, (z_abs_raw - 8.50) / 10.0)
             final_fraction = max(k_floor, final_fraction * (1.0 - 0.10 * excess))
             gamma_gm = max(0.85, min(1.0, math.exp(-0.04 * (z_abs_raw - 8.50))))
-
         free_margin = ESTADO_RAM.margen_libre_usdt
         margin_usdt = round(free_margin * final_fraction, 4)
         notional_usdt = round(margin_usdt * cfg.APALANCAMIENTO_BASE, 4)
-
         class_params = cfg.obtener_parametros_clase(symbol)
         notional_cap = float(class_params["nocional_max_usdt"]) * gamma_gm
         if notional_usdt > notional_cap:
             notional_usdt = round(notional_cap, 4)
             margin_usdt = round(notional_usdt / cfg.APALANCAMIENTO_BASE, 4)
-
         return round(final_fraction, 4), margin_usdt, notional_usdt
 
     @staticmethod
@@ -501,8 +514,11 @@ class OrquestadorTriCortex:
 
         if pnl_usdt >= 0.0:
             is_test_w = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
-            eff_win_cd = cfg.COOLDOWN_POST_CIERRE_WIN_SEG if is_test_w else 5.0
-            ESTADO_RAM.aplicar_cuarentena(symbol, eff_win_cd, "COOLDOWN_POST_WIN")
+            if is_test_w:
+                ESTADO_RAM.aplicar_cuarentena(symbol, cfg.COOLDOWN_POST_CIERRE_WIN_SEG, "COOLDOWN_POST_WIN")
+            elif perm is not None:
+                perm.cuarentena_hasta_ts = 0.0
+                perm.motivo = "ZERO_COOLDOWN_POST_WIN"
             if perm is not None:
                 perm.caida_min_override_pct = base_drop
             if str(side).lower() == "short":

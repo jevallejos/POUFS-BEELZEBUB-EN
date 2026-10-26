@@ -1489,6 +1489,9 @@ class RadarVolatilidad:
         tk.bid = best_bid
         tk.ask = best_ask
         tk.last = mid_price
+        tk.bid_qty = best_bid_qty
+        tk.ask_qty = best_ask_qty
+        tk.micro_price = round(micro_price, 8)
         tk.spread_pct = spread_pct
         tk.z_score = z_score
         tk.delta_p_pct = delta_p_pct
@@ -1725,6 +1728,10 @@ class RadarVolatilidad:
             "bid": tk.bid,
             "ask": tk.ask,
             "last": tk.last,
+            "bid_qty": tk.bid_qty,
+            "ask_qty": tk.ask_qty,
+            "micro_price": tk.micro_price,
+            "lyapunov_acel_pct": tk.lyapunov_acel_pct,
             "z_score": z_ref_long,
             "ofi": tk.ofi_l1_l5,
             "hurst": tk.hurst,
@@ -1832,6 +1839,10 @@ class RadarVolatilidad:
             "bid": tk.bid,
             "ask": tk.ask,
             "last": tk.last,
+            "bid_qty": tk.bid_qty,
+            "ask_qty": tk.ask_qty,
+            "micro_price": tk.micro_price,
+            "lyapunov_acel_pct": tk.lyapunov_acel_pct,
             "z_score": z_ref_short,
             "ofi": tk.ofi_l1_l5,
             "hurst": tk.hurst,

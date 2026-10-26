@@ -58,6 +58,9 @@ class MetricaTick:
     vpin: float = 0.0
     volatilidad_local: float = 0.0
     ts_ultimo_pulso_toxico: float = 0.0
+    bid_qty: float = 0.0
+    ask_qty: float = 0.0
+    micro_price: float = 0.0
     ts_tick: float = field(default_factory=time.time)
 
 
@@ -141,6 +144,8 @@ class PosicionActiva:
     snapshot_18s_tomado: bool = False
     snapshot_45s_tomado: bool = False
     modo_cosecha_ejecutado: str = "NONE"
+    wald_lambda: float = 0.0
+    kappa_mfe_actual: float = 0.35
 
     @property
     def entrada(self) -> float:

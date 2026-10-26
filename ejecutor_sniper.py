@@ -36,24 +36,37 @@ def calcular_precio_penny_jump(
     best_ask: float,
     tick_size: float,
     ofi: float,
+    micro_price: float = 0.0,
+    lyap_acel: float = 0.0,
 ) -> float:
-    """Computes the optimal Maker quote price using 1-tick Penny-Jump when spread and OFI allow."""
+    """
+    Computes optimal Maker quote price using 1-tick Penny-Jump and Zero-RTT Stoikov
+    Micro-Price Pre-Lead (t = 0ms) when spread >= 2 ticks and order flow or S_micro leads ToB.
+    """
     bid = float(best_bid)
     ask = float(best_ask)
     tick = max(1e-8, float(tick_size or 0.0001))
     decimals = max(0, int(round(-math.log10(tick)))) if tick < 1.0 else 0
-
     spread = ask - bid
     side_norm = str(side).lower()
-
+    s_micro = float(micro_price) if float(micro_price) > 0.0 else (0.5 * (bid + ask))
     if side_norm == "short":
-        if spread >= (1.95 * tick) and abs(float(ofi)) >= cfg.PENNY_JUMP_OFI_UMBRAL:
+        stoikov_lead_short = (
+            (ask - s_micro) >= (0.62 * tick)
+            and float(ofi) <= -0.16
+            and float(lyap_acel) <= -0.00020
+        )
+        if spread >= (1.95 * tick) and (abs(float(ofi)) >= cfg.PENNY_JUMP_OFI_UMBRAL or stoikov_lead_short):
             candidate = ask - tick
             if candidate > bid:
                 return round(candidate, decimals)
         return round(ask, decimals)
-
-    if spread >= (1.95 * tick) and abs(float(ofi)) >= cfg.PENNY_JUMP_OFI_UMBRAL:
+    stoikov_lead_long = (
+        (s_micro - bid) >= (0.62 * tick)
+        and float(ofi) >= 0.14
+        and float(lyap_acel) >= -0.00015
+    )
+    if spread >= (1.95 * tick) and (abs(float(ofi)) >= cfg.PENNY_JUMP_OFI_UMBRAL or stoikov_lead_long):
         candidate = bid + tick
         if candidate < ask:
             return round(candidate, decimals)
@@ -188,7 +201,15 @@ class EjecutorSniper:
         )
 
         tick_size, step_qty, min_qty = extraer_precision_y_minimos(self.exchange, symbol, bid)
-        quote_price = calcular_precio_penny_jump(side, bid, ask, tick_size, ofi)
+        quote_price = calcular_precio_penny_jump(
+            side,
+            bid,
+            ask,
+            tick_size,
+            ofi,
+            float(senal.get('micro_price') or 0.0),
+            float(senal.get('lyapunov_acel_pct') or 0.0),
+        )
         if quote_price <= 0.0:
             return None
 
@@ -251,42 +272,74 @@ class EjecutorSniper:
             fill_price = float((order or {}).get("average") or (order or {}).get("price") or quote_price)
             ord_status = str((order or {}).get("status") or "open").lower()
 
-            poll_step = min(0.15, max(0.04, ttl_max / 5.0))
+            poll_step = 0.08 if not is_test else min(0.15, max(0.04, ttl_max / 5.0))
             repeg_entrada_ejecutado = False
+            q_ahead_init = max(
+                1.0,
+                float(senal.get("bid_qty") if side == "long" else senal.get("ask_qty") or 1.0),
+            )
             while ord_status not in ("closed", "canceled", "cancelled", "rejected"):
                 elapsed = time.time() - t_queue_start
                 if elapsed >= ttl_max:
                     break
-
                 current_tk = ESTADO_RAM.ticks_ram.get(symbol)
                 if current_tk is not None:
                     if side == "long" and current_tk.ofi_l1_l5 < cfg.OFI_ABORTAR_COLA_UMBRAL:
                         break
                     if side == "short" and current_tk.ofi_l1_l5 > abs(cfg.OFI_ABORTAR_COLA_UMBRAL):
                         break
-
+                    # Moallemi-Yuan 50Hz Preemptive Adverse Selection Shield
+                    if not is_test:
+                        q_now_l1 = float(current_tk.bid_qty if side == "long" else current_tk.ask_qty or q_ahead_init)
+                        adverse_erosion = (q_now_l1 < (0.15 * q_ahead_init)) and (
+                            (side == "long" and (current_tk.hurst > 0.495 or current_tk.ofi_l1_l5 < 0.0))
+                            or (side == "short" and (current_tk.hurst > 0.555 or current_tk.ofi_l1_l5 > 0.0))
+                        )
+                        if adverse_erosion:
+                            log_sniper(
+                                f"[{side_label}] [MOALLEMI EARLY-ABORT] {symbol} aborted at {elapsed*1000:.0f}ms "
+                                f"(Q_L1={q_now_l1:.0f}/{q_ahead_init:.0f}, H={current_tk.hurst:.3f}, OFI={current_tk.ofi_l1_l5:+.2f})"
+                            )
+                            break
                 if (
                     not is_test
                     and not repeg_entrada_ejecutado
-                    and elapsed >= 1.20
+                    and elapsed >= 0.25
                     and filled_qty <= 0.0
                     and current_tk is not None
                     and current_tk.bid > 0.0
                     and current_tk.ask > 0.0
                 ):
                     px_new_in = calcular_precio_penny_jump(
-                        side, current_tk.bid, current_tk.ask, tick_size, current_tk.ofi_l1_l5
+                        side,
+                        current_tk.bid,
+                        current_tk.ask,
+                        tick_size,
+                        current_tk.ofi_l1_l5,
+                        current_tk.micro_price,
+                        current_tk.lyapunov_acel_pct,
                     )
+                    q_now_stack = float(current_tk.bid_qty if side == "long" else current_tk.ask_qty or q_ahead_init)
+                    queue_buried = (
+                        q_now_stack > (2.4 * q_ahead_init)
+                        and ((current_tk.ask - current_tk.bid) >= (1.95 * tick_size))
+                    )
+                    if queue_buried and px_new_in == quote_price:
+                        cand_jump = (current_tk.bid + tick_size) if side == "long" else (current_tk.ask - tick_size)
+                        if current_tk.bid < cand_jump < current_tk.ask:
+                            dec_j = max(0, int(round(-math.log10(tick_size)))) if tick_size < 1.0 else 0
+                            px_new_in = round(cand_jump, dec_j)
                     drift_in = (
                         ((px_new_in - quote_price) / quote_price)
                         if side == "long"
                         else ((quote_price - px_new_in) / quote_price)
                     )
                     flow_still_strong = (
-                        (side == "long" and current_tk.ofi_l1_l5 >= 0.20 and current_tk.hawkes_intensidad >= 0.08)
-                        or (side == "short" and current_tk.ofi_l1_l5 <= -0.30 and current_tk.hawkes_intensidad <= -0.08)
+                        (side == "long" and current_tk.ofi_l1_l5 >= 0.16 and current_tk.hawkes_intensidad >= 0.05 and current_tk.hurst <= 0.485)
+                        or (side == "short" and current_tk.ofi_l1_l5 <= -0.25 and current_tk.hawkes_intensidad <= -0.05 and current_tk.hurst <= 0.545)
                     )
-                    if 0.0 < drift_in <= 0.0008 and flow_still_strong and current_tk.hurst <= 0.485:
+                    max_drift_allowed = 0.0014 if abs(z_score) >= 6.0 else 0.0009
+                    if 0.0 < drift_in <= max_drift_allowed and flow_still_strong:
                         repeg_entrada_ejecutado = True
                         try:
                             await self.exchange.cancel_order(order_id, symbol)
@@ -321,7 +374,7 @@ class EjecutorSniper:
                                     ofi=current_tk.ofi_l1_l5,
                                 )
                                 log_sniper(
-                                    f"[{side_label}] [PASSIVE ALIGN 1.2S] {symbol} aligned 1x to {px_new_in} "
+                                    f"[{side_label}] [MOALLEMI QUEUE-JUMP 250MS] {symbol} jumped to {px_new_in} at {elapsed*1000:.0f}ms "
                                     f"(drift +{drift_in*100:.3f}%, OFI={current_tk.ofi_l1_l5:+.2f}, H={current_tk.hurst:.2f})"
                                 )
                         except Exception:

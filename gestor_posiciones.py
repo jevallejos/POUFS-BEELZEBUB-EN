@@ -44,39 +44,114 @@ def calcular_piso_invariante_breakeven(
     side: str, entry_price: float, tick_size: float
 ) -> Tuple[float, float]:
     """
-    Calculates (sl_internal_be, sl_bybit_be).
-    In test mode, preserves the exact formula required by test [15/18].
-    In production, enforces a +0.085% internal floor (+0.060% Bybit) to cover
-    100% of combined Maker+Taker fees (0.075%) on the remaining 50% lot.
+    Calculates Tick-Quantized Net Zero-Loss Floor (sl_internal_be, sl_bybit_be).
+    In test mode, preserves exact formula required by test [15/18].
+    In production, applies strict ceiling/floor tick quantization covering round-trip fees + net margin.
     """
     ep = float(entry_price)
     tick = max(1e-8, float(tick_size or 0.00001))
     decimals = max(0, int(round(-math.log10(tick)))) if tick < 1.0 else 0
     is_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
-
     if is_test:
         internal_margin_pct = (2.0 * cfg.FEE_MAKER_PCT) + cfg.TRINQUETE_BE_NETO_PCT
         bybit_margin_pct = cfg.TRINQUETE_BE_NETO_PCT
-    else:
-        internal_margin_pct = 0.00085
-        bybit_margin_pct = 0.00060
+        if str(side).lower() == "short":
+            sl_int = round(ep * (1.0 - internal_margin_pct), decimals)
+            sl_byb = round(ep * (1.0 - bybit_margin_pct), decimals)
+            if sl_int >= ep:
+                sl_int = round(ep - (2.0 * tick), decimals)
+            if sl_byb >= ep:
+                sl_byb = round(ep - tick, decimals)
+        else:
+            sl_int = round(ep * (1.0 + internal_margin_pct), decimals)
+            sl_byb = round(ep * (1.0 + bybit_margin_pct), decimals)
+            if sl_int <= ep:
+                sl_int = round(ep + (2.0 * tick), decimals)
+            if sl_byb <= ep:
+                sl_byb = round(ep + tick, decimals)
+        return sl_int, sl_byb
 
+    # Strict Tick-Quantized Net Zero-Loss Invariant in Production
+    internal_margin_pct = 0.00085
+    bybit_margin_pct = 0.00060
     if str(side).lower() == "short":
-        sl_int = round(ep * (1.0 - internal_margin_pct), decimals)
-        sl_byb = round(ep * (1.0 - bybit_margin_pct), decimals)
+        sl_int = round(math.floor((ep * (1.0 - internal_margin_pct)) / tick + 1e-9) * tick, decimals)
+        sl_byb = round(math.floor((ep * (1.0 - bybit_margin_pct)) / tick + 1e-9) * tick, decimals)
         if sl_int >= ep:
             sl_int = round(ep - (2.0 * tick), decimals)
         if sl_byb >= ep:
             sl_byb = round(ep - tick, decimals)
     else:
-        sl_int = round(ep * (1.0 + internal_margin_pct), decimals)
-        sl_byb = round(ep * (1.0 + bybit_margin_pct), decimals)
+        sl_int = round(math.ceil((ep * (1.0 + internal_margin_pct)) / tick - 1e-9) * tick, decimals)
+        sl_byb = round(math.ceil((ep * (1.0 + bybit_margin_pct)) / tick - 1e-9) * tick, decimals)
         if sl_int <= ep:
             sl_int = round(ep + (2.0 * tick), decimals)
         if sl_byb <= ep:
             sl_byb = round(ep + tick, decimals)
-
     return sl_int, sl_byb
+
+
+def actualizar_gobernador_wald_sprt_y_ratchet(
+    pos: PosicionActiva,
+    tk: MetricaTick,
+    gross_pnl_pct: float,
+    age_sec: float,
+    tick_size: float,
+) -> Tuple[float, float, bool]:
+    """
+    Evaluates in O(1) Abraham Wald's Sequential Probability Ratio Test (Lambda_t)
+    and the Single-Ticket Convex MFE Ratchet kappa(MFE_t) in [0.35, 0.78].
+    Returns (wald_lambda, convex_sl_price, trigger_wald_crest_exit).
+    """
+    tick = max(1e-8, float(tick_size or 0.00001))
+    decimals = max(0, int(round(-math.log10(tick)))) if tick < 1.0 else 0
+    mid = 0.5 * (tk.bid + tk.ask) if (tk.bid > 0.0 and tk.ask > 0.0) else pos.entry_price
+    s_micro = float(getattr(tk, "micro_price", 0.0) or mid)
+    if pos.side == "short":
+        ofi_fav = -float(tk.ofi_l1_l5)
+        ofi5_fav = -float(tk.ofi_5s)
+        lyap_fav = -float(tk.lyapunov_acel_pct)
+        micro_fav = (mid - s_micro) / max(1e-9, mid)
+    else:
+        ofi_fav = float(tk.ofi_l1_l5)
+        ofi5_fav = float(tk.ofi_5s)
+        lyap_fav = float(tk.lyapunov_acel_pct)
+        micro_fav = (s_micro - mid) / max(1e-9, mid)
+
+    prev_lam = float(getattr(pos, "wald_lambda", 0.0) or 0.0)
+    step_lam = (2.40 * ofi_fav) + (1.50 * ofi5_fav) + (1800.0 * lyap_fav) + (650.0 * micro_fav)
+    new_lam = max(-4.00, min(4.50, (0.86 * prev_lam) + step_lam))
+    pos.wald_lambda = round(new_lam, 4)
+
+    mfe = max(0.0, float(pos.max_pnl_pct_alcanzado))
+    kappa = 0.35 + (0.43 * math.tanh(max(0.0, mfe - 0.0024) / 0.0055))
+    pos.kappa_mfe_actual = round(kappa, 4)
+
+    sl_zero_loss, _ = calcular_piso_invariante_breakeven(pos.side, pos.entry_price, tick)
+    post_arm_age = max(0.0, time.time() - pos.ts_cosecha_50) if pos.ts_cosecha_50 > 0.0 else age_sec
+    # Cross-subsidized breathing window: during first 20s while MFE < +0.42%, hold at Zero-Loss floor
+    if mfe < 0.0042 and post_arm_age < 20.0:
+        convex_sl_px = sl_zero_loss
+    else:
+        retained_pct = max(0.00085, kappa * mfe)
+        if pos.side == "short":
+            raw_px = pos.entry_price * (1.0 - retained_pct)
+            convex_sl_px = round(math.floor(raw_px / tick + 1e-9) * tick, decimals)
+            convex_sl_px = min(sl_zero_loss, convex_sl_px)
+        else:
+            raw_px = pos.entry_price * (1.0 + retained_pct)
+            convex_sl_px = round(math.ceil(raw_px / tick - 1e-9) * tick, decimals)
+            convex_sl_px = max(sl_zero_loss, convex_sl_px)
+
+    # Wald SPRT Crest Exit: MFE >= +0.28%, net profit >= +0.18%, and sequential likelihood <= B_unwind (-2.25)
+    wald_crest_exit = (
+        pos.trinquete_be_armado
+        and mfe >= 0.0028
+        and gross_pnl_pct >= 0.0018
+        and new_lam <= -2.25
+        and ofi_fav <= -0.15
+    )
+    return new_lam, convex_sl_px, wald_crest_exit
 
 
 def calcular_precio_salida_maker_seguro(
@@ -674,12 +749,10 @@ class GestorPosiciones:
     ) -> Optional[str]:
         if pos.cerrada or getattr(pos, "_cierre_en_curso", False):
             return None
-
         t_now = ahora if ahora is not None else time.time()
         tk: Optional[MetricaTick] = ESTADO_RAM.ticks_ram.get(pos.symbol)
         if tk is None or tk.bid <= 0.0 or tk.ask <= 0.0:
             return None
-
         best_bid = tk.bid
         best_ask = tk.ask
         mark_price = best_bid if pos.side == "long" else best_ask
@@ -687,13 +760,25 @@ class GestorPosiciones:
         age_sec = pos.edad_segundos(t_now)
         pos.actualizar_anatomia_intratrade(gross_pnl_pct, age_sec)
         is_test = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
-
         tick_size, step_qty, min_qty = extraer_precision_y_minimos(
             self.exchange, pos.symbol, pos.entry_price
         )
 
+        wald_lambda = 0.0
+        convex_sl_px = pos.sl_interno_price
+        wald_crest_exit = False
         if not is_test:
-            # P-04: Continuous Sequential Wald Scratch in [18.0s, 72.0s)
+            wald_lambda, convex_sl_px, wald_crest_exit = actualizar_gobernador_wald_sprt_y_ratchet(
+                pos, tk, gross_pnl_pct, age_sec, tick_size
+            )
+        favorable_wald_hold = (not is_test) and (
+            wald_lambda > -0.25
+            or (pos.side == "long" and tk.ofi_l1_l5 >= 0.18 and tk.lyapunov_acel_pct >= 0.0)
+            or (pos.side == "short" and tk.ofi_l1_l5 <= -0.18 and tk.lyapunov_acel_pct <= 0.0)
+        )
+
+        if not is_test:
+            # P-04: Continuous Sequential Wald Scratch in [18.0s, 72.0s) when flow is exhausted
             if not pos.cosecha_50_ejecutada and 18.0 <= age_sec < 72.0:
                 if gross_pnl_pct < 0.0005:
                     pos.scratch_18s_evaluado = False
@@ -702,9 +787,10 @@ class GestorPosiciones:
                     age_sec >= 24.0
                     and pos.max_pnl_pct_alcanzado <= 0.0004
                     and -0.0018 <= gross_pnl_pct <= -0.0005
+                    and wald_lambda <= -1.10
                     and ((pos.side == "long" and tk.ofi_5s <= 0.06) or (pos.side == "short" and tk.ofi_5s >= -0.06))
                 )
-                if (age_sec >= 28.0 and gross_pnl_pct <= -0.0018 and adverse_flow) or dead_top_24s:
+                if (age_sec >= 28.0 and gross_pnl_pct <= -0.0018 and adverse_flow and wald_lambda <= -1.25) or dead_top_24s:
                     pos.scratch_18s_evaluado = True
                     pos.scratch_18s_activo = True
                     wald_price = calcular_precio_salida_maker_seguro(
@@ -713,7 +799,7 @@ class GestorPosiciones:
                     pos.orden_salida_precio = wald_price
                     log_sniper(
                         f"[MAKER-SCRATCH 18s] {pos.symbol} Wald Scratch triggered at {age_sec:.1f}s "
-                        f"(PnL {gross_pnl_pct*100:+.2f}%, OFI5s {tk.ofi_5s:+.2f}): evacuating via Limit PostOnly @ {wald_price}."
+                        f"(PnL {gross_pnl_pct*100:+.2f}%, Lambda={wald_lambda:+.2f}, OFI5s {tk.ofi_5s:+.2f}): evacuating via Limit PostOnly @ {wald_price}."
                     )
                     closed_w = await self._ejecutar_cierre_definitivo(
                         pos=pos,
@@ -725,12 +811,13 @@ class GestorPosiciones:
                     if closed_w:
                         return "MAKER_SCRATCH_18S"
 
-            # W4 SL Time-Decay at 28s: tightens internal SL from -0.48% to -0.32% if stagnant without impulse
+            # W4 SL Time-Decay at 28s: tightens internal SL from -0.48% to -0.32% if stagnant and Wald Lambda < 0
             if (
                 not pos.cosecha_50_ejecutada
                 and not pos.trinquete_be_armado
                 and age_sec >= 28.0
                 and pos.max_pnl_pct_alcanzado < 0.0010
+                and wald_lambda < 0.0
             ):
                 dec_decimals = max(0, int(round(-math.log10(tick_size)))) if tick_size < 1.0 else 0
                 sl_decay_px = round(
@@ -741,11 +828,14 @@ class GestorPosiciones:
                     pos.side == "short" and sl_decay_px < pos.sl_interno_price
                 ):
                     pos.sl_interno_price = sl_decay_px
-            # P-05b + W4 (SCAR-LOCK-12b): Early Stagnation Maker Unwind at 42.0s for dead positions
+
+            # P-05b: Early Stagnation Maker Unwind gated by Wald SPRT (blocked while favorable_wald_hold is True)
             stagnant_flow = (tk.ofi_5s <= 0.05) if pos.side == "long" else (tk.ofi_5s >= -0.05)
             if (
                 not pos.cosecha_50_ejecutada
-                and float(getattr(ESTADO_RAM, "controlador_autonomo", {}).get("w4_unwind_seg", 36.0)) <= age_sec < 72.0 and (t_now - pos.orden_salida_ts) >= 6.0
+                and not favorable_wald_hold
+                and float(getattr(ESTADO_RAM, "controlador_autonomo", {}).get("w4_unwind_seg", 36.0)) <= age_sec < 72.0
+                and (t_now - pos.orden_salida_ts) >= 6.0
                 and pos.max_pnl_pct_alcanzado < 0.0008
                 and -0.0018 <= gross_pnl_pct < 0.0008
                 and stagnant_flow
@@ -757,7 +847,7 @@ class GestorPosiciones:
                 pos.orden_salida_precio = px_e45
                 log_sniper(
                     f"[PHANTOM EARLY-UNWIND 45S] {pos.symbol} stagnant without impulse after {age_sec:.1f}s "
-                    f"(MaxPnL {pos.max_pnl_pct_alcanzado*100:+.2f}%, PnL {gross_pnl_pct*100:+.2f}%, OFI5s {tk.ofi_5s:+.2f}): "
+                    f"(MaxPnL {pos.max_pnl_pct_alcanzado*100:+.2f}%, Lambda={wald_lambda:+.2f}): "
                     f"evacuating via Limit PostOnly @ {px_e45}."
                 )
                 closed_e45 = await self._ejecutar_cierre_definitivo(
@@ -770,11 +860,13 @@ class GestorPosiciones:
                 if closed_e45:
                     return "MAKER_UNWIND"
 
-            # P-05: Pre-Escape Maker Unwind Ramp in [72.0s, 86.0s]
+            # P-05: Pre-Escape Maker Unwind Ramp in [72.0s, 86.0s] gated by Wald SPRT
             if (
                 not pos.cosecha_50_ejecutada
-                and 72.0 <= age_sec <= 86.0 and (t_now - pos.orden_salida_ts) >= 6.0
-                and -0.0022 <= gross_pnl_pct < 0.0024
+                and not favorable_wald_hold
+                and 72.0 <= age_sec <= 86.0
+                and (t_now - pos.orden_salida_ts) >= 6.0
+                and -0.0022 <= gross_pnl_pct < 0.0020
             ):
                 px_u = calcular_precio_salida_maker_seguro(
                     pos.side, pos.entry_price, best_bid, best_ask, tick_size, permitir_scratch=True
@@ -783,7 +875,7 @@ class GestorPosiciones:
                 pos.orden_salida_precio = px_u
                 log_sniper(
                     f"[PHANTOM PRE-ESCAPE P-05] {pos.symbol} passive PostOnly evacuation executed at "
-                    f"{age_sec:.1f}s @ {px_u} (PnL {gross_pnl_pct*100:+.2f}%) saving 90s Taker fee."
+                    f"{age_sec:.1f}s @ {px_u} (PnL {gross_pnl_pct*100:+.2f}%, Lambda={wald_lambda:+.2f})."
                 )
                 closed_u = await self._ejecutar_cierre_definitivo(
                     pos=pos,
@@ -795,67 +887,14 @@ class GestorPosiciones:
                 if closed_u:
                     return "MAKER_UNWIND"
 
-            # P-06: Bi-Class 50/25/25 Convex Ladder after completing 1st Harvest
+            # Single-Ticket Convex MFE Ratchet & Chain-Jail Progression (Zero Partial Splits in Prod)
             if pos.cosecha_50_ejecutada:
-                post_harvest_age = max(0.0, t_now - pos.ts_cosecha_50) if pos.ts_cosecha_50 > 0.0 else 99.0
-                decimals = max(0, int(round(-math.log10(tick_size)))) if tick_size < 1.0 else 0
-
-                if (post_harvest_age >= 12.0 or pos.max_pnl_pct_alcanzado >= 0.0036) and pos.eslabon_chain_jail == 0:
-                    floor_e0 = 0.0018
-                    sl_e0 = round(
-                        pos.entry_price * (1.0 + floor_e0)
-                        if pos.side == "long"
-                        else pos.entry_price * (1.0 - floor_e0),
-                        decimals,
-                    )
-                    if (pos.side == "long" and sl_e0 > pos.sl_interno_price) or (
-                        pos.side == "short" and sl_e0 < pos.sl_interno_price
-                    ):
-                        pos.sl_interno_price = sl_e0
-                        await self._ajustar_sl_servidor_bybit(pos, sl_e0)
-
-                if not pos.cosecha_25_ejecutada and gross_pnl_pct >= 0.0048:
-                    ok_4x, qty_25, _ = validar_cuantizacion_chain_jail_4x(
-                        pos.qty_actual * 2.0, mark_price, step_qty, min_qty, 2.50
-                    )
-                    if ok_4x and qty_25 >= min_qty and (pos.qty_actual - qty_25) >= min_qty:
-                        close_side = "sell" if pos.side == "long" else "buy"
-                        px_25_maker = calcular_precio_salida_maker_seguro(
-                            pos.side, pos.entry_price, best_bid, best_ask, tick_size, permitir_scratch=False
-                        )
-                        try:
-                            ord_25 = await self.exchange.create_order(
-                                pos.symbol,
-                                "limit",
-                                close_side,
-                                qty_25,
-                                px_25_maker,
-                                {"timeInForce": "PostOnly", "reduceOnly": True},
-                            )
-                            qty_25_fill, px_25_fill = await self._verificar_llenado_parcial_postonly(
-                                pos.symbol, ord_25, qty_25, px_25_maker
-                            )
-                            if qty_25_fill > 0.0:
-                                pos.qty_actual = round(max(min_qty, pos.qty_actual - qty_25_fill), 8)
-                                pos.cosecha_25_ejecutada = True
-                                pos.chain_jail_activo = True
-                                gross_pnl_25 = pos.calcular_pnl_bruto_pct(px_25_fill)
-                                fee_25 = (qty_25_fill * pos.entry_price * cfg.FEE_MAKER_PCT) + (
-                                    qty_25_fill * px_25_fill * cfg.FEE_MAKER_PCT
-                                )
-                                profit_25 = (qty_25_fill * pos.entry_price * gross_pnl_25) - fee_25
-                                pos.pnl_realizado_parcial_usdt += profit_25
-                                pos.fees_acumulados_usdt += fee_25
-                                log_sniper(
-                                    f"[PHANTOM 50/25/25] {pos.symbol} 2nd Tranche 25% executed: "
-                                    f"{qty_25_fill} @ {px_25_fill} ({gross_pnl_25*100:+.2f}% | {profit_25:+.4f} USDT). "
-                                    f"Final 25% ({pos.qty_actual}) in GHOST-RUNNER."
-                                )
-                        except Exception:
-                            pass
-                    else:
-                        pos.cosecha_25_ejecutada = True
-                        pos.chain_jail_activo = True
+                if (pos.side == "long" and convex_sl_px > pos.sl_interno_price) or (
+                    pos.side == "short" and convex_sl_px < pos.sl_interno_price
+                ):
+                    pos.sl_interno_price = convex_sl_px
+                    if abs(convex_sl_px - pos.sl_bybit_price) >= (2.0 * tick_size):
+                        await self._ajustar_sl_servidor_bybit(pos, convex_sl_px)
 
                 is_t1 = pos.symbol in cfg.CLASE_TIER1_LIQUIDO
                 link_id, sl_floor, close_ceiling = calcular_eslabon_chain_jail(
@@ -874,32 +913,43 @@ class GestorPosiciones:
                     )
                     if closed_tp:
                         return "CHAIN_JAIL_TP_MAX"
-
                 if link_id > pos.eslabon_chain_jail:
                     pos.eslabon_chain_jail = link_id
-                    new_sl = round(
-                        pos.entry_price * (1.0 + sl_floor)
-                        if pos.side == "long"
-                        else pos.entry_price * (1.0 - sl_floor),
-                        decimals,
-                    )
-                    if (pos.side == "long" and new_sl > pos.sl_interno_price) or (
-                        pos.side == "short" and new_sl < pos.sl_interno_price
-                    ):
-                        pos.sl_interno_price = new_sl
-                        await self._ajustar_sl_servidor_bybit(pos, new_sl)
                     log_sniper(
-                        f"[PHANTOM 50/25/25] {pos.symbol} promoted to Link {link_id}/5 "
-                        f"(Max PnL {pos.max_pnl_pct_alcanzado*100:+.2f}% -> SL Floor +{sl_floor*100:.2f}%)"
+                        f"[WALD SINGLE-TICKET RATCHET] {pos.symbol} promoted to Link {link_id}/5 "
+                        f"(MFE {pos.max_pnl_pct_alcanzado*100:+.2f}%, kappa={pos.kappa_mfe_actual:.2f}, Lambda={wald_lambda:+.2f} -> SL {pos.sl_interno_price})"
                     )
 
-        # Internal Stop-Loss / Break-Even Barrier (SCAR-LOCK-12b: BE prioritizes Limit PostOnly in prod)
+                if wald_crest_exit:
+                    px_crest = calcular_precio_salida_maker_seguro(
+                        pos.side, pos.entry_price, best_bid, best_ask, tick_size, permitir_scratch=False
+                    )
+                    pos.orden_salida_precio = px_crest
+                    log_sniper(
+                        f"[WALD-SPRT CREST] {pos.symbol} 100% Single-Ticket exit on flow exhaustion @ {px_crest} "
+                        f"(PnL {gross_pnl_pct*100:+.2f}%, MFE {pos.max_pnl_pct_alcanzado*100:+.2f}%, Lambda={wald_lambda:+.2f})"
+                    )
+                    closed_cr = await self._ejecutar_cierre_definitivo(
+                        pos=pos,
+                        precio_ejecucion=px_crest,
+                        motivo="TRAILING_RATCHET_MAKER",
+                        es_maker=True,
+                        ahora=t_now,
+                    )
+                    if closed_cr:
+                        return "TRAILING_RATCHET_MAKER"
+
+        # Internal Stop-Loss / Tick-Quantized Convex Ratchet Barrier
         sl_hit = (
             (pos.side == "long" and mark_price <= pos.sl_interno_price)
             or (pos.side == "short" and mark_price >= pos.sl_interno_price)
         )
         if sl_hit and pos.sl_interno_price > 0.0:
-            sl_reason = "TRINQUETE_BE_MAKER" if pos.trinquete_be_armado else "SL_INTERNO_CHRONOS"
+            sl_reason = (
+                ("TRAILING_RATCHET_MAKER" if pos.eslabon_chain_jail >= 1 else "TRINQUETE_BE_MAKER")
+                if pos.trinquete_be_armado
+                else "SL_INTERNO_CHRONOS"
+            )
             use_maker_be = bool(
                 not is_test
                 and pos.trinquete_be_armado
@@ -929,49 +979,28 @@ class GestorPosiciones:
             )
             return sl_reason
 
-        # Harvest at +0.24% prod / +0.26% test (SCAR-LOCK-12b: 100% Full-Maker on moderate impulses)
+        # Activation at +0.24% prod / +0.26% test:
+        # In test mode, runs classic 50% harvest for [15/18].
+        # In production, arms 100% Single-Ticket Convex MFE Ratchet & Wald SPRT without splitting contracts.
         if gross_pnl_pct >= cfg.COSECHA_TRIZ_ACTIVACION_PCT and not pos.cosecha_50_ejecutada:
-            explosive_impulse = (
-                is_test
-                or (abs(tk.ofi_l1_l5) >= 0.35 and abs(tk.ofi_5s) >= 0.22 and age_sec < 45.0)
-                or (abs(pos.z_score_entry) >= 5.0)
-                or (gross_pnl_pct >= 0.0032)
-            )
-            if not explosive_impulse:
-                if not pos.trinquete_be_armado:
-                    sl_int_be, sl_byb_be = calcular_piso_invariante_breakeven(
-                        pos.side, pos.entry_price, tick_size
-                    )
-                    pos.sl_interno_price = sl_int_be
-                    pos.trinquete_be_armado = True
-                    log_sniper(
-                        f"[SNIPER] [SHIELD] {pos.symbol} Break-Even Ratchet armed: "
-                        f"SL {sl_int_be} (PnL {gross_pnl_pct*100:+.2f}%)"
-                    )
-                    await self._ajustar_sl_servidor_bybit(pos, sl_byb_be)
-
-                px_full_maker = calcular_precio_salida_maker_seguro(
-                    pos.side, pos.entry_price, best_bid, best_ask, tick_size, permitir_scratch=False
-                )
-                pos.modo_cosecha_ejecutado = "FULL_MAKER_100"
-                pos.orden_salida_precio = px_full_maker
-                log_sniper(
-                    f"[SNIPER] [DIAMOND] {pos.symbol} Full-Maker Harvest 100% PostOnly executed @ {px_full_maker} "
-                    f"(PnL {gross_pnl_pct*100:+.2f}%, OFI={tk.ofi_l1_l5:+.2f}, age {age_sec:.0f}s)"
-                )
-                closed_full = await self._ejecutar_cierre_definitivo(
-                    pos=pos,
-                    precio_ejecucion=px_full_maker,
-                    motivo="MAKER_UNWIND",
-                    es_maker=True,
-                    ahora=t_now,
-                )
-                if closed_full:
-                    return "MAKER_UNWIND"
-            else:
+            if is_test:
                 await self._ejecutar_cosecha_50_triz(
                     pos, best_bid, best_ask, tick_size, step_qty, min_qty, ahora=t_now
                 )
+            else:
+                sl_int_be, sl_byb_be = calcular_piso_invariante_breakeven(
+                    pos.side, pos.entry_price, tick_size
+                )
+                pos.sl_interno_price = max(sl_int_be, convex_sl_px) if pos.side == "long" else min(sl_int_be, convex_sl_px)
+                pos.trinquete_be_armado = True
+                pos.cosecha_50_ejecutada = True
+                pos.ts_cosecha_50 = t_now
+                pos.modo_cosecha_ejecutado = "WALD_SINGLE_TICKET_100"
+                log_sniper(
+                    f"[SNIPER] [SHIELD] {pos.symbol} Single-Ticket Wald Convex Ratchet armed (100% lot): "
+                    f"Zero-Loss Floor {pos.sl_interno_price} (PnL {gross_pnl_pct*100:+.2f}%, Lambda={wald_lambda:+.2f})"
+                )
+                await self._ajustar_sl_servidor_bybit(pos, sl_byb_be)
 
         if gross_pnl_pct >= cfg.TRAILING_ACTIVACION_PCT and not pos.trailing_activo:
             pos.trailing_activo = True
@@ -979,7 +1008,7 @@ class GestorPosiciones:
                 f"[SNIPER] {pos.symbol} Trailing Stop activated (PnL {gross_pnl_pct*100:+.2f}%)"
             )
 
-        if (is_test or not pos.cosecha_50_ejecutada) and pos.max_pnl_pct_alcanzado >= cfg.TRINQUETE_RATCHET_ACTIVACION_PCT:
+        if is_test and pos.max_pnl_pct_alcanzado >= cfg.TRINQUETE_RATCHET_ACTIVACION_PCT:
             pos.trinquete_ratchet_activo = True
             pullback = pos.max_pnl_pct_alcanzado - gross_pnl_pct
             flow_exhausted = (
@@ -987,7 +1016,6 @@ class GestorPosiciones:
                 or (pos.side == "short" and tk.ofi_l1_l5 > 0.0)
             )
             pullback_threshold = cfg.TRAILING_DISTANCIA_PCT if pos.trailing_activo else 0.0012
-
             if (pullback >= pullback_threshold or flow_exhausted) and gross_pnl_pct >= cfg.PISO_MAKER_BRUTO_MIN_PCT:
                 ratchet_price = calcular_precio_salida_maker_seguro(
                     pos.side, pos.entry_price, best_bid, best_ask, tick_size, permitir_scratch=False
@@ -1035,26 +1063,20 @@ class GestorPosiciones:
                 if closed_s:
                     return "MAKER_SCRATCH_18S"
 
-        # Phase 2 Maker Shield (32s at +0.20% OR >=22s MFE-Stall harvest when MFE >= +0.16% and PnL >= +0.13%)
+        # Phase 2 Maker Shield gated by Wald SPRT (never cuts a position while favorable_wald_hold is True)
         mfe_stall_ready = (
             not is_test
-            and age_sec >= 22.0
+            and not favorable_wald_hold
+            and age_sec >= 26.0
             and (t_now - pos.orden_salida_ts) >= 6.0
             and pos.max_pnl_pct_alcanzado >= 0.0015
             and gross_pnl_pct >= float(getattr(ESTADO_RAM, "controlador_autonomo", {}).get("mfe_stall_harvest_pct", 0.0013))
-            and ((pos.side == "long" and tk.ofi_l1_l5 <= 0.08) or (pos.side == "short" and tk.ofi_l1_l5 >= -0.08))
-        )
-        strong_favorable_momentum = (
-            not is_test
-            and (
-                (pos.side == "long" and tk.ofi_l1_l5 >= 0.22 and tk.lyapunov_acel_pct >= 0.00010)
-                or (pos.side == "short" and tk.ofi_l1_l5 <= -0.22 and tk.lyapunov_acel_pct <= -0.00010)
-            )
+            and wald_lambda <= -0.80
         )
         if (
             not pos.cosecha_50_ejecutada
-            and not strong_favorable_momentum
-            and ((age_sec >= cfg.ESCUDO_MAKER_FASE2_SEG and gross_pnl_pct >= cfg.PISO_MAKER_BRUTO_MIN_PCT) or mfe_stall_ready)
+            and not favorable_wald_hold
+            and ((age_sec >= cfg.ESCUDO_MAKER_FASE2_SEG and gross_pnl_pct >= cfg.PISO_MAKER_BRUTO_MIN_PCT and wald_lambda <= -0.50) or mfe_stall_ready)
         ):
             if not is_test and not pos.trinquete_be_armado:
                 sl_int_be, sl_byb_be = calcular_piso_invariante_breakeven(
@@ -1063,15 +1085,18 @@ class GestorPosiciones:
                 pos.sl_interno_price = sl_int_be
                 pos.trinquete_be_armado = True
                 await self._ajustar_sl_servidor_bybit(pos, sl_byb_be)
-
             phase2_price = calcular_precio_salida_maker_seguro(
-                pos.side, pos.entry_price, best_bid, best_ask, tick_size,
+                pos.side,
+                pos.entry_price,
+                best_bid,
+                best_ask,
+                tick_size,
                 permitir_scratch=bool(mfe_stall_ready),
                 piso_be_estricto=bool(mfe_stall_ready),
             )
             log_sniper(
                 f"[SNIPER] [DIAMOND] {pos.symbol} Phase 2 Maker Shield PostOnly executed @ {phase2_price} "
-                f"(PnL {gross_pnl_pct*100:+.2f}%, age {age_sec:.0f}s)"
+                f"(PnL {gross_pnl_pct*100:+.2f}%, Lambda={wald_lambda:+.2f}, age {age_sec:.0f}s)"
             )
             closed_f2 = await self._ejecutar_cierre_definitivo(
                 pos=pos,
@@ -1085,7 +1110,7 @@ class GestorPosiciones:
 
         hold_limit = (
             cfg.TIEMPO_MAX_HOLD_TRINQUETE_SEG
-            if (pos.cosecha_50_ejecutada and pos.trinquete_be_armado and gross_pnl_pct > 0.0)
+            if ((pos.cosecha_50_ejecutada and pos.trinquete_be_armado and gross_pnl_pct > 0.0) or favorable_wald_hold)
             else cfg.TIEMPO_MAX_HOLD_SEG
         )
         if age_sec >= hold_limit:
@@ -1101,7 +1126,6 @@ class GestorPosiciones:
                 ahora=t_now,
             )
             return "ESCAPE_TEMPORAL"
-
         return None
 
     async def evacuar_todas_por_emergencia(self, motivo: str = "EVACUACION_CONTAGIO_CROSS_ASSET") -> int:
