@@ -1486,6 +1486,14 @@ class RadarVolatilidad:
             tk = MetricaTick(symbol=symbol)
             ESTADO_RAM.ticks_ram[symbol] = tk
 
+        best_bid_qty = float(bids_list[0][1]) if len(bids_list[0]) > 1 else 1.0
+        best_ask_qty = float(asks_list[0][1]) if len(asks_list[0]) > 1 else 1.0
+        q_l1_tot = best_bid_qty + best_ask_qty
+        micro_price = (
+            ((best_bid * best_ask_qty) + (best_ask * best_bid_qty)) / q_l1_tot
+            if q_l1_tot > 0.0
+            else mid_price
+        )
         tk.bid = best_bid
         tk.ask = best_ask
         tk.last = mid_price
