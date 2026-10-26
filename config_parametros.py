@@ -318,10 +318,13 @@ def _aplicar_parametros_produccion_phantom(desde_hot_reload: bool = False) -> No
     g["TTL_ORDEN_ENTRADA_SEG"] = 3.80
     lim = g.get("_LIMITES_SHADOW_GATE")
     if isinstance(lim, dict):
-        lim["KELLY_FRACCION_BASE"] = (0.48, 0.60)
-        lim["Z_SCORE_UMBRAL_HIGH_BETA"] = (-3.15, -2.75)
+        lim["KELLY_FRACCION_BASE"] = (0.52, 0.58)
+        lim["Z_SCORE_UMBRAL_HIGH_BETA"] = (-3.15, -2.80)
         lim["Z_SCORE_UMBRAL_TIER1"] = (-2.85, -2.45)
+        lim["OFI_MIN_ENTRADA"] = (0.10, 0.25)
+        lim["MAKER_SCRATCH_TIEMPO_SEG"] = (14.0, 24.0)
         lim["COSECHA_TRIZ_ACTIVACION_PCT"] = (0.0020, 0.0044)
+        lim["SL_INTERNO_PCT"] = (0.0030, 0.0052)
 
 
 def recargar_calibracion_oos_si_cambio(ruta_json: pathlib.Path | None = None) -> Dict[str, Any]:

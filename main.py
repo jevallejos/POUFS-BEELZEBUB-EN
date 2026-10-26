@@ -511,7 +511,7 @@ class MotorTriBrainSniper:
             f"Scratch={cfg.MAKER_SCRATCH_TIEMPO_SEG:.0f}s | 50% Harvest=+{cfg.COSECHA_TRIZ_ACTIVACION_PCT*100:.2f}% | SL=-{cfg.SL_INTERNO_PCT*100:.2f}%"
         )
 
-        ws_symbols = list(cfg.PARES_CAMPEONES_ALFA) + [cfg.SIMBOLO_CENTINELA_MACRO]
+        ws_symbols = [s for s in cfg.PARES_CAMPEONES_ALFA if s != "INJ/USDT:USDT"] + [cfg.SIMBOLO_CENTINELA_MACRO]
         tasks = [asyncio.create_task(self._vigilar_stream_simbolo(s)) for s in ws_symbols]
         tasks.append(asyncio.create_task(self.gestor.bucle_vigilancia_posiciones()))
         tasks.append(asyncio.create_task(ESCUDO_TRICORTEX.bucle_orquestacion_tricortex()))

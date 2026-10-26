@@ -290,16 +290,36 @@ class EjecutorSniper:
                         repeg_entrada_ejecutado = True
                         try:
                             await self.exchange.cancel_order(order_id, symbol)
+                            chk_after_cancel = await self.exchange.fetch_order(order_id, symbol, {"acknowledged": True})
+                            if isinstance(chk_after_cancel, dict):
+                                filled_qty = max(filled_qty, float(chk_after_cancel.get("filled") or 0.0))
+                                p_avg_c = float(chk_after_cancel.get("average") or 0.0)
+                                if p_avg_c > 0.0:
+                                    fill_price = p_avg_c
+                            rem_qty_in = redondear_cantidad_lote(max(0.0, qty - filled_qty), step_qty, min_qty)
+                            if filled_qty >= qty or rem_qty_in < min_qty:
+                                ord_status = "closed"
+                                break
                             ord_rp = await self.exchange.create_order(
-                                symbol, "limit", side_order, qty, px_new_in, params_postonly
+                                symbol, "limit", side_order, rem_qty_in, px_new_in, params_postonly
                             )
                             new_oid = str((ord_rp or {}).get("id") or "")
                             if new_oid:
                                 order_id = new_oid
                                 quote_price = px_new_in
-                                fill_price = px_new_in
+                                if filled_qty <= 0.0:
+                                    fill_price = px_new_in
                                 ord_status = str((ord_rp or {}).get("status") or "open").lower()
-                                filled_qty = float((ord_rp or {}).get("filled") or 0.0)
+                                filled_qty += float((ord_rp or {}).get("filled") or 0.0)
+                                TELEMETRIA_TG.retener_apertura_pendiente(
+                                    symbol=symbol,
+                                    side=side,
+                                    qty=qty,
+                                    price=quote_price,
+                                    order_id=order_id,
+                                    z_score=z_score,
+                                    ofi=current_tk.ofi_l1_l5,
+                                )
                                 log_sniper(
                                     f"[{side_label}] [PASSIVE ALIGN 1.2S] {symbol} aligned 1x to {px_new_in} "
                                     f"(drift +{drift_in*100:.3f}%, OFI={current_tk.ofi_l1_l5:+.2f}, H={current_tk.hurst:.2f})"

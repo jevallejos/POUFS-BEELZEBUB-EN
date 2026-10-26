@@ -216,10 +216,10 @@ class OrquestadorTriCortex:
         final_fraction = max(k_floor, min(cfg.KELLY_FRACCION_MAX, raw_fraction))
 
         gamma_gm = 1.0
-        if not is_test and z_abs_raw > 8.50:
+        if not is_test and z_abs_raw > 8.50 and float(hurst) > 0.485:
             excess = min(1.0, (z_abs_raw - 8.50) / 10.0)
-            final_fraction = max(k_floor, final_fraction * (1.0 - 0.15 * excess))
-            gamma_gm = max(0.65, min(1.0, math.exp(-0.08 * (z_abs_raw - 8.50))))
+            final_fraction = max(k_floor, final_fraction * (1.0 - 0.10 * excess))
+            gamma_gm = max(0.85, min(1.0, math.exp(-0.04 * (z_abs_raw - 8.50))))
 
         free_margin = ESTADO_RAM.margen_libre_usdt
         margin_usdt = round(free_margin * final_fraction, 4)
@@ -500,7 +500,9 @@ class OrquestadorTriCortex:
         )
 
         if pnl_usdt >= 0.0:
-            ESTADO_RAM.aplicar_cuarentena(symbol, cfg.COOLDOWN_POST_CIERRE_WIN_SEG, "COOLDOWN_POST_WIN")
+            is_test_w = os.environ.get("TRIBRAIN_TEST_MODE") == "1"
+            eff_win_cd = cfg.COOLDOWN_POST_CIERRE_WIN_SEG if is_test_w else 5.0
+            ESTADO_RAM.aplicar_cuarentena(symbol, eff_win_cd, "COOLDOWN_POST_WIN")
             if perm is not None:
                 perm.caida_min_override_pct = base_drop
             if str(side).lower() == "short":

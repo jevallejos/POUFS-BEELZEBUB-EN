@@ -933,8 +933,9 @@ class GestorPosiciones:
         if gross_pnl_pct >= cfg.COSECHA_TRIZ_ACTIVACION_PCT and not pos.cosecha_50_ejecutada:
             explosive_impulse = (
                 is_test
-                or (abs(tk.ofi_l1_l5) >= 0.65 and abs(tk.ofi_5s) >= 0.45 and age_sec < 25.0)
-                or (gross_pnl_pct >= 0.0042)
+                or (abs(tk.ofi_l1_l5) >= 0.35 and abs(tk.ofi_5s) >= 0.22 and age_sec < 45.0)
+                or (abs(pos.z_score_entry) >= 5.0)
+                or (gross_pnl_pct >= 0.0032)
             )
             if not explosive_impulse:
                 if not pos.trinquete_be_armado:
@@ -1043,8 +1044,16 @@ class GestorPosiciones:
             and gross_pnl_pct >= float(getattr(ESTADO_RAM, "controlador_autonomo", {}).get("mfe_stall_harvest_pct", 0.0013))
             and ((pos.side == "long" and tk.ofi_l1_l5 <= 0.08) or (pos.side == "short" and tk.ofi_l1_l5 >= -0.08))
         )
+        strong_favorable_momentum = (
+            not is_test
+            and (
+                (pos.side == "long" and tk.ofi_l1_l5 >= 0.22 and tk.lyapunov_acel_pct >= 0.00010)
+                or (pos.side == "short" and tk.ofi_l1_l5 <= -0.22 and tk.lyapunov_acel_pct <= -0.00010)
+            )
+        )
         if (
             not pos.cosecha_50_ejecutada
+            and not strong_favorable_momentum
             and ((age_sec >= cfg.ESCUDO_MAKER_FASE2_SEG and gross_pnl_pct >= cfg.PISO_MAKER_BRUTO_MIN_PCT) or mfe_stall_ready)
         ):
             if not is_test and not pos.trinquete_be_armado:

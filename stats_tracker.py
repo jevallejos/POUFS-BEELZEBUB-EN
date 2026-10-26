@@ -26,6 +26,7 @@ from core_estado_ram import (
     ESTADO_RAM,
     PosicionActiva,
     RegistroOperacionCerrada,
+    _escribir_linea_persistente,
     log_sniper,
     registrar_evento_baul_ia,
 )
@@ -322,8 +323,9 @@ class GestorCajaNegra:
         )
 
         try:
-            with open(self.ruta_jsonl, "a", encoding="utf-8") as f_out:
-                f_out.write(json.dumps(record.to_dict(), ensure_ascii=False) + "\n")
+            _escribir_linea_persistente(
+                self.ruta_jsonl, json.dumps(record.to_dict(), ensure_ascii=False) + "\n"
+            )
         except Exception as exc:
             log_sniper(f"[WARN] [BLACK BOX] Error writing to {self.ruta_jsonl.name}: {exc}")
 
